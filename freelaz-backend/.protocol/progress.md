@@ -518,6 +518,25 @@ Cenários 11 (cliente 1× e reutilizado) e 12 (exclusão fantasma) — aditivos 
 
 **Estado da bateria:** `tsc --noEmit` exit 0; `npm run build` exit 0; `.tools/test-chargeback.ps1` (§4b incluída) e `.tools/run-all-tests.ps1` re-executados (ver contagem abaixo).
 
+## Sessão 21 — Etapa 3.2: agendador de jobs (rotas + idempotência + agendamento documentado)
+
+**Escopo autorizado:** código + testes + docs do agendador. **NÃO autorizado (e não feito):** D1–D8, Sandbox real do Asaas, alterar `.env` real, alterar migrações existentes.
+
+**Feito:**
+1. **[INSPECT] Mapeamento dos jobs** (registrado em `findings.md`): `generateOpeningCodesDue` / `generateClosingCodesDue` (`codeService.ts`), `processPendingPayouts` (`payoutService.ts`), `runReconciliation` (`reconciliationService.ts`). **Todos já eram idempotentes por estado** (a condição de elegibilidade deixa de casar após o efeito). **LACUNA registrada:** não existia agendador nem registro genérico de execução de job. **Decisão:** não criar chave de idempotência sintética — seria redundante; a idempotência é **observável** e foi **testada**.
+2. **[IMPLEMENT] 4 rotas finas** `POST /api/jobs/{opening-codes,closing-codes,weekly-payout,daily-reconciliation}/run` — só traduzem HTTP → service. **Nenhuma regra de negócio na rota.**
+3. **[IMPLEMENT] Auth dedicada** `src/lib/jobsAuth.ts` (`checkJobsToken`): cabeçalho `x-jobs-token` vs `JOBS_RUN_TOKEN`, comparação **timing-safe** (mesmo padrão do webhook), token nunca logado. 401 sem token/errado; **401 por padrão** quando o token não está configurado (escape hatch explícito `JOBS_ALLOW_UNTOKEN=1` só em dev); em produção sem token → **401** (nunca aberto).
+4. **[IMPLEMENT] `.env.example`:** `JOBS_RUN_TOKEN=""` (placeholder + instrução de gerar ≥32 chars aleatórios) e `JOBS_ALLOW_UNTOKEN=""`. **`.env` real NÃO foi tocado.**
+5. **[IMPLEMENT] `.tools/run-jobs.mjs`:** dispara os jobs (todos ou `--job=<nome>`) contra `http://127.0.0.1:3000`, lê o token do `.env` **sem imprimir**, sem `Tee-Object`.
+6. **[TEST] `.tools/test-jobs.mjs` + `.tools/test-jobs.ps1`** (versionados; passo **10/10** da bateria): 401 sem/errado token; 200 com token; **idempotência observada** (opening/closing/weekly: 1ª gera, 2ª → 0, contagens antes/depois); reconciliação somente-leitura (ledger/payouts inalterados); **rota inexistente → 404**.
+7. **[DOC] Agendamento** (`findings.md` → "Agendamento de jobs"): **Opção A escolhida (GitHub Actions cron)** — o projeto **não tem deploy Vercel** (sem `vercel.json`), então a Opção B não se aplica hoje; Actions é grátis e não depende de deploy. Exemplo de YAML com `secrets.JOBS_RUN_TOKEN` e a lista explícita do que **NÃO** fazer (`setInterval` no processo — não sobrevive a restart).
+
+**Estado da bateria (executada, não declarada):** `npx tsc --noEmit` exit **0**; `npm run build` exit **0**; `.tools/run-all-tests.ps1` → **`BATTERY_EXIT=0`**, `### TUDO OK`. Totais: Fase 1a **15** + 1b **8** + 1c **12** + Fase 2 **112** + Fase 3 **103** + Fase 4 **202** + Fase 5 **145** = **597**; Etapa 1+2 **92**; Etapa 3 **74**; **Etapa 3.2 (jobs) 29** → **792 OK / 0 FALHA**. `run-all-tests.ps1` agora tem **10 passos** (o 10/10 é `test-jobs.ps1`).
+
+**Arquivos criados:** `src/lib/jobsAuth.ts`; `src/app/api/jobs/{opening-codes,closing-codes,weekly-payout,daily-reconciliation}/run/route.ts`; `.tools/run-jobs.mjs`; `.tools/test-jobs.mjs`; `.tools/test-jobs.ps1`.
+**Arquivos alterados:** `.env.example` (só placeholders); `.tools/run-all-tests.ps1` (passo 10/10); `.protocol/findings.md`, `.protocol/progress.md`, `.protocol/task_plan.md`.
+**Não alterados:** `.env`, `payoutService.ts` (nenhuma mudança), migrações existentes, qualquer arquivo de D1–D8.
+
 ## Próximos passos (ver também task_plan.md)
 
 1. **Etapa 3 (pós-auditoria): webhook/chargeback — IMPLEMENTADO E TESTADO (mock) — VALIDAÇÃO SANDBOX PENDENTE.** Autenticação por cabeçalho, durabilidade/idempotência por `event.id`, bloqueio transacional de repasse, ramos de chargeback, disputa endurecida e rotas admin. **P1–P5 RESOLVIDOS por doc oficial (Etapa 3.1, 2026-10-20)** — ver `findings.md`. **Decisões humanas D1–D8 pendentes** (só proteções independentes implementadas). Chargeback real **não observado**: a doc confirma que o Sandbox exige **solicitação por e-mail** (`integracoes@asaas.com.br`) — validação **PENDENTE** até isso ser feito (não simular confirmação real). **Não autoriza produção.**
@@ -527,4 +546,4 @@ Cenários 11 (cliente 1× e reutilizado) e 12 (exclusão fantasma) — aditivos 
    denúncias, identidade, consultas, reconciliação ao vivo e lote de repasses) está pronto em `/admin`.
 3. Habilitar o Asaas em produção: `ASAAS_API_URL=https://api.asaas.com/v3`, chave real, testar UMA transferência Pix de baixo valor e só então liberar o lote semanal (passos em `findings.md`)
 4. Confirmar com o produto o valor da taxa do saque instantâneo (hoje 100 bps = 1%) e, na Fase 5, torná-la editável junto da comissão e do preço do boost
-5. Apontar um agendador real (Vercel Cron ou similar) para `/api/cron/shift-codes` (a cada poucos minutos), `/api/cron/payouts` (semanal) e `/api/cron/reconciliation` (diária)
+5. Apontar um agendador real (GitHub Actions cron — **Opção A escolhida na Etapa 3.2**; Vercel Cron só quando houver deploy Vercel) para as rotas `POST /api/jobs/*/run` com `x-jobs-token` = `secrets.JOBS_RUN_TOKEN`: `/api/jobs/opening-codes/run` + `/api/jobs/closing-codes/run` (a cada poucos minutos), `/api/jobs/weekly-payout/run` (semanal) e `/api/jobs/daily-reconciliation/run` (diária). As rotas antigas `POST /api/cron/*` (protegidas por `x-internal-secret`) continuam existindo e não foram alteradas — ver `findings.md` > "Agendamento de jobs".

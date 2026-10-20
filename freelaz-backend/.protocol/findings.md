@@ -126,6 +126,79 @@ Registro de descobertas e restrições técnicas encontradas ao longo do desenvo
 | **P4** | Política de retry | ✅ **RESOLVIDO** (fonte: https://docs.asaas.com/docs/penalização-de-filas, 2026-10-20) | Backoff progressivo: 0 / 30s / 1m / 3,5m / 5m / 15m / 25m / 1h / 1h / 1h / 1h / 1h / 2h / 2h / 3h; **após 15 falhas consecutivas a fila é pausada** (eventos guardados 14 dias). Sucesso = 2xx. Confirma a premissa do código. |
 | **P5** | Base URL do Sandbox | ⚠️ **RESOLVIDO (doc) / DIVERGÊNCIA NO `.env` MANTIDA** (fonte: https://docs.asaas.com/docs/sandbox, 2026-10-20) | A URL **oficial** é **`https://api-sandbox.asaas.com/v3`**; o `.env` usa `https://sandbox.asaas.com/api/v3` (formato **legado**). Ambos respondem (HTTP 401 sem credencial — alias legado ainda ativo). `src/lib/asaas.ts` tem comentário documentando; **`.env` NÃO alterado** (decisão do usuário: só registrar). |
 
+## Agendamento de jobs (Etapa 3.2)
+
+Os 4 jobs têm **rotas finas** (`POST /api/jobs/<nome>/run`, autenticadas por `x-jobs-token` = `JOBS_RUN_TOKEN`), mas **quem os chama periodicamente é externo ao processo**: o agendador é **infraestrutura**, não código do app. As rotas são a superfície estável; o agendador só as chama.
+
+**Opção escolhida: A — GitHub Actions cron** (recomendada para MVP).
+
+**Justificativa:** o projeto **não tem deploy Vercel definido** (não há `vercel.json`, nem projeto Vercel no repo) → a Opção B não se aplica hoje. GitHub Actions é gratuito em repo público (e generoso em privado), **não depende de deploy**, versiona o cron junto do código e o segredo fica em `secrets.JOBS_RUN_TOKEN` (nunca no repo). Se/quando houver deploy Vercel, a Opção B passa a ser preferível (mais simples) — a troca **não** toca as rotas.
+
+**Exemplo de workflow (`.github/workflows/jobs.yml`)** — chamadas com `curl`; o token vem de secret e **nunca** é impresso:
+
+```yaml
+name: jobs
+on:
+  schedule:
+    # Códigos de turno: a cada 5 min (a janela do service é 55–65min antes)
+    - cron: "*/5 * * * *"
+    # Repasse semanal: segunda 06:00 UTC
+    - cron: "0 6 * * 1"
+    # Reconciliação diária: todo dia 07:00 UTC
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}   # permite rodar manualmente pelo painel do GitHub
+jobs:
+  shift-codes:
+    if: github.event.schedule == '*/5 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: abrir/fechar códigos de turno
+        run: |
+          set -e
+          for job in opening-codes closing-codes; do
+            curl -fsS -X POST "https://SEU_DOMINIO/api/jobs/$job/run" \
+              -H "x-jobs-token: ${{ secrets.JOBS_RUN_TOKEN }}"
+          done
+  weekly-payout:
+    if: github.event.schedule == '0 6 * * 1'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -fsS -X POST "https://SEU_DOMINIO/api/jobs/weekly-payout/run" \
+            -H "x-jobs-token: ${{ secrets.JOBS_RUN_TOKEN }}"
+  daily-reconciliation:
+    if: github.event.schedule == '0 7 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -fsS -X POST "https://SEU_DOMINIO/api/jobs/daily-reconciliation/run" \
+            -H "x-jobs-token: ${{ secrets.JOBS_RUN_TOKEN }}"
+```
+
+**O que NÃO fazer:**
+- **`setInterval`/`node-cron` dentro do processo Next** — não sobrevive a restart/redeploy (Vercel serverless nem mantém o processo vivo), e em múltiplas instâncias o job rodaria N vezes em paralelo. O agendador tem de ser **externo**.
+- **Deixar `JOBS_RUN_TOKEN` vazio em produção** — as rotas respondem 401 e o job nunca roda (o token é obrigatório em produção; ver `.env.example`).
+- **Usar o mesmo segredo do painel admin** (`INTERNAL_API_SECRET`) como token de job — separados de propósito: vazar um não dá o outro.
+- **Colocar o token no repositório ou no YAML** — sempre via `secrets.*`.
+- **Confiar no cron como única garantia de execução** — os jobs são **idempotentes por estado** e podem ser re-disparados com segurança (é o que garante o retry `curl -f`).
+- **Agendar o repasse semanal sem revisar a janela de avaliação** — `processPendingPayouts` já respeita a janela e as guardas de disputa/chargeback; não afrouxar isso no agendador.
+
+- **Rota inexistente → 404:** qualquer `/api/jobs/<nome-desconhecido>/run` responde 404 (comportamento padrão do Next). **Testado.**
+
+### Etapa 3.2 — INSPECT: jobs já implementados em `src/services/`
+
+Levantamento feito **antes** de criar qualquer rota (nenhuma assinatura foi inventada). Cada linha é a função **real** existente.
+
+| Job | Arquivo | Assinatura | Já idempotente? | Retorna |
+| --- | ------- | ---------- | --------------- | ------- |
+| **Código de ABERTURA** | `src/services/codeService.ts` | `generateOpeningCodesDue()` | ✅ **Sim** — só pega contratações `RETIDO` com `openingCode: null` na janela 55–65min; grava uma vez e nunca regrava (a condição `openingCode: null` deixa de casar). Rodar 2x → 2ª vez devolve 0. | `number` (quantidade gerada) |
+| **Código de FECHAMENTO** | `src/services/codeService.ts` | `generateClosingCodesDue()` | ✅ **Sim** — mesma lógica com `closingCode: null` e status `EM_ANDAMENTO` na janela. | `number` |
+| **Repasse semanal** | `src/services/payoutService.ts` | `processPendingPayouts(): Promise<BatchPayoutResult>` | ✅ **Sim** — só pega `CONCLUIDO` sem Payout (ou com FALHOU) fora da janela de avaliação; `releasePayout` devolve o Payout existente se já `CONCLUIDO` (idempotência por `payout.hiringId` único + `idempotencyKey`). | `{ eligible, released: string[], failed: {hiringId,error}[] }` |
+| **Reconciliação diária** | `src/services/reconciliationService.ts` | `runReconciliation(): Promise<ReconciliationReport>` | ✅ **Sim (por natureza)** — **não escreve nada**: só lê e reporta invariantes. Rodar 2x é inofensivo por construção. | `ReconciliationReport` (ok, totals, checks, discrepancies, external) |
+
+- **LACUNA registrada (não inventada):** não existe **agendador** (nenhum cron/`setInterval`/fila no código) nem **registro genérico de execução de job** (não há modelo `JobRun`/`IdempotencyKey` genérico — a única idempotência persistida é `Payout.idempotencyKey`). As rotas antigas (`/api/cron/shift-codes`, `/api/cron/payouts`, `/api/cron/reconciliation`) existem e são protegidas por `x-internal-secret`, mas **não** têm um token dedicado de jobs nem métrica de execução.
+- **Consequência de projeto:** como todos os 4 serviços já são idempotentes por **estado no banco** (condição de elegibilidade que deixa de casar após o efeito), **NÃO** é necessária uma chave de idempotência nova para os jobs — a idempotência é observável e será **testada** (2ª execução → 0 novos efeitos). Envolver com chave sintética (`job:...:2026-10-20`) seria redundante e criaria estado novo sem necessidade; **não foi feito** (registrado como decisão, não como omissão).
+
 - **Divergências reais corrigidas na Etapa 3.1 (P2):**
   1. **`chargeback` lido de `payment.chargeback`** (contrato real); `body.chargeback` no topo é aceito só como **fallback legado**. Antes o parser só lia o topo.
   2. **Campos de data reais**: `disputeStartDate` e `deadlineToSendDisputeDocuments` (o código supunha `createdDate`/`updatedDate`, que **não existem** no objeto). Colunas aditivas novas `providerDisputeStartDate`, `deadlineToSendDisputeDocuments`, `providerDisputeStatus` (nomes legados mantidos).
