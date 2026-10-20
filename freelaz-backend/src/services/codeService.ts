@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma";
 import crypto from "crypto";
 import { setHiringStatus } from "./hiringService";
+import { notifyAndDispatch } from "./notificationService";
 
 /**
  * Códigos de turno — timing exato definido no CLAUDE.md:
@@ -67,11 +68,27 @@ export async function generateOpeningCodesDue() {
   });
 
   for (const hiring of hirings) {
+    const code = generateCode();
     await prisma.hiring.update({
       where: { id: hiring.id },
-      data: { openingCode: generateCode() },
+      data: { openingCode: code },
     });
-    // TODO: notificar o profissional (push/WhatsApp) com o código
+    // Etapa 7: notifica o profissional com o código (in-app + e-mail). Try/catch
+    // para que uma falha de notificação NUNCA derrube o job de códigos.
+    try {
+      await notifyAndDispatch({
+        userId: hiring.professionalId,
+        type: "OPENING_CODE_GENERATED",
+        title: "Seu código de abertura chegou",
+        body: `Mostre este código à empresa ao iniciar o turno: ${code}`,
+        payload: { hiringId: hiring.id, code, jobTitle: hiring.jobTitle },
+        dedupeKey: `opening_code:${hiring.id}`,
+      });
+    } catch (err) {
+      console.warn(
+        `[codeService] falha ao notificar abertura (hiring ${hiring.id}): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   return hirings.length;
@@ -123,11 +140,27 @@ export async function generateClosingCodesDue() {
   });
 
   for (const hiring of hirings) {
+    const code = generateCode();
     await prisma.hiring.update({
       where: { id: hiring.id },
-      data: { closingCode: generateCode() },
+      data: { closingCode: code },
     });
-    // TODO: notificar o profissional com o código de fechamento
+    // Etapa 7: notifica o contratante (é ele quem confere o código no fim do
+    // turno). Try/catch para não derrubar o job.
+    try {
+      await notifyAndDispatch({
+        userId: hiring.contractorId,
+        type: "CLOSING_CODE_GENERATED",
+        title: "Código de fechamento disponível",
+        body: `Peça o código de fechamento ao profissional e confirme-o no app: ${code}`,
+        payload: { hiringId: hiring.id, code, jobTitle: hiring.jobTitle },
+        dedupeKey: `closing_code:${hiring.id}`,
+      });
+    } catch (err) {
+      console.warn(
+        `[codeService] falha ao notificar fechamento (hiring ${hiring.id}): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   return hirings.length;

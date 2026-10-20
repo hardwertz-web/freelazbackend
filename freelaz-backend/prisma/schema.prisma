@@ -89,6 +89,8 @@ model User {
   checkIns              CheckIn[]
   reportsWritten        Report[]      @relation("ReportReporter")
   reportsReceived       Report[]      @relation("ReportReported")
+  notifications         Notification[]
+  notificationPreferences NotificationPreference[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -590,6 +592,11 @@ model Chat {
   closedAt     DateTime? // encerramento automático no status terminal do Hiring
   closeReason  String?
   lastMessageAt DateTime? // ordena a lista de conversas sem varrer as mensagens
+  // Etapa 7 (soft-hide estilo iFood): 2h após a CONCLUSÃO da contratação o
+  // chat some da visão das partes — mas NUNCA é apagado (Message/Chat ficam no
+  // banco) e o ADMIN continua vendo (auditoria). NÃO é preenchido quando há
+  // disputa aberta, Dispute em análise ou chargeback ATIVO correlacionado.
+  hiddenAt     DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -762,4 +769,82 @@ model Report {
   createdAt    DateTime       @default(now())
 
   @@index([status, priority, createdAt])
+}
+
+// ==========================================================================
+// Etapa 7 (Fase B) — Notificações multi-canal
+//
+// 4 eventos do MVP (decisão humana): código de abertura gerado, código de
+// fechamento gerado, proposta/convite recebido e contraproposta recebida.
+// Canais ATIVOS hoje: IN_APP + EMAIL. WHATSAPP fica MODELADO (enum) mas sem
+// provider — o dispatch marca as entregas desse canal como SKIPPED.
+// ==========================================================================
+
+enum NotificationType {
+  OPENING_CODE_GENERATED
+  CLOSING_CODE_GENERATED
+  PROPOSAL_RECEIVED
+  COUNTER_PROPOSAL_RECEIVED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WHATSAPP
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+// Uma notificação = um evento para um destinatário. `dedupeKey` (@unique) é a
+// chave de idempotência: reemissão do mesmo evento (webhook repetido, job
+// rodando 2x) não cria uma segunda notificação nem redispara canais.
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  type      NotificationType
+  title     String
+  body      String
+  payload   Json?
+  dedupeKey String?          @unique
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  deliveries NotificationDelivery[]
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+// Tentativa de entrega de UMA notificação por UM canal. `attemptedAt` é quando
+// o dispatch passou pelo canal; `sentAt` só quando o provedor aceitou.
+model NotificationDelivery {
+  id             String                     @id @default(cuid())
+  notificationId String
+  notification   Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus
+  attemptedAt    DateTime                   @default(now())
+  sentAt         DateTime?
+  error          String?
+
+  @@unique([notificationId, channel])
+}
+
+// Preferência por (usuário, tipo, canal). AUSÊNCIA de linha = habilitado
+// (default true) — o dispatch só desliga quando há uma linha `enabled=false`.
+model NotificationPreference {
+  id      String              @id @default(cuid())
+  userId  String
+  user    User                @relation(fields: [userId], references: [id])
+  type    NotificationType
+  channel NotificationChannel
+  enabled Boolean             @default(true)
+
+  @@unique([userId, type, channel])
 }

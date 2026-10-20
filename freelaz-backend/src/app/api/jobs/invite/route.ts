@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, hasActiveRole } from "@/lib/auth";
 import { parseJobFields } from "@/lib/jobInput";
+import { notifyAndDispatch } from "@/services/notificationService";
 
 /**
  * POST /api/jobs/invite
@@ -69,7 +70,30 @@ export async function POST(req: NextRequest) {
     include: { applications: true },
   });
 
-  // TODO: notificar o profissional (push/WhatsApp) sobre a proposta recebida
+  // Etapa 7: notifica o profissional-alvo da proposta (in-app + e-mail).
+  // Try/catch — falha de notificação não derruba o convite.
+  const application = jobPosting.applications[0];
+  if (application) {
+    try {
+      await notifyAndDispatch({
+        userId: targetProfessionalId,
+        type: "PROPOSAL_RECEIVED",
+        title: "Você recebeu uma proposta",
+        body: `Proposta para a vaga "${jobPosting.title}".`,
+        payload: {
+          applicationId: application.id,
+          jobPostingId: jobPosting.id,
+          jobTitle: jobPosting.title,
+          contractorName: user.tradeName ?? user.name,
+        },
+        dedupeKey: `proposal:${application.id}`,
+      });
+    } catch (err) {
+      console.warn(
+        `[invite] falha ao notificar proposta (application ${application.id}): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
 
   return NextResponse.json({ jobPosting }, { status: 201 });
 }

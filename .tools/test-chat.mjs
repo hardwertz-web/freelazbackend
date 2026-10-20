@@ -511,6 +511,139 @@ async function main() {
   check(turnHistory.json?.chat?.status === "ABERTO", `chat do turno segue ABERTO (${turnHistory.json?.chat?.status})`);
 
   // ----------------------------------------------------------------------
+  section("§8. readAt (PATCH /api/hirings/:id/chat/messages/read)");
+  const hRead = await newHiring("AGUARDANDO_PAGAMENTO");
+  await confirmHiring(hRead, 1); // ABERTO
+  await api("POST", `/api/hirings/${hRead.id}/chat/messages`, {
+    cookie: contractorCookie,
+    body: { body: "Mensagem 1 (contratante para pro)" },
+  });
+  await api("POST", `/api/hirings/${hRead.id}/chat/messages`, {
+    cookie: contractorCookie,
+    body: { body: "Mensagem 2 (contratante para pro)" },
+  });
+  const readPatchPro = await api("PATCH", `/api/hirings/${hRead.id}/chat/messages/read`, {
+    cookie: proCookie,
+  });
+  check(readPatchPro.status === 200, `profissional marca lidas → 200 (HTTP ${readPatchPro.status})`);
+  check(readPatchPro.json?.marked === 2, `marcou 2 mensagens não lidas (${readPatchPro.json?.marked})`);
+  const chatReadAfter = await prisma.chat.findUnique({ where: { hiringId: hRead.id }, include: { messages: { include: { sender: true } } } });
+  const unreadByPro = chatReadAfter?.messages.filter((m) => m.senderId !== pro.id && m.readAt === null) ?? [];
+  check(unreadByPro.length === 0, `todas as mensagens recebidas pelo pro têm readAt preenchido (${unreadByPro.length})`);
+  // Novo envio após marcar: só a nova não lida conta
+  await api("POST", `/api/hirings/${hRead.id}/chat/messages`, {
+    cookie: contractorCookie,
+    body: { body: "Mensagem 3 (nova)" },
+  });
+  const readPatchPro2 = await api("PATCH", `/api/hirings/${hRead.id}/chat/messages/read`, {
+    cookie: proCookie,
+  });
+  check(readPatchPro2.status === 200, `profissional marca de novo → 200 (HTTP ${readPatchPro2.status})`);
+  check(readPatchPro2.json?.marked === 1, `marcou apenas 1 mensagem nova (${readPatchPro2.json?.marked})`);
+
+  // ----------------------------------------------------------------------
+  section("§9. Soft-hide: 2h após conclusão → hiddenAt preenchido");
+  const hHide = await newHiring("AGUARDANDO_PAGAMENTO");
+  await confirmHiring(hHide, 1);
+  await prisma.hiring.update({ where: { id: hHide.id }, data: { openingCode: "555555" } });
+  await api("POST", `/api/hirings/${hHide.id}/codes`, {
+    cookie: contractorCookie,
+    body: { kind: "OPENING", code: "555555" },
+  });
+  await prisma.hiring.update({ where: { id: hHide.id }, data: { closingCode: "666666", completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) } });
+  await api("POST", `/api/hirings/${hHide.id}/codes`, {
+    cookie: contractorCookie,
+    body: { kind: "CLOSING", code: "666666" },
+  });
+  const hHideAfter = await prisma.hiring.findUnique({ where: { id: hHide.id } });
+  check(hHideAfter.status === "CONCLUIDO", `hiring CONCLUIDO com completedAt no passado (${hHideAfter.completedAt})`);
+  // Roda o job de hide
+  const hideRes = await api("POST", "/api/jobs/hide-concluded-chats/run", {
+    headers: { "x-jobs-token": process.env.JOBS_RUN_TOKEN || "" },
+  });
+  check(hideRes.status === 200, `job hide-concluded-chats → 200 (HTTP ${hideRes.status})`);
+  const chatHide = await prisma.chat.findUnique({ where: { hiringId: hHide.id } });
+  check(chatHide?.hiddenAt != null, `hiddenAt preenchido após job (${chatHide?.hiddenAt})`);
+  // Participante (pro): GET 404
+  const getHiddenPro = await api("GET", `/api/hirings/${hHide.id}/chat`, { cookie: proCookie });
+  check(getHiddenPro.status === 404, `GET chat oculto (pro) → 404 (HTTP ${getHiddenPro.status})`);
+  // POST 404
+  const postHiddenPro = await api("POST", `/api/hirings/${hHide.id}/chat/messages`, {
+    cookie: proCookie,
+    body: { body: "tentando escrever após ocultar" },
+  });
+  check(postHiddenPro.status === 404, `POST chat oculto → 404 (HTTP ${postHiddenPro.status})`);
+  // Admin: vê normalmente (200) mesmo oculto
+  const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || readEnv("INTERNAL_API_SECRET");
+  const getAdminHidden = await api("GET", `/api/admin/hirings/${hHide.id}/chat`, {
+    headers: INTERNAL_SECRET ? { "x-internal-secret": INTERNAL_SECRET } : {},
+  });
+  check(getAdminHidden.status === 200, `GET admin chat oculto → 200 (HTTP ${getAdminHidden.status})`);
+  check(getAdminHidden.json?.chat?.hiddenAt != null, `admin vê hiddenAt (${getAdminHidden.json?.chat?.hiddenAt})`);
+
+  // ----------------------------------------------------------------------
+  section("§10. Não oculta com disputa aberta/em análise");
+  const hDisp = await newHiring("AGUARDANDO_PAGAMENTO");
+  await confirmHiring(hDisp, 1);
+  await prisma.hiring.update({ where: { id: hDisp.id }, data: { openingCode: "777777" } });
+  await api("POST", `/api/hirings/${hDisp.id}/codes`, {
+    cookie: contractorCookie,
+    body: { kind: "OPENING", code: "777777" },
+  });
+  await prisma.hiring.update({ where: { id: hDisp.id }, data: { closingCode: "888888", completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) } });
+  await api("POST", `/api/hirings/${hDisp.id}/codes`, {
+    cookie: contractorCookie,
+    body: { kind: "CLOSING", code: "888888" },
+  });
+  // Abre disputa (via rota) — garante flag
+  const disp = await api("POST", `/api/hirings/${hDisp.id}/dispute`, {
+    cookie: contractorCookie,
+    body: { reason: "Qualidade do serviço" },
+  });
+  check(disp.status === 201, `abre disputa → 201 (HTTP ${disp.status})`);
+  const hideDisp = await api("POST", "/api/jobs/hide-concluded-chats/run", {
+    headers: { "x-jobs-token": process.env.JOBS_RUN_TOKEN || "" },
+  });
+  check(hideDisp.status === 200, `job hide (com disputa) → 200 (HTTP ${hideDisp.status})`);
+  const chatDisp = await prisma.chat.findUnique({ where: { hiringId: hDisp.id } });
+  check(chatDisp?.hiddenAt === null, `chat NÃO ocultado com disputa (hiddenAt=null)`);
+  // Participante vê 200
+  const getDispPro = await api("GET", `/api/hirings/${hDisp.id}/chat`, { cookie: proCookie });
+  check(getDispPro.status === 200, `chat visível para partes com disputa (HTTP ${getDispPro.status})`);
+
+  // ----------------------------------------------------------------------
+  section("§11. Não oculta com chargeback ATIVO");
+  const hCb = await newHiring("AGUARDANDO_PAGAMENTO");
+  await confirmHiring(hCb, 1);
+  await prisma.hiring.update({ where: { id: hCb.id }, data: { openingCode: "999999" } });
+  await api("POST", `/api/hirings/${hCb.id}/codes`, {
+    cookie: contractorCookie,
+    body: { kind: "OPENING", code: "999999" },
+  });
+  await prisma.hiring.update({ where: { id: hCb.id }, data: { closingCode: "000000", completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) } });
+  await api("POST", `/api/hirings/${hCb.id}/codes`, {
+    cookie: contractorCookie,
+    body: { kind: "CLOSING", code: "000000" },
+  });
+  // Insere chargeback ATIVO
+  await prisma.chargebackEvent.create({
+    data: {
+      paymentId: hCb.providerPaymentId,
+      externalStatus: "IN_DISPUTE",
+      state: "ATIVO",
+      hiringId: hCb.id,
+    },
+  });
+  const hideCb = await api("POST", "/api/jobs/hide-concluded-chats/run", {
+    headers: { "x-jobs-token": process.env.JOBS_RUN_TOKEN || "" },
+  });
+  check(hideCb.status === 200, `job hide (com chargeback) → 200 (HTTP ${hideCb.status})`);
+  const chatCb = await prisma.chat.findUnique({ where: { hiringId: hCb.id } });
+  check(chatCb?.hiddenAt === null, `chat NÃO ocultado com chargeback ATIVO (hiddenAt=null)`);
+  const getCbPro = await api("GET", `/api/hirings/${hCb.id}/chat`, { cookie: proCookie });
+  check(getCbPro.status === 200, `chat visível para partes com chargeback (HTTP ${getCbPro.status})`);
+
+  // ----------------------------------------------------------------------
   console.log(`\n==== CHAT: ${pass} OK / ${fail} FALHA ====`);
   await prisma.$disconnect();
   if (fail > 0) process.exit(1);

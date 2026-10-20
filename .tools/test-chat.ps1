@@ -69,6 +69,7 @@ if (-not (Get-PortPid 5432)) {
 # ---- 1. Salva ambiente e para o server atual -----------------------------
 $savedKey = $env:ASAAS_API_KEY
 $savedUrl = $env:ASAAS_API_URL
+$savedJobs = $env:JOBS_RUN_TOKEN
 Stop-Port $APP_PORT
 Stop-Port $MOCK_PORT
 
@@ -91,6 +92,7 @@ try {
   $env:ASAAS_API_KEY = "aact_mock_etapa6_chat_sem_valor_real"
   $env:ASAAS_API_URL = "http://127.0.0.1:$MOCK_PORT/v3"
   $env:PAYOUT_SANDBOX = "1"
+  $env:JOBS_RUN_TOKEN = "jobs-token-de-teste-etapa7-nao-usar-em-producao-000"
   Remove-Item $devLog, $devErr -Force -ErrorAction SilentlyContinue
   Start-Process -FilePath $node `
     -ArgumentList @((Join-Path $BackendDir "node_modules\next\dist\bin\next"), "dev", "--port", "$APP_PORT") `
@@ -104,6 +106,8 @@ try {
 
   Write-Host "`n### 3. test-chat.mjs #########################"
   $env:MOCK_ASAAS = "http://127.0.0.1:$MOCK_PORT"
+  $env:JOBS_RUN_TOKEN = "jobs-token-de-teste-etapa7-nao-usar-em-producao-000"
+  $env:INTERNAL_API_SECRET = (Select-String -Path (Join-Path $BackendDir ".env") -Pattern '^\s*INTERNAL_API_SECRET\s*=\s*(.+)$' | Select-Object -First 1).Matches.Groups[1].Value.Trim().Trim('"')
   & $node (Join-Path $tools "test-chat.mjs")
   if ($LASTEXITCODE -eq 0) { $failed = $false }
 } finally {
@@ -116,6 +120,9 @@ try {
   else { $env:ASAAS_API_KEY = $savedKey }
   if ($null -eq $savedUrl) { Remove-Item Env:ASAAS_API_URL -ErrorAction SilentlyContinue }
   else { $env:ASAAS_API_URL = $savedUrl }
+  if ($null -eq $savedJobs) { Remove-Item Env:JOBS_RUN_TOKEN -ErrorAction SilentlyContinue }
+  else { $env:JOBS_RUN_TOKEN = $savedJobs }
+  Remove-Item Env:INTERNAL_API_SECRET -ErrorAction SilentlyContinue
 
   Write-Host "`n### 4. Dev server normal restaurado ##########"
   Remove-Item $devLog, $devErr -Force -ErrorAction SilentlyContinue

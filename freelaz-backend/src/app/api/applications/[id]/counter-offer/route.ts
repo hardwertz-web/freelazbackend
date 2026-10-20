@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApplicationParty } from "@/lib/applicationAccess";
+import { notifyAndDispatch } from "@/services/notificationService";
 
 /**
  * POST /api/applications/:id/counter-offer
@@ -44,7 +45,32 @@ export async function POST(
     },
   });
 
-  // TODO: notificar a outra parte sobre a nova oferta
+  // Etapa 7: notifica a OUTRA parte (quem não propôs). Try/catch — falha de
+  // notificação não derruba a contraproposta.
+  const targetUserId =
+    access.side === "CONTRACTOR"
+      ? access.application.professionalId
+      : access.application.jobPosting.contractorId;
+  try {
+    await notifyAndDispatch({
+      userId: targetUserId,
+      type: "COUNTER_PROPOSAL_RECEIVED",
+      title: "Você recebeu uma contraproposta",
+      body: `Nova proposta de R$ ${(valueCents / 100).toFixed(2)} para a vaga "${access.application.jobPosting.title}".`,
+      payload: {
+        applicationId: updated.id,
+        jobPostingId: access.application.jobPostingId,
+        jobTitle: access.application.jobPosting.title,
+        valueCents,
+        counterOfferBy: access.side,
+      },
+      dedupeKey: `counter:${updated.id}:${access.side}`,
+    });
+  } catch (err) {
+    console.warn(
+      `[counter-offer] falha ao notificar (application ${updated.id}): ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 
   return NextResponse.json({ application: updated });
 }

@@ -16,6 +16,9 @@ coverage/
 # --- Uploads de usuários (dados de runtime, não são código) ---
 freelaz-backend/uploads/
 
+# --- Saídas de teste (runtime, não são fonte) ---
+.tools/tmp/
+
 # --- Toolchain e dados locais (baixados/gerados: não são fonte) ---
 .tools/node-v20.20.2-win-x64/
 .tools/PortableGit/

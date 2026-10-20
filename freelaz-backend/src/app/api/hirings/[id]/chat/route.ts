@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHiringParticipant } from "@/lib/hiringAccess";
+import { isAdmin } from "@/lib/auth";
+import { getChatForUser } from "@/services/chatService";
 
 const MAX_MESSAGES_PER_PAGE = 200;
 
@@ -22,6 +24,17 @@ export async function GET(
   const access = await requireHiringParticipant(params.id);
   if (access.error) return NextResponse.json(access.error.body, { status: access.error.status });
   const { hiring } = access;
+
+  // Etapa 7: chat soft-hide. Se o chat foi ocultado (2h após a conclusão), as
+  // partes veem 404 — o ADMIN continua vendo (auditoria).
+  const visibility = await getChatForUser(
+    hiring.id,
+    access.user.id,
+    isAdmin(access.user)
+  );
+  if (visibility.hidden) {
+    return NextResponse.json(visibility.error.body, { status: visibility.error.status });
+  }
 
   // Contratações antigas podem não ter chat criado; criar sob demanda mantém a
   // leitura estável em vez de devolver 404.

@@ -32,8 +32,9 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  # Códigos de turno (abertura + fechamento). O service é idempotente por
-  # estado: rodar de novo não regrava código já gerado.
+  # Códigos de turno (abertura + fechamento) e soft-hide do chat. Os services
+  # são idempotentes: rodar de novo não regrava código já gerado nem reoculta
+  # chat já oculto.
   shift-codes:
     if: github.event.schedule == '*/15 * * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -46,6 +47,18 @@ jobs:
               -H "x-jobs-token: ${JOBS_RUN_TOKEN}" \
               --max-time 60
           done
+        env:
+          JOBS_URL: ${{ secrets.JOBS_URL }}
+          JOBS_RUN_TOKEN: ${{ secrets.JOBS_RUN_TOKEN }}
+
+      # Chat soft-hide (Etapa 7 — estilo iFood): oculta (soft) os chats de
+      # contratações CONCLUIDAS há mais de 2h, exceto com disputa/chargeback
+      # ativo. NÃO apaga nada; o ADMIN continua enxergando.
+      - name: ocultar chats de contratações concluídas
+        run: |
+          curl -fsS -X POST "${JOBS_URL}/api/jobs/hide-concluded-chats/run" \
+            -H "x-jobs-token: ${JOBS_RUN_TOKEN}" \
+            --max-time 60
         env:
           JOBS_URL: ${{ secrets.JOBS_URL }}
           JOBS_RUN_TOKEN: ${{ secrets.JOBS_RUN_TOKEN }}

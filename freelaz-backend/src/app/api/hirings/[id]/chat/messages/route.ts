@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHiringParticipant } from "@/lib/hiringAccess";
-import { syncChatToHiringStatus } from "@/services/chatService";
+import { isAdmin } from "@/lib/auth";
+import { getChatForUser, syncChatToHiringStatus } from "@/services/chatService";
 
 const MAX_BODY_LENGTH = 2000;
 
@@ -20,6 +21,13 @@ export async function POST(
   const access = await requireHiringParticipant(params.id);
   if (access.error) return NextResponse.json(access.error.body, { status: access.error.status });
   const { hiring, user } = access;
+
+  // Etapa 7: chat oculto (soft-hide) responde 404 ANTES de qualquer checagem de
+  // status — não faz sentido dizer "conversa encerrada" para algo que sumiu.
+  const visibility = await getChatForUser(hiring.id, user.id, isAdmin(user));
+  if (visibility.hidden) {
+    return NextResponse.json(visibility.error.body, { status: visibility.error.status });
+  }
 
   let body: Record<string, unknown>;
   try {
