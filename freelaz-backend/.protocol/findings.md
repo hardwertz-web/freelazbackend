@@ -335,7 +335,30 @@ Modelos/enums existentes em `prisma/schema.prisma` (765 linhas; 45 declarações
 | `test-idempotencia.mjs/.ps1` | 11–12 cenários de idempotência de cobrança (mock Asaas) |
 | `test-chargeback.mjs/.ps1` | 10 seções (auth, durabilidade, chargeback, bloqueio, D6=A2) |
 | `test-jobs.mjs/.ps1` | 7 seções (jobs + D8=A2) |
-| **AUSENTE** | **Sem teste de**: chat (mensagens), avaliação ponta a ponta via HTTP, notificação, config admin |
+| `test-chat.mjs/.ps1` | 7 seções (bloqueio pré-pagamento, ABERTO pós-pagamento, envio/leitura, autorização, pós-cancelamento, sync de status, X4→X5) |
+| `test-evaluation.mjs/.ps1` | 8 seções (janela 2h, libera após, unicidade por autor, média, faixa de rating, comentário, autorização, exposição da média) |
+| **AUSENTE** | **Sem teste de**: notificação (WhatsApp/canal), config admin (AD1) |
+
+### 4b. Comportamento real de chat e avaliação (Etapa 6 — Fase A, INSPECT)
+
+> Registro do **comportamento que existe hoje** (não do que deveria ser), para ancorar os testes HTTP da Etapa 6 — Fase A. Evidência por arquivo.
+
+**Chat (P4).** O chat **não tem estado próprio**: `chatService.chatStatusForHiring` (`src/services/chatService.ts:16-30`) deriva `Chat.status` do status da contratação — `RETIDO | EM_ANDAMENTO | CONCLUIDO | EM_DISPUTA → ABERTO`; `CANCELADO | LIBERADO → ENCERRADO`; `AGUARDANDO_PAGAMENTO` (default) → `AGUARDANDO_PAGAMENTO`. `syncChatToHiringStatus` (idempotente) cria o chat sob demanda e só grava `openedAt`/`closedAt`/`closeReason` na primeira transição. **Acesso:** só as duas partes — `requireHiringParticipant` (`src/lib/hiringAccess.ts:35+`) devolve **403** para terceiro. **`GET /api/hirings/[id]/chat`** (`chat/route.ts`) exige participante, cria o chat se não existir e devolve `chat.status` + histórico paginado por cursor (`before`, `limit` ≤ 200, ordem cronológica) com `mine` calculado pela sessão; **enquanto `AGUARDANDO_PAGAMENTO` o histórico vem vazio por definição** (não é 403). **`POST /api/hirings/[id]/chat/messages`** (`chat/messages/route.ts`) exige participante, valida `body` de 1..2000 chars (**422** se vazio/longo) e **só aceita com `chat.status === "ABERTO"`**, senão **409** ("O chat é liberado depois que o pagamento for confirmado" / "Esta conversa foi encerrada"); o autor vem **sempre da sessão** (`user.id` — não há `senderId` no corpo), grava `Message` + atualiza `Chat.lastMessageAt` em transação e re-sincroniza o status ao final. **`readAt`: NÃO existe rota de "marcar como lida"** — `readAt` só é **lido** (`chat/route.ts:69`, `chat/messages/route.ts:81`), nunca escrito; hoje permanece `null`. **Após cancelamento** o chat vira `ENCERRADO` (mensagens históricas continuam legíveis pelo `GET`; novo envio → **409**).
+
+**Avaliação (X7/AV1).** `evaluationService.createEvaluation` (`src/services/evaluationService.ts:22-90`) valida `rating` inteiro 1..5 (senão `Error`), `comment` ≤ 500 chars (`null` se vazio após trim), exige que o autor seja `contractorId` ou `professionalId` (senão `Error` "Você não participa…"), exige `status ∈ {CONCLUIDO, LIBERADO}` e `closingCodeUsedAt` presente, e **libera só após `closingCodeUsedAt + 2h`** (`EVALUATION_WINDOW_MS` = 2h, constante). Cada parte avalia **uma vez** por contratação: `@@unique([hiringId, authorId])`; a 2ª tentativa do mesmo autor cai em `P2002 → Error` "Você já avaliou esta contratação". Ao criar, atualiza `ratingAverage` do alvo (média de todas as avaliações recebidas, recalculada na **mesma transação**) em `professionalProfile` **e** `contractorProfile`. **`POST /api/evaluations`** (`evaluations/route.ts`) usa `requireUser`, **mapeia TODO erro do serviço para 400** (não há 409/403 distintos). Existe `listEvaluationsReceived` no serviço, mas **não há rota de leitura** — a média é exposta por `ratingAverage` no perfil. **`reliabilityService` é métrica separada** (a avaliação não toca confiabilidade).
+
+### 4c. Resultado dos testes HTTP de chat e avaliação (Etapa 6 — Fase A)
+
+**Cobertura adicionada** (nenhuma linha de `src/`/`prisma/` tocada — só `.tools/`):
+- `test-chat.mjs`/`test-chat.ps1` — 7 seções, **61 OK / 0 FALHA**.
+- `test-evaluation.mjs`/`test-evaluation.ps1` — 8 seções, **48 OK / 0 FALHA**.
+- `run-all-tests.ps1` passou a rodar `11/12 = test-chat` e `12/12 = test-evaluation`.
+
+**Comportamentos confirmados (observados, não assumidos):**
+- Chat: `AGUARDANDO_PAGAMENTO` → GET 200 com histórico vazio e POST **409** ("O chat é liberado depois que o pagamento for confirmado"); após `PAYMENT_CONFIRMED` → `ABERTO` com `openedAt`; envio cria `Message` com autor da **sessão** (`senderId` do corpo é **ignorado**); terceiro recebe **403** no GET e no POST; cancelar → `ENCERRADO` com histórico **legível** e envio **409** ("Esta conversa foi encerrada"); `RETIDO→EM_ANDAMENTO→CONCLUIDO` mantém o chat `ABERTO` (só encerra em CANCELADO/LIBERADO).
+- Avaliação: antes da janela de 2h → **400**; sem `closingCodeUsedAt` → **400**; após a janela → **201**; 2ª avaliação do mesmo autor → **400** ("Você já avaliou esta contratação"), índice único `(hiringId, authorId)` confirmado no banco; outro lado ainda avalia; `ratingAverage` do `professionalProfile` e do `contractorProfile` = média real; rating 0/6/-1/4.5 → **400**; comentário ausente/em branco → `null`, com texto → **trim**; > 500 chars → **400**; terceiro → **400** ("Você não participa…"); sem sessão → **401**; `ratingAverage` **exposto** em `GET /api/profile/professional`.
+
+**Bugs encontrados:** nenhum. Todo o comportamento observado coincide com o mapa desta seção. As lacunas remanescentes de chat/avaliação são **limitações de produto** já registradas na tabela mestre (`readAt` nunca marcado; sem avaliação cega; sem rota de leitura de avaliações) — **não são bugs**.
 
 ### 5. Tabela mestre — nó do fluxograma × código
 
@@ -370,7 +393,7 @@ Modelos/enums existentes em `prisma/schema.prisma` (765 linhas; 45 declarações
 | **P1** | Checkout (Asaas, não mais MP) | `Hiring`, `ChargeAttempt` | `chargeService` | `POST /payments/create` | fase1c L, test-idempotencia | **IMPLEMENTADO** | — (fluxograma diz "Mercado Pago" — já migrado p/ Asaas) | — |
 | **P2** | Pagamento aprovado? | `AsaasEvent`, `Hiring.status`, `LedgerEntry` (RETENCAO) | `asaasEventService`, `ledgerService` | `POST /webhooks/asaas` | fase4 §1/§1b | **IMPLEMENTADO** | — | — |
 | **P3** | Vaga some do marketplace (PREENCHIDA) | `JobPosting.status=PREENCHIDA` | `asaasEventService` | `POST /webhooks/asaas` | fase4 | **IMPLEMENTADO** | — | — |
-| **P4** | Chat desbloqueia | `Chat.status=ABERTO` | `chatService.syncChatToHiringStatus` | `GET /hirings/[id]/chat` | fase2 §6, fase3 | **PARCIAL** | Rota de chat existe mas **sem teste HTTP dedicado** (fase2 sincroniza status; não testa envio/leitura de mensagem) | Chat: tempo real ou polling? mensagens persistem após cancelamento? (implícita no código: persistem como histórico — chat vira ENCERRADO) |
+| **P4** | Chat desbloqueia | `Chat.status=ABERTO` | `chatService.syncChatToHiringStatus` | `GET /hirings/[id]/chat`, `POST /hirings/[id]/chat/messages` | fase2 §6, fase3, test-chat §1–§7 | **IMPLEMENTADO** | Sem flag de **anexos**, tempo real nem rota de "marcar como lida" (`readAt` permanece `null` — **limitação de produto**: decisões 5–7) | Chat: tempo real ou polling? mensagens persistem após cancelamento? (implícita no código: persistem como histórico — chat vira ENCERRADO) |
 | **X1** | 1h antes: código de abertura gerado | `Hiring.openingCode` | `codeService.generateOpeningCodesDue` | `POST /jobs/opening-codes/run` | fase3 §3, test-jobs | **IMPLEMENTADO** | Profissional **não é notificado** com o código (TODO) | Como o profissional recebe o código? (push/WhatsApp/SMS — Fase 6) |
 | **X2** | Trabalho em andamento | `Hiring.status=EM_ANDAMENTO` | `markOpeningCodeUsed` | `POST /hirings/[id]/codes` | fase3 §3 | **IMPLEMENTADO** | Check-in não impede nem valida (só evidência) | Check-in é obrigatório para iniciar? |
 | **X3** | 1h antes do fim: código de fechamento | `Hiring.closingCode` | `codeService.generateClosingCodesDue` | `POST /jobs/closing-codes/run` | fase3 §3, test-jobs | **IMPLEMENTADO** | Notificação ausente (mesmo TODO) | (mesma pergunta de X1) |
@@ -380,7 +403,7 @@ Modelos/enums existentes em `prisma/schema.prisma` (765 linhas; 45 declarações
 | **R1** | Vaga reabre ("Retomar vaga") | `JobPosting.status=ABERTA` | `reopenJobPosting` | `GET /jobs/[id]/resume` | fase2 §8 | **IMPLEMENTADO** | — | — |
 | **R2** | Filtra suplentes por conflito de agenda | `Application` + `Hiring` (overlap startsAt/endsAt) | `listSubstitutes` | `GET /jobs/[id]/resume` | fase2 §8 | **IMPLEMENTADO** | Só cobre sobreposição de contratação confirmada | Suplente é notificado automaticamente ou a empresa reescolhe? |
 | **X7** | 2h depois: avaliação libera | `Hiring.closingCodeUsedAt` (janela 2h) | `evaluationService.evaluationUnlockAt`, `isEvaluationUnlocked` | `POST /evaluations` | fase4 §6 | **PARCIAL** | Janela 2h é constante no código; avaliação não testada via HTTP ponta a ponta | Janela de 2h está fechada? timeout máximo para avaliar? |
-| **AV1** | Avaliação mútua (1–5 + comentário) | `Evaluation` (rating, comment, unique por hiring+author) | `evaluationService.createEvaluation` | `POST /evaluations` | fase4 §6 | **PARCIAL** | Sem flag de "cega"; sem rota de **leitura** de avaliações (só `POST`); média (`ratingAverage`) atualizada mas exibição não definida | Avaliação é **cega** (só revela quando os dois avaliam)? média exibida onde? |
+| **AV1** | Avaliação mútua (1–5 + comentário) | `Evaluation` (rating, comment, unique por hiring+author) | `evaluationService.createEvaluation` | `POST /evaluations` | fase4 §6, test-evaluation §1–§8 | **IMPLEMENTADO** | Sem flag de **cega** (**limitação de produto**: decisão 8); sem rota de **leitura** de avaliações (só `POST`) — média (`ratingAverage`) exposta no perfil (**limitação de produto**: decisão 10) | Avaliação é **cega** (só revela quando os dois avaliam)? média exibida onde? |
 | **FN1** | Saldo liberado (LedgerEntry) | `LedgerEntry.LIBERACAO` | `ledgerService.recordRelease` | `POST /payouts/release` | fase3 §5/§7 | **IMPLEMENTADO** | — | — |
 | **FN2** | Repasse Pix ao profissional | `Payout`, `providerTransferId` | `payoutService.releasePayout`/`processPendingPayouts` | `POST /payouts/release`, `/jobs/weekly-payout/run` | fase3 §5 | **IMPLEMENTADO** | Produção pendente (chave real + 1 transferência baixo valor) | — |
 | **FN3** | Extrato / Carteira | *(calculado)* | `walletService` | `GET /wallet` | fase3 §1 | **PARCIAL** | Sem tela; taxa de saque é placeholder (100 bps) | Taxa do saque instantâneo: valor final? (hoje 1% placeholder) |
@@ -449,8 +472,8 @@ Sugestão de sequência (1 frase de justificativa cada; **não implementar**):
 
 1. **Configurações financeiras editáveis (AD1)** — é dinheiro já em produção no código (comissão/boost hardcoded) e destrava decisão 4; sem tabela nova complexa.
 2. **Notificação (WhatsApp/canal)** — hoje os jobs geram códigos que ninguém recebe (X1/X3) e propostas ficam sem aviso; é o maior atrito real do fluxo.
-3. **Chat com teste HTTP dedicado (P4)** — já existe; falta prova ponta a ponta e decisão 5–7; é o canal central entre as partes.
-4. **Avaliação ponta a ponta (X7/AV1)** — já existe; falta prova via HTTP e decisões 8–10 (cega/janela/média).
+3. **Chat** — já existe e agora tem **prova HTTP ponta a ponta** (Etapa 6 — Fase A); o que falta são as decisões 5–7 (tempo real/anexos/leitura).
+4. **Avaliação (X7/AV1)** — já existe e agora tem **prova HTTP ponta a ponta** (Etapa 6 — Fase A); faltam as decisões 8–10 (cega/janela/média).
 5. **Cancelamento estruturado (X6)** — decisões 19–20 definem multas (mudam dinheiro) antes de qualquer código.
 6. **Modalidade da vaga (H2)** + **suplentes (R2)** — dependem das decisões 2 e 17–18.
 7. **Frontend/telas (H, V1, V5p, FN3)** — **bloqueado** por decisão 1 (protótipo visual ausente); por isso fica por último apesar de ser a face do produto.

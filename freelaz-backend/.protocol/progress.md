@@ -605,3 +605,23 @@ Cenários 11 (cliente 1× e reutilizado) e 12 (exclusão fantasma) — aditivos 
 **Não alterados:** qualquer arquivo em `src/`, `prisma/`, `.tools/*.mjs|*.ps1`, `.env`, migrações existentes.
 
 **Estado dos checks (executados, não declarados):** `tsc --noEmit` exit **0**; `npm run build` exit **0**. Nenhuma linha de código de produção escrita.
+
+## Sessao 25 - Etapa 6 - Fase A: cobertura HTTP de chat + avaliacao
+
+**Escopo autorizado:** adicionar testes de integracao HTTP ponta a ponta para as duas areas que existem no codigo mas nao tinham cobertura HTTP dedicada - **chat** e **avaliacao**. **Nenhuma feature nova. Nenhuma decisao de produto.** Alteracoes restritas a `.tools/` e `.protocol/`.
+
+**Feito:**
+1. **[INSPECT]** - secao nova **"4b. Comportamento real de chat e avaliacao"** em `findings.md`: 1 paragrafo por area ancorado em arquivo/linha (`chatService.ts`, `chat/route.ts`, `chat/messages/route.ts`, `evaluationService.ts`, `evaluations/route.ts`, `profile/professional/route.ts`). Achados: `readAt` nunca e escrito (nao existe rota de "marcar como lida"); `senderId` do corpo e ignorado (autor sempre da sessao); chat so aceita POST com `ABERTO` (senao 409); `POST /evaluations` mapeia TODO erro do servico para **400**; `ratingAverage` e exposto em `GET /api/profile/professional`.
+2. **[TEST-CHAT]** - `.tools/test-chat.mjs` + `.tools/test-chat.ps1` (7 secoes). Sobe dev server apontando para o mock do Asaas (porta 4011) com `PAYOUT_SANDBOX=1`; restaura ao final. **61 OK / 0 FALHA.**
+3. **[TEST-AVAL]** - `.tools/test-evaluation.mjs` + `.tools/test-evaluation.ps1` (8 secoes). Mock na porta 4012. **48 OK / 0 FALHA.**
+4. **[TEST]** - `run-all-tests.ps1` agora roda **11/12 = test-chat** e **12/12 = test-evaluation** (passos 1-10 renumerados para /12). Exit code encadeado mantido.
+5. **[DOC]** - `findings.md`: linhas **P4** e **AV1** promovidas de `PARCIAL` para **IMPLEMENTADO** (com as 4 evidencias: schema+service+rota+teste), com as limitacoes de produto explicitas (`readAt` nunca marcado / sem avaliacao cega / sem rota de leitura). Inventario de testes atualizado; secao nova **"4c. Resultado dos testes"**; ordem sugerida (Etapa 6+) ajustada.
+6. **[TEST]** - `npx tsc --noEmit`, `npm run build`, `.tools/run-all-tests.ps1` (detalhe abaixo).
+
+**Bugs encontrados:** nenhum. Todo o comportamento observado coincide com o mapa; as lacunas remanescentes sao limitacoes de produto ja registradas (nao sao bugs).
+
+**Arquivos criados:** `.tools/test-chat.mjs`, `.tools/test-chat.ps1`, `.tools/test-evaluation.mjs`, `.tools/test-evaluation.ps1`.
+**Arquivos alterados:** `.tools/run-all-tests.ps1` (11/12 + 12/12), `.protocol/{findings.md,progress.md,task_plan.md}`.
+**NAO alterados:** qualquer arquivo em `src/` ou `prisma/`; `payoutService.ts`, `asaasEventService.ts`, `chargebackEscalationService.ts`, `jobsStartup.ts`; migracoes existentes; `.env` real.
+
+**Procedimento de .env:** a `.env` tinha `ASAAS_API_KEY` preenchida; foi esvaziada SOMENTE para a bateria local (guard 503), com backup em `%TEMP%\freelaz-env-backup-etapa6a.env` e **restaurada ao final**.
