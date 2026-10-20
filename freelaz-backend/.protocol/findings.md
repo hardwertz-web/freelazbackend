@@ -242,6 +242,229 @@ Novo service `chargebackEscalationService.ts` (`escalateChargebacksNearDeadline`
 provedor. Log estruturado sem PII (`vencendo=N vencidos=M`). Schedule diário `0 5 * * *`
 no `.github/workflows/jobs.yml` (após a reconciliação).
 
+## Mapa do fluxograma × código (Etapa 5 — INSPECT)
+
+> **Sessão de LEITURA pura (2026-10-20).** Nenhuma linha de código de produção foi escrita.
+> Fonte dos nós: `Freelaz — Fluxograma.html` (raiz do repo). `Status ∈ {IMPLEMENTADO, PARCIAL,
+> AUSENTE, N/A}`. **IMPLEMENTADO** exige as 4 evidências (schema + service + rota + teste);
+> faltando uma, é **PARCIAL**. `N/A` = nó não se aplica ao estágio atual. Nenhuma decisão de
+> produto foi tomada; a coluna "Decisão de produto pendente" **só lista perguntas**. Quando o
+> código já implica uma resposta, ela é anotada como **"implícita no código: X"** (não como
+> decisão tomada).
+
+### 1. Schema Prisma — o que existe hoje (por área)
+
+Modelos/enums existentes em `prisma/schema.prisma` (765 linhas; 45 declarações `model`/`enum`).
+
+| Área | Modelos/enums existentes | Lacunas (AUSENTE) |
+| ---- | ------------------------ | ----------------- |
+| **Cadastro/onboarding** | `User` (documentType CPF/CNPJ, document único, name/tradeName, birthDate, email, phone, passwordHash, city/state, pixKey, asaasCustomerId, termsAcceptedAt, emailConfirmedAt, phoneConfirmedAt), `UserRoleAssignment` (role PROFISSIONAL/CONTRATANTE/ADMIN + status PENDENTE/ATIVO), `Session`, `AuthToken` (EMAIL_CONFIRM/PASSWORD_RESET), `IdentityVerification` (role, documentUrl, selfieUrl, status, rejectionReason, decidedById), `ProfessionalProfile` (bio, categories[], headline, region, availability[], referencePriceCents, softSkills[], resumeUrl, verificationStatus, reliabilityScore, ratingAverage, isInfluencer), `PortfolioItem` (FOTO/VIDEO), `WorkExperience`, `ContractorProfile`, `SocialAccount` (INSTAGRAM/FACEBOOK/TIKTOK, accessTokenEnc) | **Sem** model de **categorias** (categorias são `String[]` no perfil, sem tabela/seed); **sem** verificação de telefone ativa (coluna existe, provedor SMS/WhatsApp ausente) |
+| **Vaga** | `JobPosting` (title, description, category, valueCents, status ABERTA/PREENCHIDA/EXPIRADA/CANCELADA, visibility PUBLICA/PRIVADA, targetProfessionalId, urgentBoost, startsAt, endsAt), `JobPostingStatus`, `JobPostingVisibility`, `JobBoost` (amountCents default 1000, providerPaymentId, status) | **Sem** campo de modalidade (freelance/CLT/prestadora) na vaga; **sem** endereço/coordenadas na vaga (check-in não checa distância); **sem** vínculo vaga↔plano CLT |
+| **Candidatura** | `Application` (status PENDENTE/CONTRAPROPOSTA/SELECIONADO/SUPLENTE/DESISTIU), `ApplicationStatus`, `@@unique([jobPostingId, professionalId])`; convite direto = `JobPosting.visibility=PRIVADA` + `targetProfessionalId` | — (o modelo já cobre candidatura pública, convite direto e suplente) |
+| **Contraproposta** | `Application.counterOfferValueCents`, `counterOfferBy` ("CONTRACTOR"/"PROFESSIONAL"), `agreedValueCents` | **Sem** tabela própria de histórico de ofertas (cada contraproposta sobrescreve a anterior — só o valor/estado atual persiste) |
+| **Contratação** | `Hiring` (jobPostingId, applicationId único, jobTitle, professionalId, contractorId, grossValueCents, netValueCents, commissionBps, status String, providerPaymentId, openingCode, closingCode, closingCodeUsedAt, disputeOpen, completedAt) | — |
+| **Chat** | `Chat` (hiringId único, status AGUARDANDO_PAGAMENTO/ABERTO/ENCERRADO, openedAt, closedAt, closeReason, lastMessageAt), `Message` (chatId, senderId, body, readAt), `ChatStatus` | **Sem** anexos de arquivo em mensagem; **sem** model de "digitando"/recibo além de `readAt` |
+| **Códigos de turno** | `Hiring.openingCode`/`closingCode`/`closingCodeUsedAt`, `CodeAttempt` (kind OPENING/CLOSING, success, attemptedById) | — |
+| **Cancelamento** | `Hiring.status=CANCELADO` + `Chat.closeReason` (String livre); política é código (`matchService.ts`) | **Sem** model/coluna de **motivo** estruturado, **origem** (contratante/profissional/sistema) ou **política aplicada** no cancelamento — hoje só o `reason` textual do ledger e `closeReason` do chat |
+| **Avaliação** | `Evaluation` (hiringId, authorId, targetId, rating 1–5 com CHECK, comment), `@@unique([hiringId, authorId])` | **Sem** flag de "cega"; janela de 2h é constante no código (`evaluationService`), não coluna |
+| **Financeiro** | `LedgerEntry` (type RETENCAO/LIBERACAO/REEMBOLSO/AJUSTE, amountCents, reason, createdBy), `LedgerEntryType`, `Payout` (hiringId único, amountCents, status PENDENTE/PROCESSANDO/CONCLUIDO/FALHOU, idempotencyKey, providerTransferId), `PayoutStatus`, `ChargeAttempt`; saldo/carteira são **calculados** (`walletService.ts`) | **Sem** tabela de saldo/extrato persistido (por decisão: saldo é sempre soma — não é lacuna) |
+| **Admin** | `UserRole.ADMIN`, `IdentityVerification.decidedById`, `Dispute` (status EM_ANALISE/RESOLVIDA, resolution DEVOLUCAO_TOTAL/LIBERACAO_TOTAL/DIVISAO, splitPercentToProfessional, decisionNote, decidedById, decidedAt), `DisputeEvidence`, `Report` (category ABUSO/FRAUDE/NAO_COMPARECEU/OUTRO, priority, status), `ReportCategory`, `ReportStatus`, `CltPlan` (name, monthlyPriceCents, simultaneousCap, active) | **AUSENTE: model de Configurações Financeiras** (comissão/valor CLT/valor boost não têm tabela — comissão está fixa em `lib/commission.ts` = 1000 bps, boost em `DEFAULT_BOOST_PRICE_CENTS` = 1000); **sem** model de auditoria de log do admin (decidido por colunas `decidedById`) |
+| **Notificações** | **AUSENTE** — nenhum model de notificação (in-app, e-mail ou WhatsApp); únicos vestígios são TODOs no código | **AUSENTE: model de Notification/canal/preferência** |
+| **Chargeback/webhook** (extra) | `AsaasEvent` (asaasEventId único, event, paymentId, externalReference, payloadHash, processingStatus), `ChargebackEvent` (state ATIVO/ENCERRADO, closedAt, closedReason, deadlineToSendDisputeDocuments...) | — |
+
+### 2. Services (`src/services/`) — inventário por área
+
+| Área | Arquivo | Funções exportadas (principais) | O que faz |
+| ---- | ------- | ------------------------------- | --------- |
+| Cadastro/auth | *(sem service)* — lógica nas rotas `src/app/api/auth/*` + `src/lib/auth.ts`, `src/lib/document.ts` | `requireUser`, `hasActiveRole`, `validateDocument`... | Sessão, papéis, validação CPF/CNPJ |
+| Vaga/candidatura | `jobPostingService.ts` | `selectCandidate`, `listSubstitutes`, `reopenJobPosting` | Seleção→Hiring, suplentes filtrados por agenda, reabrir vaga |
+| Contratação | `hiringService.ts` | `createHiringForApplication`, `setHiringStatus`, `lockHiringForUpdate`, `hasActiveHiring`, `canTransitionHiring`, `ACTIVE_HIRING_STATUSES` | Máquina de estados do `Hiring` (único ponto autorizado) |
+| Chat | `chatService.ts` | `chatStatusForHiring`, `syncChatToHiringStatus` | Chat derivado do status do Hiring (sem estado próprio) |
+| Códigos | `codeService.ts` | `generateOpeningCodesDue`, `generateClosingCodesDue`, `markOpeningCodeUsed`, `markClosingCodeUsed`, `isEvaluationUnlocked`, `MAX_CODE_ATTEMPTS` | Geração/uso dos códigos, limite de tentativas |
+| Cancelamento | `matchService.ts` | `cancelHiring` | Caminho único de encerramento antes da conclusão (reembolso+reabre) |
+| Avaliação | `evaluationService.ts` | `createEvaluation`, `evaluationUnlockAt` | Avaliação mútua (janela 2h pós código de fechamento) |
+| Confiabilidade | `reliabilityService.ts` | `refreshProfessionalReliability` | % de conclusões limpas (últimas 20) |
+| Check-in | `checkInService.ts` | `haversineMeters`, *(registro de check-in)* | Evidência de início (não bloqueia código) |
+| Ledger | `ledgerService.ts` | `recordRetention`, `recordRelease`, `recordRefund`, `computeRetainedBalance`, `getRetainedBalance`, `getTotalRetainedOnPlatform` | Livro-razão append-only |
+| Pagamento | `chargeService.ts` | `ensureCharge`, `checkPersistedCharge`, `ensureAsaasCustomerForUser` | Criação idempotente de cobrança Pix (reconcilia antes) |
+| Repasse | `payoutService.ts` | `releasePayout`, `releasePayoutManually`, `processPendingPayouts`, `payoutBlockReason` | Transferência Pix de saída + guardas (disputa/chargeback/avaliação) |
+| Carteira | `walletService.ts` | `getProfessionalWallet*` | Saldo calculado (a receber/disponível/processando/sacado) |
+| Reconciliação | `reconciliationService.ts` | `runReconciliation` | 5 invariantes; somente leitura |
+| Disputa | `disputeService.ts` | `openDispute`, `addDisputeEvidence`, `resolveDispute` | Canal de controvérsia + decisão auditada (move dinheiro via ledger) |
+| Denúncia | `reportService.ts` | `createReport`, *(listagem/decisão)* | Fila separada; nunca move dinheiro |
+| Webhook/chargeback | `asaasEventService.ts` | `processAsaasEvent` (e `closeChargebackOnVerifiedOutcome`, `chargebacksBlockingPayout`, `hasActiveChargeback`) | Processa evento do Asaas; D6=A2 |
+| Escalonamento | `chargebackEscalationService.ts` | `escalateChargebacksNearDeadline` | Lê chargebacks perto do prazo (somente leitura) |
+| **AUSENTES** | — | — | **Sem service de**: notificação, config admin (financeira), "me contrate" separado (é a rota `jobs/invite` + `jobPostingService`), boost (lógica nas rotas `jobs/boost` + `chargeService`), categorias |
+
+### 3. Rotas API (`src/app/api/`) — inventário por área
+
+64 rotas `route.ts` encontradas. Por área:
+
+| Área | Rotas existentes |
+| ---- | ---------------- |
+| Auth/cadastro | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `GET|POST /auth/roles`, `GET /auth/confirm`, `POST /auth/password/forgot`, `POST /auth/password/reset` |
+| Perfil | `GET|PUT /profile/professional`, `GET|PUT /profile/contractor`, `GET /uploads/[...path]` |
+| Verificação | `POST /verification/professional`, `POST /verification/contractor` |
+| Vaga | `GET|POST /jobs`, `GET|PATCH|DELETE /jobs/[id]`, `POST /jobs/boost`, `POST /jobs/invite`, `GET /jobs/[id]/applications`, `POST /jobs/[id]/apply`, `GET|POST /jobs/[id]/resume`, `POST /jobs/[id]/select` |
+| Candidatura/contraproposta | `GET /applications`, `POST /applications/[id]/counter-offer`, `POST /applications/[id]/respond` |
+| Contratação | `GET /hirings`, `GET /hirings/[id]`, `POST /hirings/[id]/cancel` |
+| Chat | `GET /hirings/[id]/chat`, `POST /hirings/[id]/chat/messages` |
+| Códigos | `POST /hirings/[id]/codes` |
+| Check-in | `POST /hirings/[id]/check-in` |
+| Disputa | `POST /hirings/[id]/dispute`, `POST /hirings/[id]/dispute/evidence` |
+| Avaliação | `POST /evaluations` |
+| Denúncia | `POST /reports` |
+| Pagamento/financeiro | `POST /payments/create`, `GET /wallet`, `POST /wallet/withdraw`, `POST /payouts/release` |
+| Jobs (agendador) | `POST /jobs/opening-codes/run`, `/jobs/closing-codes/run`, `/jobs/weekly-payout/run`, `/jobs/daily-reconciliation/run`, `/jobs/chargeback-escalation/run` |
+| Crons (legado) | `POST /cron/shift-codes`, `/cron/payouts`, `/cron/reconciliation` |
+| Admin | `GET /admin/verifications`, `POST /admin/verifications/[id]/approve`, `POST /admin/verifications/[id]/reject`, `GET /admin/disputes`, `POST /admin/disputes/[id]/resolve`, `GET /admin/reports`, `POST /admin/reports/[id]/resolve`, `GET /admin/hirings`, `GET /admin/ledger`, `GET /admin/payouts`, `POST /admin/payouts/run-batch`, `POST /admin/payouts/[id]/release-manual`, `GET /admin/reconciliation`, `GET /admin/chargebacks`, `GET /admin/chargebacks/blocked` |
+| Webhook | `POST /webhooks/asaas` |
+| **AUSENTES** | **Sem rota de**: notificação, chat em tempo real (WebSocket/SSE), config financeira admin, categorias |
+
+### 4. Testes (`.tools/`) — cobertura por área
+
+| Arquivo | Escopo (seções) |
+| ------- | --------------- |
+| `test-fase1.ps1` | Auth/cadastro/perfil/verificação (15 seções) |
+| `test-fase1b.ps1` | Confirmação de e-mail, reset de senha (A–H) |
+| `test-fase1c.ps1` | CNPJ, aprovação manual, "Me contrate", contraproposta, suplentes, boost (A–L) |
+| `test-fase2.ps1` | Publicação de vaga, marketplace, edição/cancelamento, candidaturas, seleção→Hiring, pagamento→chat, contraproposta, suplentes (§0–§8) |
+| `test-fase3.ps1` | Carteira, códigos de turno, saque instantâneo, repasse semanal, reconciliação, travas (§0–§7) |
+| `test-fase4.ps1` | Webhook Asaas real, check-in, limite de código, cancelamento, 3 disputas, gate de avaliação, denúncias, concorrência (§0–§11) |
+| `test-fase5.ps1` | Autorização admin, fila de identidade, aprovação/rejeição, consultas, reconciliação, lote, disputa/denúncia pela sessão (§0–§13) |
+| `test-idempotencia.mjs/.ps1` | 11–12 cenários de idempotência de cobrança (mock Asaas) |
+| `test-chargeback.mjs/.ps1` | 10 seções (auth, durabilidade, chargeback, bloqueio, D6=A2) |
+| `test-jobs.mjs/.ps1` | 7 seções (jobs + D8=A2) |
+| **AUSENTE** | **Sem teste de**: chat (mensagens), avaliação ponta a ponta via HTTP, notificação, config admin |
+
+### 5. Tabela mestre — nó do fluxograma × código
+
+| Nó | Descrição | Schema | Service | Rota | Teste | Status | Lacuna | Decisão de produto pendente |
+| -- | --------- | ------ | ------- | ---- | ----- | ------ | ------ | --------------------------- |
+| **A** | Cadastro único CPF ou CNPJ | `User` (documentType, document único) | — (rota) | `POST /auth/register` | fase1 §2/§5, fase1c A | **IMPLEMENTADO** | — | — |
+| **B** | Dados básicos (nome/razão, e-mail, telefone) | `User.name`/`tradeName`/`email`/`phone` | — (rota) | `POST /auth/register` | fase1 §2/§4 | **IMPLEMENTADO** | Telefone não é verificado (só coluna) | Verificação de telefone: e-mail basta hoje? |
+| **C** | "O que você quer fazer?" (papéis) | `UserRoleAssignment`, `UserRole` | `lib/auth` | `GET|POST /auth/roles` | fase1 §11, fase1c D | **IMPLEMENTADO** | — | — |
+| **D** | Onboarding profissional (categorias, portfólio) | `ProfessionalProfile` (categories[], portfolio via `PortfolioItem`) | — (rota) | `GET|PUT /profile/professional` | fase1 §8 | **PARCIAL** | Sem tabela/seed de **categorias** (é `String[]` livre); sem rota própria de portfólio (só via perfil) | Categorias: lista fixa pelo admin ou texto livre? Portfólio tem limite/tamanho? |
+| **E** | Onboarding contratante | `ContractorProfile` | — (rota) | `GET|PUT /profile/contractor` | fase1 §12 | **IMPLEMENTADO** | — | — |
+| **F** | Verificação documento + selfie | `IdentityVerification`, `VerificationStatus` | — (rota + admin) | `POST /verification/professional`, `POST /admin/verifications/[id]/{approve,reject}` | fase1 §10, fase5 §2/§4/§5 | **IMPLEMENTADO** | Storage local em disco (produção precisa S3/R2) | — |
+| **G** | Verificação leve (e-mail/telefone) | `User.emailConfirmedAt`/`phoneConfirmedAt` | — | `GET /auth/confirm` | fase1b B/C | **PARCIAL** | Telefone não confirmável (sem SMS/WhatsApp) | "Selo verificado" exige só e-mail por enquanto? |
+| **H** | Home | *(sem persistência)* | — | — | — | **AUSENTE** | Sem tela/rota de home (front não existe; protótipo visual ausente) | Frontend: qual stack/telas? (protótipo não está na máquina) |
+| **H1** | Feed de vagas freelance perto de você | `JobPosting` (+city/state no `User`) | `jobPostingService` | `GET /jobs` (filtros) | fase2 §2 | **PARCIAL** | "Perto de você" não é geográfico — sem coordenadas na vaga, filtro é por texto/cidade | Ordenação por proximidade real (GPS) ou por cidade? |
+| **H2** | Abas: Freelance / CLT / Prestadoras | `JobPosting.category`; `CltPlan` existe mas sem vínculo a vaga | — | `GET /jobs` (filtro category) | fase2 §2 | **PARCIAL** | Sem modalidade na vaga; CLT/Prestadoras não são filtros reais (só categoria) | Como separar Freelance/CLT/Prestadoras? (campo novo na vaga? seções?) |
+| **H3** | Toggle de modo (2 papéis ativos) | `UserRoleAssignment` | `lib/auth` `hasActiveRole` | `GET /auth/me` | fase1 §11 | **PARCIAL** | Sem endpoint de "modo ativo" — o front deriva dos papéis (não há estado de modo) | O "modo" é só visual ou muda filtros/permissões? |
+| **V1** | Detalhe da vaga | `JobPosting` | `jobPostingService` | `GET /jobs/[id]` | fase2 §2 | **IMPLEMENTADO** | — | — |
+| **V2** | Publicar vaga | `JobPosting` | `jobPostingService` | `POST /jobs` | fase2 §1 | **IMPLEMENTADO** | — | — |
+| **V2a** | Publicar com urgência? R$10 | `JobBoost.amountCents` (=1000 fixo) | `chargeService` | `POST /jobs/boost` | fase1c K/L, fase2 | **PARCIAL** | R$10 **fixo no código** (`DEFAULT_BOOST_PRICE_CENTS`); sem config editável | Boost: R$10 fixo ou variável (editável pelo admin)? |
+| **V2b** | Checkout do boost | `JobBoost`, `ChargeAttempt` | `chargeService` | `POST /jobs/boost` | fase1c, test-idempotencia | **IMPLEMENTADO** | — | — |
+| **V3** | Vaga publicada (ABERTA) | `JobPosting.status=ABERTA` | `jobPostingService` | `POST /jobs` | fase2 §1 | **IMPLEMENTADO** | — | — |
+| **V4** | Candidatar-se | `Application` (PENDENTE) | — (rota) | `POST /jobs/[id]/apply` | fase2 §4 | **IMPLEMENTADO** | — | — |
+| **V5p** | "Me contrate" (perfil do profissional) | — (ponto de entrada) | — | — | — | **PARCIAL** | O botão inicia em `POST /jobs/invite`; não há tela/perfil público dedicado | Onde fica o botão? no perfil do profissional? |
+| **V5** | Gera vaga PRIVADA só para o profissional | `JobPosting.visibility=PRIVADA`, `targetProfessionalId`; `Application` criada | `jobPostingService` | `POST /jobs/invite` | fase1c F | **IMPLEMENTADO** | Vaga privada não é escondida nas listagens? (verificar filtro visibility) | A vaga privada deve ser invisível ao marketplace? |
+| **V5n** | Profissional decide (aceita/recusa/contraproposta) | `Application.status`, `counterOfferBy` | — (rota) | `POST /applications/[id]/respond`, `POST /applications/[id]/counter-offer` | fase1c G/J | **IMPLEMENTADO** | — | — |
+| **V5c** | Nova oferta de valor | `Application.counterOfferValueCents`/`counterOfferBy` | — (rota) | `POST /applications/[id]/counter-offer` | fase1c G | **PARCIAL** | Sem **histórico** de ofertas (sobrescreve); sem limite de rodadas | Limite de rodadas de contraproposta? Histórico é necessário? |
+| **V5n2** | Empresa decide (aceita/recusa/nova oferta/desiste) | `Application` | `jobPostingService` | `POST /applications/[id]/respond`, `POST /applications/[id]/counter-offer` | fase1c J | **IMPLEMENTADO** | — | — |
+| **V5end** | Vaga privada encerrada | `Application.status=DESISTIU` | — | `POST /applications/[id]/respond` | fase1c | **PARCIAL** | Vaga privada recusada não muda `JobPosting.status` (fica ABERTA/PRIVADA órfã) | Vaga privada recusada deve virar CANCELADA? |
+| **V6** | Lista de candidaturas | `Application` | `jobPostingService` | `GET /jobs/[id]/applications`, `GET /applications` | fase2 §4 | **IMPLEMENTADO** | — | — |
+| **V7** | Empresa seleciona um candidato | `Application.status=SELECIONADO` | `selectCandidate` | `POST /jobs/[id]/select` | fase2 §5, fase4 §11 | **IMPLEMENTADO** | — | — |
+| **V8** | Demais viram SUPLENTES | `ApplicationStatus.SUPLENTE` | `selectCandidate` | `POST /jobs/[id]/select` | fase2 §5/§8 | **IMPLEMENTADO** | — | — |
+| **P1** | Checkout (Asaas, não mais MP) | `Hiring`, `ChargeAttempt` | `chargeService` | `POST /payments/create` | fase1c L, test-idempotencia | **IMPLEMENTADO** | — (fluxograma diz "Mercado Pago" — já migrado p/ Asaas) | — |
+| **P2** | Pagamento aprovado? | `AsaasEvent`, `Hiring.status`, `LedgerEntry` (RETENCAO) | `asaasEventService`, `ledgerService` | `POST /webhooks/asaas` | fase4 §1/§1b | **IMPLEMENTADO** | — | — |
+| **P3** | Vaga some do marketplace (PREENCHIDA) | `JobPosting.status=PREENCHIDA` | `asaasEventService` | `POST /webhooks/asaas` | fase4 | **IMPLEMENTADO** | — | — |
+| **P4** | Chat desbloqueia | `Chat.status=ABERTO` | `chatService.syncChatToHiringStatus` | `GET /hirings/[id]/chat` | fase2 §6, fase3 | **PARCIAL** | Rota de chat existe mas **sem teste HTTP dedicado** (fase2 sincroniza status; não testa envio/leitura de mensagem) | Chat: tempo real ou polling? mensagens persistem após cancelamento? (implícita no código: persistem como histórico — chat vira ENCERRADO) |
+| **X1** | 1h antes: código de abertura gerado | `Hiring.openingCode` | `codeService.generateOpeningCodesDue` | `POST /jobs/opening-codes/run` | fase3 §3, test-jobs | **IMPLEMENTADO** | Profissional **não é notificado** com o código (TODO) | Como o profissional recebe o código? (push/WhatsApp/SMS — Fase 6) |
+| **X2** | Trabalho em andamento | `Hiring.status=EM_ANDAMENTO` | `markOpeningCodeUsed` | `POST /hirings/[id]/codes` | fase3 §3 | **IMPLEMENTADO** | Check-in não impede nem valida (só evidência) | Check-in é obrigatório para iniciar? |
+| **X3** | 1h antes do fim: código de fechamento | `Hiring.closingCode` | `codeService.generateClosingCodesDue` | `POST /jobs/closing-codes/run` | fase3 §3, test-jobs | **IMPLEMENTADO** | Notificação ausente (mesmo TODO) | (mesma pergunta de X1) |
+| **X4** | Código de fechamento confirmado pela empresa? | `Hiring.closingCodeUsedAt`, `CodeAttempt` | `markClosingCodeUsed` | `POST /hirings/[id]/codes` | fase4 §3 | **IMPLEMENTADO** | Sem caminho alternativo se a empresa sumir (vai para disputa) | E se a empresa não confirmar? timeout → disputa? |
+| **X5** | Serviço concluído | `Hiring.status=CONCLUIDO`, `completedAt` | `setHiringStatus` | `POST /hirings/[id]/codes` | fase3 §3 | **IMPLEMENTADO** | — | — |
+| **X6** | Cancelamento (caminho único) | `Hiring.status=CANCELADO`, `LedgerEntry.REEMBOLSO` | `matchService.cancelHiring` | `POST /hirings/[id]/cancel` | fase4 §4 | **PARCIAL** | Sem coluna de **motivo/origem** estruturado (só `reason` textual); política de multa não implementada (só reembolso 100%) | Multas existem? origem (contratante/profissional/sistema) deve ser persistida? |
+| **R1** | Vaga reabre ("Retomar vaga") | `JobPosting.status=ABERTA` | `reopenJobPosting` | `GET /jobs/[id]/resume` | fase2 §8 | **IMPLEMENTADO** | — | — |
+| **R2** | Filtra suplentes por conflito de agenda | `Application` + `Hiring` (overlap startsAt/endsAt) | `listSubstitutes` | `GET /jobs/[id]/resume` | fase2 §8 | **IMPLEMENTADO** | Só cobre sobreposição de contratação confirmada | Suplente é notificado automaticamente ou a empresa reescolhe? |
+| **X7** | 2h depois: avaliação libera | `Hiring.closingCodeUsedAt` (janela 2h) | `evaluationService.evaluationUnlockAt`, `isEvaluationUnlocked` | `POST /evaluations` | fase4 §6 | **PARCIAL** | Janela 2h é constante no código; avaliação não testada via HTTP ponta a ponta | Janela de 2h está fechada? timeout máximo para avaliar? |
+| **AV1** | Avaliação mútua (1–5 + comentário) | `Evaluation` (rating, comment, unique por hiring+author) | `evaluationService.createEvaluation` | `POST /evaluations` | fase4 §6 | **PARCIAL** | Sem flag de "cega"; sem rota de **leitura** de avaliações (só `POST`); média (`ratingAverage`) atualizada mas exibição não definida | Avaliação é **cega** (só revela quando os dois avaliam)? média exibida onde? |
+| **FN1** | Saldo liberado (LedgerEntry) | `LedgerEntry.LIBERACAO` | `ledgerService.recordRelease` | `POST /payouts/release` | fase3 §5/§7 | **IMPLEMENTADO** | — | — |
+| **FN2** | Repasse Pix ao profissional | `Payout`, `providerTransferId` | `payoutService.releasePayout`/`processPendingPayouts` | `POST /payouts/release`, `/jobs/weekly-payout/run` | fase3 §5 | **IMPLEMENTADO** | Produção pendente (chave real + 1 transferência baixo valor) | — |
+| **FN3** | Extrato / Carteira | *(calculado)* | `walletService` | `GET /wallet` | fase3 §1 | **PARCIAL** | Sem tela; taxa de saque é placeholder (100 bps) | Taxa do saque instantâneo: valor final? (hoje 1% placeholder) |
+| **AD1** | Configurações financeiras (comissão, CLT, boost) | `CltPlan` existe; **comissão/boost fixos no código** | **AUSENTE** | **AUSENTE** | **AUSENTE** | **AUSENTE** | Sem tabela nem rota de config; comissão 10% e boost R$10 hardcoded | Quais valores são editáveis? plano CLT: faixas/valores? |
+| **AD2** | Reconciliação diária | `LedgerEntry`, `AsaasEvent` | `reconciliationService.runReconciliation` | `POST /jobs/daily-reconciliation/run`, `GET /admin/reconciliation` | fase3 §6, fase5 §8 | **PARCIAL** | Relatório **stateless** (não persistido); painel consulta ao vivo | Guardar histórico da reconciliação? |
+| **AD3** | Disputas e denúncias | `Dispute`, `DisputeEvidence`, `Report` | `disputeService`, `reportService` | `GET /admin/disputes`, `/admin/reports`, `POST .../resolve` | fase4 §5/§7/§8/§10, fase5 §10/§11 | **IMPLEMENTADO** | — | — |
+| **WhatsApp** | Notificação (V.L.A.E.G. — Link) | **AUSENTE** | **AUSENTE** | **AUSENTE** | **AUSENTE** | **AUSENTE** | Nenhum canal de notificação; só TODOs no código (código de turno, proposta, vaga nova) | WhatsApp Business API: qual provedor? quais eventos notificam? e-mail também? |
+
+### 6. Decisões de produto pendentes (para a próxima implementação)
+
+> Lista **única** consolidada, agrupada por área e ordenada por **dependência** (o que trava o resto primeiro).
+> **Nenhuma resposta aqui** — são perguntas.
+
+**Bloqueiam várias áreas (decidir primeiro)**
+1. **Frontend/telas:** qual stack e quais telas primeiro? (o protótipo visual `design-protótipo` **não está na máquina** — bloqueia Home H, V1, V5p, FN3 e todas as telas).
+2. **Modalidade da vaga (H2/V3):** criar campo `modality` (Freelance/CLT/Prestadoras) na vaga? como CLT e Prestadoras se diferenciam no fluxo?
+3. **Notificação (WhatsApp/canal):** qual provedor (WhatsApp Business API, e-mail, push)? quais eventos notificam (código de turno, nova vaga, proposta, contraproposta, avaliação, repasse)? o usuário escolhe canal?
+4. **Configurações financeiras (AD1):** quais valores são editáveis pelo admin? comissão (hoje 10% fixo), valor do plano CLT (faixas? valores?), valor do boost (hoje R$10 fixo), taxa do saque instantâneo (hoje 1% placeholder)?
+
+**Chat (P4)**
+5. Chat em tempo real (WebSocket/SSE) ou polling?
+6. Mensagens persistem após cancelamento? (implícita no código: viram histórico com `Chat.status=ENCERRADO`)
+7. Anexos de arquivo ou só texto?
+
+**Avaliação (X7/AV1)**
+8. Avaliação é cega (só revela quando os dois avaliam)?
+9. Janela de 2h está fechada? há timeout máximo para avaliar?
+10. Onde a média (`ratingAverage`) é exibida?
+
+**Categorias / portfólio (D)**
+11. Categorias: lista fixa gerenciada pelo admin ou texto livre? (hoje `String[]` livre)
+12. Portfólio: limite de itens/tamanho de mídia?
+
+**Candidatura / contraproposta (V5c/V5end)**
+13. Limite de rodadas de contraproposta? (hoje ilimitado, com sobrescrita)
+14. Histórico de ofertas é necessário (hoje só o valor atual persiste)?
+15. Vaga privada recusada deve virar CANCELADA (hoje fica ABERTA/PRIVADA órfã)?
+16. A vaga privada ("Me contrate") deve ser invisível ao marketplace?
+
+**Suplentes (R2)**
+17. Suplente é notificado automaticamente ao reabrir a vaga, ou a empresa reescolhe manualmente?
+18. Suplente que já não quer pode ser removido (hoje ele só recusa ao ser selecionado)?
+
+**Cancelamento (X6)**
+19. Existem **multas** por cancelamento? (hoje só reembolso 100%)
+20. Persistir **motivo** e **origem** (contratante/profissional/sistema) estruturados?
+
+**Turno (X2/X4)**
+21. Check-in é obrigatório para iniciar o turno? (hoje só evidência)
+22. E se a empresa não confirmar o código de fechamento (empresa some)? timeout → disputa automática?
+
+**Home / descoberta (H1/H3)**
+23. Ordenação por proximidade real (GPS) ou por cidade? (vaga não tem coordenadas hoje)
+24. O "toggle de modo" é só visual ou muda filtros/permissões?
+
+**Financeiro/admin (FN3/AD2)**
+25. Guardar histórico da reconciliação diária (hoje stateless)?
+26. Taxa do saque instantâneo: valor final confirmado? (hoje 1% placeholder)
+
+**Verificação (B/G)**
+27. O "selo verificado" de contratante exige só e-mail por enquanto (sem SMS)? quando entrar telefone, exigir os dois?
+
+### 7. Ordem sugerida (Etapa 6+)
+
+Sugestão de sequência (1 frase de justificativa cada; **não implementar**):
+
+1. **Configurações financeiras editáveis (AD1)** — é dinheiro já em produção no código (comissão/boost hardcoded) e destrava decisão 4; sem tabela nova complexa.
+2. **Notificação (WhatsApp/canal)** — hoje os jobs geram códigos que ninguém recebe (X1/X3) e propostas ficam sem aviso; é o maior atrito real do fluxo.
+3. **Chat com teste HTTP dedicado (P4)** — já existe; falta prova ponta a ponta e decisão 5–7; é o canal central entre as partes.
+4. **Avaliação ponta a ponta (X7/AV1)** — já existe; falta prova via HTTP e decisões 8–10 (cega/janela/média).
+5. **Cancelamento estruturado (X6)** — decisões 19–20 definem multas (mudam dinheiro) antes de qualquer código.
+6. **Modalidade da vaga (H2)** + **suplentes (R2)** — dependem das decisões 2 e 17–18.
+7. **Frontend/telas (H, V1, V5p, FN3)** — **bloqueado** por decisão 1 (protótipo visual ausente); por isso fica por último apesar de ser a face do produto.
+
+**Áreas bloqueadas por quais decisões:**
+- Frontend (H, V1, V5p, FN3) ← decisão **1**.
+- Modalidade/CLT (H2, AD1) ← decisões **2** e **4**.
+- Notificação (todos os avisos) ← decisão **3**.
+- Chat (P4) ← decisões **5, 6, 7**.
+- Avaliação (X7/AV1) ← decisões **8, 9, 10**.
+- Cancelamento (X6) ← decisões **19, 20**.
+- Suplentes (R2) ← decisões **17, 18**.
+- Contraproposta (V5c/V5end) ← decisões **13, 14, 15, 16**.
+
 ## Agendamento de jobs (Etapa 3.2)
 
 Os 4 jobs têm **rotas finas** (`POST /api/jobs/<nome>/run`, autenticadas por `x-jobs-token` = `JOBS_RUN_TOKEN`), mas **quem os chama periodicamente é externo ao processo**: o agendador é **infraestrutura**, não código do app. As rotas são a superfície estável; o agendador só as chama.

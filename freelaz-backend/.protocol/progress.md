@@ -584,4 +584,24 @@ Cenários 11 (cliente 1× e reutilizado) e 12 (exclusão fantasma) — aditivos 
    denúncias, identidade, consultas, reconciliação ao vivo e lote de repasses) está pronto em `/admin`.
 3. Habilitar o Asaas em produção: `ASAAS_API_URL=https://api.asaas.com/v3`, chave real, testar UMA transferência Pix de baixo valor e só então liberar o lote semanal (passos em `findings.md`)
 4. Confirmar com o produto o valor da taxa do saque instantâneo (hoje 100 bps = 1%) e, na Fase 5, torná-la editável junto da comissão e do preço do boost
-5. Apontar um agendador real (GitHub Actions cron — **Opção A escolhida na Etapa 3.2**; Vercel Cron só quando houver deploy Vercel) para as rotas `POST /api/jobs/*/run` com `x-jobs-token` = `secrets.JOBS_RUN_TOKEN`: `/api/jobs/opening-codes/run` + `/api/jobs/closing-codes/run` (a cada poucos minutos), `/api/jobs/weekly-payout/run` (semanal) e `/api/jobs/daily-reconciliation/run` (diária). As rotas antigas `POST /api/cron/*` (protegidas por `x-internal-secret`) continuam existindo e não foram alteradas — ver `findings.md` > "Agendamento de jobs".
+5. Apontar um agendador real (GitHub Actions cron — **Opção A escolhida na Etapa 3.2**; Vercel Cron só quando houver deploy Vercel) para as rotas `POST /api/jobs/*/run` com `x-jobs-token` = `secrets.JOBS_RUN_TOKEN`: `/api/jobs/opening-codes/run` + `/api/jobs/closing-codes/run` (a cada poucos minutos), `/api/jobs/weekly-payout/run` (semanal), `/api/jobs/daily-reconciliation/run` (diária) e `/api/jobs/chargeback-escalation/run` (diária, D8=A2). As rotas antigas `POST /api/cron/*` (protegidas por `x-internal-secret`) continuam existindo e não foram alteradas — ver `findings.md` > "Agendamento de jobs".
+
+## Sessão 24 — Etapa 5: INSPECT do fluxograma × código (mapa e lacunas)
+
+**Escopo autorizado:** **somente leitura + documentação**. Cruza CADA nó do `Freelaz — Fluxograma.html` com o que existe no código e lista, por nó, o que falta e as **perguntas** de produto pendentes. **NÃO autorizado (e não feito):** escrever qualquer código de produção (`src/`, `prisma/`, `.tools/*.mjs|*.ps1`), criar migração, decidir produto (só listar perguntas), tocar em `payoutService.ts`/`asaasEventService.ts`/`chargebackEscalationService.ts`/`jobsStartup.ts`, alterar migrações existentes, alterar `.env`, chamar Sandbox real, criar secrets.
+
+**Feito:**
+1. **[INSPECT] Schema Prisma** — inventário por área (cadastro/vaga/candidatura/contraproposta/contratação/chat/códigos/cancelamento/avaliação/financeiro/admin/notificações) com os modelos/enums reais e marcação `AUSENTE` onde não há. **Achados-chave:** **sem** model de **notificação**; **sem** model de **Configurações Financeiras** (comissão fixa em `lib/commission.ts` = 1000 bps; boost fixo = 1000 cents); **sem** modalidade (freelance/CLT/prestadora) na vaga; **sem** categoria como tabela (é `String[]`); `CltPlan` existe mas não ligado a vaga.
+2. **[INSPECT] Services** — 18 services em `src/services/` mapeados (arquivo + funções + 1 linha). **AUSENTES:** notificação, config admin, service próprio de boost/categorias.
+3. **[INSPECT] Rotas API** — 64 rotas `route.ts` mapeadas por área. **AUSENTES:** notificação, chat em tempo real, config financeira admin, categorias.
+4. **[INSPECT] Testes** — 10 arquivos de teste em `.tools/` mapeados por seção. **AUSENTE:** teste HTTP dedicado de chat/avaliação/notificação/config admin.
+5. **[DOC] Tabela mestre do fluxograma** — seção nova **"Mapa do fluxograma × código (Etapa 5)"** em `findings.md`, com 1 linha por nó (A→AD3 + WhatsApp): `Nó | Descrição | Schema | Service | Rota | Teste | Status | Lacuna | Decisão de produto pendente`. Status ∈ {IMPLEMENTADO, PARCIAL, AUSENTE, N/A}, sempre com evidência. `IMPLEMENTADO` só com as 4 evidências; faltando uma → `PARCIAL`. Ambiguidade registrada explicitamente (ex.: `CltPlan` existe mas sem uso → PARCIAL).
+6. **[DOC] Decisões de produto pendentes** — seção consolidada em `findings.md`, **27 perguntas** agrupadas por área e **ordenadas por dependência** (frontend/protótipo, modalidade, notificação e config financeira primeiro). **Nenhuma resposta.**
+7. **[DOC] Ordem sugerida (Etapa 6+)** — 7 itens com justificativa, e mapa de "área ← decisões que a bloqueiam".
+8. **[TEST] Checks estáticos** — `npx tsc --noEmit` exit **0**; `npm run build` exit **0** (dev server parado antes por EPERM). **Bateria completa não rodada** — nenhuma mudança de código (por critério da tarefa).
+9. **[COMMIT]** `docs: mapa do fluxograma × código (Etapa 5 — INSPECT)` — diff **só** em `.protocol/`.
+
+**Arquivos alterados:** `.protocol/findings.md` (seção Etapa 5), `.protocol/progress.md` (esta sessão), `.protocol/task_plan.md` (Etapa 5).
+**Não alterados:** qualquer arquivo em `src/`, `prisma/`, `.tools/*.mjs|*.ps1`, `.env`, migrações existentes.
+
+**Estado dos checks (executados, não declarados):** `tsc --noEmit` exit **0**; `npm run build` exit **0**. Nenhuma linha de código de produção escrita.
