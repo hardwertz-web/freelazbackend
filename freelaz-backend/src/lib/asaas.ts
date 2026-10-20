@@ -22,6 +22,14 @@ import { timingSafeEqual } from "crypto";
  * devolvem 503 com mensagem clara em vez de derrubar o processo.
  */
 
+// Base URL da API do Asaas. O DEFAULT é PRODUÇÃO (correto para deploy). O
+// ambiente é escolhido por ASAAS_API_URL no `.env`:
+//   Sandbox : https://api-sandbox.asaas.com/v3   (doc oficial — ver findings P5)
+//   Produção: https://api.asaas.com/v3
+// ⚠️ P5: o `.env` deste projeto usa o formato LEGADO
+// `https://sandbox.asaas.com/api/v3`, que AINDA responde (alias do Asaas), mas
+// NÃO é a URL documentada. A divergência está registrada em
+// .protocol/findings.md; o `.env` NÃO foi alterado (decisão do usuário).
 const API_URL = process.env.ASAAS_API_URL ?? "https://api.asaas.com/v3";
 
 export type AsaasPayment = {
@@ -43,6 +51,23 @@ export type AsaasPayment = {
  * valores que podem evoluir e o código nunca deve traduzir/descartar um valor
  * desconhecido.
  */
+export type AsaasChargeback = {
+  id?: string;
+  status?: string;
+  reason?: string;
+  value?: number; // em REAIS (decimal) — converter para centavos no parse
+  // o Asaas pode devolver o valor contestado como string; aceitar ambos
+  disputeStatus?: string;
+  // Campos REAIS do contrato oficial (docs.asaas.com >
+  // PaymentChargebackResponseDTO). `createdDate`/`updatedDate` são LEGADO
+  // (nomes supostos antes da conferência da doc; o Asaas não os envia).
+  disputeStartDate?: string;
+  deadlineToSendDisputeDocuments?: string;
+  createdDate?: string;
+  updatedDate?: string;
+  [key: string]: unknown;
+};
+
 export type AsaasWebhookEvent = {
   id?: string;
   event?: string;
@@ -53,18 +78,15 @@ export type AsaasWebhookEvent = {
    * isAuthenticAsaasWebhook. Em produção é ignorado.
    */
   token?: string;
-  payment?: Partial<AsaasPayment> & { id?: string };
-  chargeback?: {
-    id?: string;
-    status?: string;
-    reason?: string;
-    value?: number; // em REAIS (decimal) — converter para centavos no parse
-    // o Asaas pode devolver o valor contestado como string; aceitar ambos
-    disputeStatus?: string;
-    createdDate?: string;
-    updatedDate?: string;
-    [key: string]: unknown;
-  } | null;
+  // O contrato REAL (docs.asaas.com) entrega o objeto `chargeback` DENTRO de
+  // `payment` — por isso ele é tipado aqui.
+  payment?: Partial<AsaasPayment> & { id?: string; chargeback?: AsaasChargeback | null };
+  /**
+   * ⚠️ COMPATIBILIDADE LEGADA: o Asaas NÃO envia `chargeback` no topo; o
+   * parser aceita como fallback para payloads/testes antigos, mas prefere
+   * sempre `payment.chargeback`.
+   */
+  chargeback?: AsaasChargeback | null;
 };
 
 export type AsaasPixQrCode = {

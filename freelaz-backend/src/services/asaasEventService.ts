@@ -178,13 +178,27 @@ export async function handleChargebackEvent(
 ): Promise<{ actionTaken: string; hiringId: string | null }> {
   const event = String(body.event ?? "");
   const paymentId = String(body.payment?.id ?? "");
-  const cb = body.chargeback ?? {};
+  // CONTRATO REAL (docs.asaas.com > Webhook para cobranças): o objeto
+  // `chargeback` vem DENTRO de `payment`. O `body.chargeback` no topo é
+  // compatibilidade LEGADA do projeto (aceito como fallback para payloads já
+  // registrados/testes antigos) — nunca preferido sobre o campo documentado.
+  const cb = body.payment?.chargeback ?? body.chargeback ?? {};
   const externalStatus = String(cb.status ?? externalStatusForEvent(event));
   const externalReason = cb.reason != null ? String(cb.reason) : null;
+  const externalDisputeStatus = cb.disputeStatus != null ? String(cb.disputeStatus) : null;
   const disputedValueCents =
     cb.value != null && Number.isFinite(Number(cb.value))
       ? Math.round(Number(cb.value) * 100)
       : null;
+  // Datas REAIS do contrato oficial (docs.asaas.com). Aceita os nomes legados
+  // `createdDate`/`updatedDate` como fallback, mas NUNCA inventa data: sem
+  // campo no payload, fica null.
+  const disputeStartDate = parseDate(
+    cb.disputeStartDate ?? cb.createdDate ?? null
+  );
+  const deadlineToSendDisputeDocuments = parseDate(
+    cb.deadlineToSendDisputeDocuments ?? null
+  );
 
   // Identifica a contratação de forma SEGURA: pelo externalReference do
   // pagamento (nunca por suposição). Boost não tem contratação → só registra.
@@ -209,6 +223,10 @@ export async function handleChargebackEvent(
       externalStatus,
       externalReason,
       disputedValueCents,
+      providerDisputeStatus: externalDisputeStatus,
+      providerDisputeStartDate: disputeStartDate,
+      deadlineToSendDisputeDocuments,
+      // Legado: preenchido só se o provedor enviar os nomes antigos.
       providerCreatedAt: parseDate(cb.createdDate),
       providerUpdatedAt: parseDate(cb.updatedDate),
       hiringId,
@@ -308,6 +326,19 @@ function isBlockableHiringStatus(status: HiringStatus): boolean {
 function externalStatusForEvent(event: string): string {
   // Tradução MÍNIMA e documentada do nome do evento para o status inicial; o
   // desfecho real NUNCA é deduzido do nome (só registrado como fato recebido).
+  //
+  // O objeto `chargeback` do payload geralmente JÁ traz `status`; este fallback
+  // só é usado quando ele falta. Os valores seguem os enums oficiais
+  // (docs.asaas.com > Chargeback): REQUESTED | IN_DISPUTE | DISPUTE_LOST |
+  // REVERSED | DONE.
+  //
+  // ⚠️ P3 (docs.asaas.com > Eventos para cobranças > Fluxo de chargeback):
+  // `PAYMENT_AWAITING_CHARGEBACK_REVERSAL` = "Disputa vencida, aguardando
+  // repasse da adquirente" — quem VENCEU foi o CLIENTE ASAAS (a plataforma),
+  // e o evento SEGUINTE é PAYMENT_CONFIRMED ou PAYMENT_RECEIVED (o valor
+  // volta). Por isso NÃO mapeamos este evento para um status fabricado de
+  // "perdido": mantemos o nome do evento como fato recebido e deixamos a
+  // decisão de desbloquear para um desfecho inequívoco/decisão humana (D6).
   switch (event) {
     case "PAYMENT_CHARGEBACK_REQUESTED":
       return "REQUESTED";

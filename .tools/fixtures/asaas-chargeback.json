@@ -1,0 +1,141 @@
+{
+  "_comment": "Fixture dos payloads REAIS de chargeback do Asaas, montada a partir da documentação oficial. NÃO é uma captura de tráfego: os valores são ILUSTRATIVOS e não contêm dados reais. Serve para exercitar o parser/registro de chargeback sem tocar o provedor.",
+  "_source": "https://docs.asaas.com/docs/webhook-para-cobrancas | https://docs.asaas.com/docs/chargeback | https://docs.asaas.com/reference/recuperar-uma-unica-cobranca (PaymentChargebackResponseDTO) | https://docs.asaas.com/docs/o-que-pode-ser-testado",
+  "_captured_at": "2026-10-20",
+  "_notes": [
+    "O objeto `chargeback` vive DENTRO de `payment` no webhook (payment.chargeback) — confirmado no exemplo oficial de 'Eventos para cobranças'.",
+    "O payload do WEBHOOK traz o objeto `chargeback` REDUZIDO (no exemplo oficial, apenas `status` e `reason`). O objeto COMPLETO (com id/value/disputeStartDate/disputeStatus/deadlineToSendDisputeDocuments) é o do endpoint GET /payments/{id}/chargeback (PaymentChargebackResponseDTO).",
+    "Por isso os eventos abaixo têm DOIS formatos: `webhook` (enxuto, como a doc do webhook) e `get` (completo, como a doc do endpoint). O parser DEVE lidar com ambos e nunca inventar campo ausente.",
+    "`value` (quando existir) vem em REAIS (decimal), igual a payment.value — o código converte para centavos.",
+    "`status` (chargeback) = REQUESTED | IN_DISPUTE | DISPUTE_LOST | REVERSED | DONE.",
+    "`disputeStatus` = REQUESTED | ACCEPTED | REJECTED (status da DISPUTA, distinto de `status`).",
+    "`reason` = 32 valores oficiais (ver docs.asaas.com/docs/chargeback). A doc proíbe traduzir/alterar enums no código: preservar SEMPRE o valor cru.",
+    "Datas (só no objeto completo): `disputeStartDate` e `deadlineToSendDisputeDocuments` (formato date, ex.: 2026-11-10).",
+    "NÃO existem `createdDate`/`updatedDate` no objeto chargeback (nomes que o código supunha antes da conferência da doc).",
+    "Semântica (P3, docs.asaas.com > Eventos para cobranças > Fluxo de chargeback): PAYMENT_AWAITING_CHARGEBACK_REVERSAL = 'Disputa vencida, aguardando repasse da adquirente' — quem VENCEU foi o cliente Asaas (a plataforma). O evento SEGUINTE é PAYMENT_CONFIRMED ou PAYMENT_RECEIVED (o valor volta). Se quem vencesse fosse o portador, o evento seguinte seria PAYMENT_REFUNDED."
+  ],
+
+  "PAYMENT_CHARGEBACK_REQUESTED": {
+    "webhook": {
+      "id": "evt_fixture_chargeback_requested_0001",
+      "event": "PAYMENT_CHARGEBACK_REQUESTED",
+      "dateCreated": "2026-10-20 12:00:00",
+      "account": { "id": "acc_fixture_0001", "ownerId": null },
+      "payment": {
+        "object": "payment",
+        "id": "pay_fixture_chargeback_0001",
+        "externalReference": "hiring_fixture_0001",
+        "value": 800.0,
+        "netValue": 760.0,
+        "billingType": "CREDIT_CARD",
+        "status": "CHARGEBACK_REQUESTED",
+        "deleted": false,
+        "chargeback": { "status": "REQUESTED", "reason": "PROCESS_ERROR" },
+        "refunds": null
+      }
+    },
+    "get": {
+      "id": "cb_fixture_0001",
+      "payment": "pay_fixture_chargeback_0001",
+      "customerAccount": "cus_fixture_0001",
+      "status": "REQUESTED",
+      "reason": "FRAUD",
+      "disputeStartDate": "2026-10-20",
+      "value": 800.0,
+      "paymentDate": "2026-10-05",
+      "creditCard": { "number": "8829", "brand": "MASTERCARD" },
+      "disputeStatus": "REQUESTED",
+      "deadlineToSendDisputeDocuments": "2026-11-10"
+    }
+  },
+
+  "PAYMENT_CHARGEBACK_DISPUTE": {
+    "webhook": {
+      "id": "evt_fixture_chargeback_dispute_0002",
+      "event": "PAYMENT_CHARGEBACK_DISPUTE",
+      "dateCreated": "2026-10-25 09:30:00",
+      "account": { "id": "acc_fixture_0001", "ownerId": null },
+      "payment": {
+        "object": "payment",
+        "id": "pay_fixture_chargeback_0001",
+        "externalReference": "hiring_fixture_0001",
+        "value": 800.0,
+        "netValue": 760.0,
+        "billingType": "CREDIT_CARD",
+        "status": "CHARGEBACK_DISPUTE",
+        "deleted": false,
+        "chargeback": { "status": "IN_DISPUTE", "reason": "COMMERCIAL_DISAGREEMENT" },
+        "refunds": null
+      }
+    },
+    "get": {
+      "id": "cb_fixture_0001",
+      "payment": "pay_fixture_chargeback_0001",
+      "customerAccount": "cus_fixture_0001",
+      "status": "IN_DISPUTE",
+      "reason": "COMMERCIAL_DISAGREEMENT",
+      "disputeStartDate": "2026-10-20",
+      "value": 800.0,
+      "paymentDate": "2026-10-05",
+      "creditCard": { "number": "8829", "brand": "MASTERCARD" },
+      "disputeStatus": "ACCEPTED",
+      "deadlineToSendDisputeDocuments": "2026-11-10"
+    }
+  },
+
+  "PAYMENT_AWAITING_CHARGEBACK_REVERSAL": {
+    "webhook": {
+      "id": "evt_fixture_awaiting_reversal_0003",
+      "event": "PAYMENT_AWAITING_CHARGEBACK_REVERSAL",
+      "dateCreated": "2026-11-15 17:45:00",
+      "account": { "id": "acc_fixture_0001", "ownerId": null },
+      "payment": {
+        "object": "payment",
+        "id": "pay_fixture_chargeback_0001",
+        "externalReference": "hiring_fixture_0001",
+        "value": 800.0,
+        "netValue": 760.0,
+        "billingType": "CREDIT_CARD",
+        "status": "AWAITING_CHARGEBACK_REVERSAL",
+        "deleted": false,
+        "chargeback": { "status": "REVERSED", "reason": "COMMERCIAL_DISAGREEMENT" },
+        "refunds": null
+      }
+    },
+    "get": {
+      "id": "cb_fixture_0001",
+      "payment": "pay_fixture_chargeback_0001",
+      "customerAccount": "cus_fixture_0001",
+      "status": "REVERSED",
+      "reason": "COMMERCIAL_DISAGREEMENT",
+      "disputeStartDate": "2026-10-20",
+      "value": 800.0,
+      "paymentDate": "2026-10-05",
+      "creditCard": { "number": "8829", "brand": "MASTERCARD" },
+      "disputeStatus": "REJECTED",
+      "deadlineToSendDisputeDocuments": "2026-11-10"
+    }
+  },
+
+  "_status_values": ["REQUESTED", "IN_DISPUTE", "DISPUTE_LOST", "REVERSED", "DONE"],
+  "_dispute_status_values": ["REQUESTED", "ACCEPTED", "REJECTED"],
+  "_reason_values": [
+    "ABSENCE_OF_PRINT", "ABSENT_CARD_FRAUD", "CARD_ACTIVATED_PHONE_TRANSACTION", "CARD_FRAUD",
+    "CARD_RECOVERY_BULLETIN", "COMMERCIAL_DISAGREEMENT", "COPY_NOT_RECEIVED",
+    "CREDIT_OR_DEBIT_PRESENTATION_ERROR", "DIFFERENT_PAY_METHOD", "FRAUD", "INCORRECT_TRANSACTION_VALUE",
+    "INVALID_CURRENCY", "INVALID_DATA", "LATE_PRESENTATION", "LOCAL_REGULATORY_OR_LEGAL_DISPUTE",
+    "MULTIPLE_ROCS", "ORIGINAL_CREDIT_TRANSACTION_NOT_ACCEPTED", "OTHER_ABSENT_CARD_FRAUD",
+    "PROCESS_ERROR", "RECEIVED_COPY_ILLEGIBLE_OR_INCOMPLETE", "RECURRENCE_CANCELED",
+    "REQUIRED_AUTHORIZATION_NOT_GRANTED", "RIGHT_OF_FULL_RECOURSE_FOR_FRAUD", "SALE_CANCELED",
+    "SERVICE_DISAGREEMENT_OR_DEFECTIVE_PRODUCT", "SERVICE_NOT_RECEIVED", "SPLIT_SALE",
+    "TRANSFERS_OF_DIVERSE_RESPONSIBILITIES", "UNQUALIFIED_CAR_RENTAL_DEBIT", "USA_CARDHOLDER_DISPUTE",
+    "VISA_FRAUD_MONITORING_PROGRAM", "WARNING_BULLETIN_FILE"
+  ],
+
+  "_semantics": {
+    "PAYMENT_CHARGEBACK_REQUESTED": "Chargeback recebido (contestação aberta pelo portador).",
+    "PAYMENT_CHARGEBACK_DISPUTE": "Chargeback em disputa após apresentação de documentos para contestação.",
+    "PAYMENT_AWAITING_CHARGEBACK_REVERSAL": "Disputa VENCIDA pelo cliente Asaas (a plataforma) — aguardando repasse da adquirente. O evento seguinte no fluxo oficial é PAYMENT_CONFIRMED ou PAYMENT_RECEIVED (o valor volta para a conta). Ver .protocol/findings.md > P3.",
+    "_chargeback_flow": "PAYMENT_CREATED -> PAYMENT_CONFIRMED|PAYMENT_RECEIVED -> PAYMENT_CHARGEBACK_REQUESTED -> (disputa aberta?) { sim: PAYMENT_CHARGEBACK_DISPUTE -> (quem venceu?) { cliente Asaas: PAYMENT_AWAITING_CHARGEBACK_REVERSAL -> PAYMENT_CONFIRMED|PAYMENT_RECEIVED ; portador: PAYMENT_REFUNDED } ; não: PAYMENT_REFUNDED }"
+  }
+}

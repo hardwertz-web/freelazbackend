@@ -433,6 +433,55 @@ async function main() {
   check(cbPartialRow?.disputedValueCents === 15000, `valor parcial em centavos (${cbPartialRow?.disputedValueCents})`);
 
   // ----------------------------------------------------------------------
+  // 4b. Campos REAIS do contrato oficial de chargeback (fixture versionado).
+  // Fonte: .tools/fixtures/asaas-chargeback.json (_source: docs.asaas.com).
+  // Prova que o parser lê disputeStatus / disputeStartDate /
+  // deadlineToSendDisputeDocuments — e NÃO depende de `createdDate`.
+  section("4b. Chargeback — campos do contrato oficial (fixture)");
+  const fixture = JSON.parse(
+    fs.readFileSync(new URL("./fixtures/asaas-chargeback.json", import.meta.url), "utf8")
+  );
+  const fx = fixture.PAYMENT_CHARGEBACK_DISPUTE;
+  // 4b-i) Formato REAL do WEBHOOK (enxuto: chargeback só com status/reason),
+  // dentro de `payment` — como o exemplo oficial de 'Eventos para cobranças'.
+  const cbFixture = await webhook(
+    fx.webhook.event,
+    { ...paymentOf(hCb), id: paymentOf(hCb).id, chargeback: fx.webhook.payment.chargeback },
+    { id: `evt_cb_fixture_${hCb.id}` }
+  );
+  check(cbFixture.status === 200, `fixture WEBHOOK PAYMENT_CHARGEBACK_DISPUTE aceito (HTTP ${cbFixture.status})`);
+  // `ChargebackEvent.asaasEventId` é FK para `AsaasEvent.id` (cuid), não o id
+  // cru do evento — por isso a busca é pela RELAÇÃO (asaasEvent.asaasEventId).
+  const fxRow = await prisma.chargebackEvent.findFirst({
+    where: { asaasEvent: { asaasEventId: `evt_cb_fixture_${hCb.id}` } },
+  });
+  check(fxRow?.externalStatus === "IN_DISPUTE", `fixture webhook status do chargeback preservado (${fxRow?.externalStatus})`);
+  check(fxRow?.externalReason === "COMMERCIAL_DISAGREEMENT", `fixture webhook reason preservado (${fxRow?.externalReason})`);
+  check(fxRow?.disputedValueCents === null, `fixture webhook sem value → não inventa valor (${fxRow?.disputedValueCents})`);
+
+  // 4b-ii) Formato COMPLETO (endpoint GET) — inclui disputeStatus/datas/value.
+  // Prova que o parser lê disputeStatus / disputeStartDate /
+  // deadlineToSendDisputeDocuments — e NÃO depende de `createdDate`.
+  const cbFull = await webhook(
+    fx.webhook.event,
+    { ...paymentOf(hCb), id: paymentOf(hCb).id, chargeback: fx.get },
+    { id: `evt_cb_full_${hCb.id}` }
+  );
+  check(cbFull.status === 200, `fixture GET (completo) aceito (HTTP ${cbFull.status})`);
+  const fullRow = await prisma.chargebackEvent.findFirst({
+    where: { asaasEvent: { asaasEventId: `evt_cb_full_${hCb.id}` } },
+  });
+  check(fullRow?.externalStatus === "IN_DISPUTE", `fixture completo status preservado (${fullRow?.externalStatus})`);
+  check(fullRow?.providerDisputeStatus === "ACCEPTED", `fixture disputeStatus preservado (${fullRow?.providerDisputeStatus})`);
+  check(!!fullRow?.providerDisputeStartDate, `fixture disputeStartDate capturado (${fullRow?.providerDisputeStartDate?.toISOString?.().slice(0, 10)})`);
+  check(fullRow?.providerDisputeStartDate?.toISOString?.().slice(0, 10) === "2026-10-20", "fixture disputeStartDate correto");
+  check(!!fullRow?.deadlineToSendDisputeDocuments, "fixture deadlineToSendDisputeDocuments capturado");
+  check(fullRow?.deadlineToSendDisputeDocuments?.toISOString?.().slice(0, 10) === "2026-11-10", "fixture deadline correto");
+  check(fullRow?.disputedValueCents === 80000, `fixture value 800.00 (reais) → 80000 centavos (${fullRow?.disputedValueCents})`);
+  check(fullRow?.externalReason === "COMMERCIAL_DISAGREEMENT", `fixture completo reason preservado (${fullRow?.externalReason})`);
+  check(fullRow?.providerChargebackId === "cb_fixture_0001", `fixture providerChargebackId preservado (${fullRow?.providerChargebackId})`);
+
+  // ----------------------------------------------------------------------
   section("5. Chargeback — pagamento/contratação não encontrados");
   await seedMockPayment({
     id: `pay_cb_orphan_${runId}`,
