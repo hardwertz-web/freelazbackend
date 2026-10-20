@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkJobsToken } from "@/lib/jobsAuth";
 import { runReconciliation } from "@/services/reconciliationService";
+import { chargebacksBlockingPayout } from "@/services/asaasEventService";
+import { prisma } from "@/lib/prisma";
 
 /**
  * POST /api/jobs/daily-reconciliation/run
@@ -10,6 +12,11 @@ import { runReconciliation } from "@/services/reconciliationService";
  *
  * Auth: cabeçalho `x-jobs-token` (JOBS_RUN_TOKEN). 401 sem token errado.
  * Idempotente por natureza: é somente leitura (nenhum efeito a duplicar).
+ *
+ * VISIBILIDADE (Etapa 3.3): ao final, emite UMA linha de log estruturada, sem
+ * PII, com quantos chargebacks estão bloqueando repasse e há quantos dias está
+ * o mais antigo. É só observabilidade — NÃO altera `ok`/`discrepancies` nem
+ * qualquer estado.
  */
 export async function POST(req: NextRequest) {
   const denied = checkJobsToken(req);
@@ -17,6 +24,21 @@ export async function POST(req: NextRequest) {
 
   try {
     const report = await runReconciliation();
+
+    // ---- log estruturado de visibilidade (sem PII) -----------------------
+    const blocked = await chargebacksBlockingPayout(prisma);
+    const oldest = blocked.reduce<{ blockedSince: Date } | null>(
+      (acc, b) => (acc === null || b.blockedSince < acc.blockedSince ? b : acc),
+      null
+    );
+    const days = oldest
+      ? Math.floor((Date.now() - oldest.blockedSince.getTime()) / (24 * 60 * 60 * 1000))
+      : 0;
+    console.log(
+      `[Freelaz][reconciliacao] chargebacks bloqueando repasse=${blocked.length} ` +
+        `mais antigo há ${days} dia(s)`
+    );
+
     // `processed` = invariantes conferidas (checks). O relatório inteiro segue
     // no corpo para que o agendador/monitoramento recolha as divergências.
     return NextResponse.json({

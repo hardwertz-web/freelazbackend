@@ -1,0 +1,77 @@
+# Agendador dos jobs do Freelaz (Etapa 3.3).
+#
+# Chama as rotas internas POST /api/jobs/<job>/run. Elas são protegidas pelo
+# cabeçalho `x-jobs-token` = JOBS_RUN_TOKEN (ver src/lib/jobsAuth.ts).
+#
+# ⚠️ ESTE WORKFLOW SÓ RODA QUANDO `JOBS_URL` FOR CONFIGURADO como secret.
+# Enquanto não existir deploy, `JOBS_URL` não está definido e as chamadas
+# falham (curl recebe URL vazia) — é intencional: NÃO existe ambiente de
+# produção para apontar ainda. Configure o secret `JOBS_URL` (ex.:
+# https://api.freelaz.app, sem barra no fim) e `JOBS_RUN_TOKEN` quando houver
+# deploy. NÃO commite tokens: eles vivem só em `secrets.*`.
+#
+# Por que GitHub Actions e não setInterval no processo: o agendador tem de ser
+# EXTERNO ao app (não sobrevive a restart/redeploy; em serverless nem mantém
+# processo). Ver .protocol/findings.md > "Agendamento de jobs".
+name: jobs
+
+on:
+  schedule:
+    # Código de ABERTURA: a cada 15 min. A janela do service é 55–65 min antes
+    # do início, então 15 min de intervalo cobre a janela com folga.
+    - cron: "*/15 * * * *"
+    # Repasse semanal: segunda 03:00 UTC.
+    - cron: "0 3 * * 1"
+    # Reconciliação diária: todo dia 04:00 UTC.
+    - cron: "0 4 * * *"
+  # Permite disparar manualmente pelo painel do GitHub (Actions > jobs > Run).
+  workflow_dispatch: {}
+
+jobs:
+  # Códigos de turno (abertura + fechamento). O service é idempotente por
+  # estado: rodar de novo não regrava código já gerado.
+  shift-codes:
+    if: github.event.schedule == '*/15 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: gerar códigos de abertura e fechamento devidos
+        run: |
+          set -e
+          for job in opening-codes closing-codes; do
+            curl -fsS -X POST "${JOBS_URL}/api/jobs/$job/run" \
+              -H "x-jobs-token: ${JOBS_RUN_TOKEN}" \
+              --max-time 60
+          done
+        env:
+          JOBS_URL: ${{ secrets.JOBS_URL }}
+          JOBS_RUN_TOKEN: ${{ secrets.JOBS_RUN_TOKEN }}
+
+  # Repasse semanal em lote. Só roda na segunda; respeita a janela de avaliação
+  # e as guardas de disputa/chargeback (não afrouxar no agendador).
+  weekly-payout:
+    if: github.event.schedule == '0 3 * * 1'
+    runs-on: ubuntu-latest
+    steps:
+      - name: repasse semanal em lote
+        run: |
+          curl -fsS -X POST "${JOBS_URL}/api/jobs/weekly-payout/run" \
+            -H "x-jobs-token: ${JOBS_RUN_TOKEN}" \
+            --max-time 300
+        env:
+          JOBS_URL: ${{ secrets.JOBS_URL }}
+          JOBS_RUN_TOKEN: ${{ secrets.JOBS_RUN_TOKEN }}
+
+  # Reconciliação diária: confere invariantes e reporta divergências. Somente
+  # leitura — não corrige nada sozinho.
+  daily-reconciliation:
+    if: github.event.schedule == '0 4 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: reconciliação diária
+        run: |
+          curl -fsS -X POST "${JOBS_URL}/api/jobs/daily-reconciliation/run" \
+            -H "x-jobs-token: ${JOBS_RUN_TOKEN}" \
+            --max-time 120
+        env:
+          JOBS_URL: ${{ secrets.JOBS_URL }}
+          JOBS_RUN_TOKEN: ${{ secrets.JOBS_RUN_TOKEN }}

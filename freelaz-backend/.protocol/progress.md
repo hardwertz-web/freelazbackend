@@ -537,6 +537,24 @@ Cenários 11 (cliente 1× e reutilizado) e 12 (exclusão fantasma) — aditivos 
 **Arquivos alterados:** `.env.example` (só placeholders); `.tools/run-all-tests.ps1` (passo 10/10); `.protocol/findings.md`, `.protocol/progress.md`, `.protocol/task_plan.md`.
 **Não alterados:** `.env`, `payoutService.ts` (nenhuma mudança), migrações existentes, qualquer arquivo de D1–D8.
 
+## Sessão 22 — Etapa 3.3: hardening do agendador + visibilidade de chargeback + template D1–D8
+
+**Escopo autorizado:** hardening (`JOBS_ALLOW_UNTOKEN`), visibilidade read-only de chargeback, log estruturado, workflow GitHub Actions (arquivo, sem secrets) e template de decisão D1–D8. **NÃO autorizado (e não feito):** implementar D1–D8, Sandbox real, alterar migrações existentes, alterar `.env` real, tocar `payoutService.ts` além do necessário.
+
+**Feito:**
+1. **[IMPLEMENT] Guard de produção** — `isUntokenJobsForbidden(nodeEnv, allowUntoken)` + `assertJobsAllowUntokenSafe(...)` em **`src/lib/jobsStartup.ts`** (módulo puro, sem `crypto`/`next/server`). `src/instrumentation.ts` (`register()`, habilitado por `next.config.js` > `experimental.instrumentationHook`) chama a assertiva **no startup** (só no runtime Node): `NODE_ENV=production` + `JOBS_ALLOW_UNTOKEN=1` → app **não sobe**. **Limite observado:** `next dev` força `NODE_ENV=development`, então o caso "produção" é testado pela **função pura real** (compilada no harness), cobrindo os 3 casos.
+2. **[IMPLEMENT] `GET /api/admin/chargebacks/blocked`** — `{ total, porStatus, maisAntigo }`, **somente leitura**; critério extraído para `chargebacksBlockingPayout` (`asaasEventService`) — o mesmo de `payoutBlockReason`/`hasActiveChargeback`. Guarda `checkAdminAccess`. NÃO desbloqueia, NÃO altera `state`/`payoutBlockReason`, NÃO devolve PII.
+3. **[IMPLEMENT] Log estruturado na reconciliação** — `POST /api/jobs/daily-reconciliation/run` emite 1 linha sem PII: `chargebacks bloqueando repasse=N mais antigo há X dia(s)`. Não altera `ok`/`discrepancies` (o `runReconciliation` segue puro).
+4. **[IMPLEMENT] `.github/workflows/jobs.yml`** — 4 schedules (opening/closing a cada 15 min, weekly segunda 03:00 UTC, daily 04:00 UTC) + `workflow_dispatch`, chamando `${JOBS_URL}/api/jobs/<job>/run` com `x-jobs-token`. **Nenhum secret criado** — documentado que só roda quando `JOBS_URL` for configurado.
+5. **[DOC] `.protocol/decisions/D1-D8.md`** — matriz de apoio à decisão (8 decisões, alternativas com prós/contras e impacto em código/schema), **nenhuma alternativa marcada**, com a nota "não implementar sem aprovação".
+6. **[TEST]** `.tools/test-jobs.mjs` (+ `.ps1` compila o helper e passa `JOBS_STARTUP_HELPER`/`JOBS_DEV_LOG`) e `.tools/test-chargeback.mjs` (§6d, endpoint com 2 chargebacks em estados distintos + 1 encerrado). Ambos versionados.
+
+**Arquivos criados:** `src/lib/jobsStartup.ts`; `src/instrumentation.ts`; `src/app/api/admin/chargebacks/blocked/route.ts`; `.github/workflows/jobs.yml`; `.protocol/decisions/D1-D8.md`.
+**Arquivos alterados:** `src/lib/jobsAuth.ts` (reexporta o helper); `src/services/asaasEventService.ts` (+`chargebacksBlockingPayout`, aditivo); `src/app/api/jobs/daily-reconciliation/run/route.ts` (log); `next.config.js` (`instrumentationHook`); `.env.example` (aviso de proibição); `.tools/{test-jobs.mjs,test-jobs.ps1,test-chargeback.mjs}`; `.protocol/{findings,progress,task_plan}.md`.
+**Não alterados:** `.env` real, `payoutService.ts` (nenhuma mudança), migrações `20261020120000...`/`20261020150000...`, qualquer service/política de D1–D8.
+
+**Estado da bateria (executada, não declarada):** `tsc --noEmit` exit **0**; `npm run build` exit **0**; `.tools/run-all-tests.ps1` → **`BATTERY_EXIT=0`**, `### TUDO OK`. Totais: Fase 1a **15** + 1b **8** + 1c **12** + Fase 2 **112** + Fase 3 **103** + Fase 4 **202** + Fase 5 **145** = **597**; Etapa 1+2 **92**; Etapa 3 **82**; Etapa 3.2 (jobs) **38** → **809 OK / 0 FALHA**.
+
 ## Próximos passos (ver também task_plan.md)
 
 1. **Etapa 3 (pós-auditoria): webhook/chargeback — IMPLEMENTADO E TESTADO (mock) — VALIDAÇÃO SANDBOX PENDENTE.** Autenticação por cabeçalho, durabilidade/idempotência por `event.id`, bloqueio transacional de repasse, ramos de chargeback, disputa endurecida e rotas admin. **P1–P5 RESOLVIDOS por doc oficial (Etapa 3.1, 2026-10-20)** — ver `findings.md`. **Decisões humanas D1–D8 pendentes** (só proteções independentes implementadas). Chargeback real **não observado**: a doc confirma que o Sandbox exige **solicitação por e-mail** (`integracoes@asaas.com.br`) — validação **PENDENTE** até isso ser feito (não simular confirmação real). **Não autoriza produção.**

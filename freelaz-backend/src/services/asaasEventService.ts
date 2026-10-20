@@ -370,6 +370,46 @@ export async function hasActiveChargeback(db: Db, hiringId: string): Promise<boo
   return Boolean(found);
 }
 
+/**
+ * Chargebacks externos ATIVOS que hoje BLOQUEIAM repasse (Etapa 3.3 —
+ * visibilidade do "D6 pendente"). SOMENTE LEITURA: não muda nada.
+ *
+ * "Bloqueando repasse" = `ChargebackEvent.state = "ATIVO"` ligado a uma
+ * contratação `CONCLUIDO`. É o MESMO critério de `payoutBlockReason` →
+ * `hasActiveChargeback` (a guarda transacional continua sendo a autoridade; o
+ * que não está `CONCLUIDO` não depende dessa guarda, então não entra).
+ *
+ * Devolve a lista de CONTRATAÇÕES distintas bloqueadas, com o registro ATIVO
+ * mais antigo de cada uma (o que define "bloqueado desde"). Nunca devolve
+ * payload sensível.
+ */
+export type BlockedChargeback = {
+  hiringId: string;
+  externalStatus: string;
+  blockedSince: Date;
+};
+
+export async function chargebacksBlockingPayout(db: Db): Promise<BlockedChargeback[]> {
+  const active = await db.chargebackEvent.findMany({
+    where: { state: "ATIVO", hiringId: { not: null }, hiring: { status: "CONCLUIDO" } },
+    orderBy: { receivedAt: "asc" },
+    select: { hiringId: true, externalStatus: true, receivedAt: true },
+  });
+
+  const byHiring = new Map<string, BlockedChargeback>();
+  for (const cb of active) {
+    const hiringId = cb.hiringId as string;
+    if (!byHiring.has(hiringId)) {
+      byHiring.set(hiringId, {
+        hiringId,
+        externalStatus: cb.externalStatus,
+        blockedSince: cb.receivedAt,
+      });
+    }
+  }
+  return [...byHiring.values()];
+}
+
 /** Idempotência de reprocessamento: o evento já foi concluído antes? */
 export async function isAsaasEventProcessed(db: Db, asaasEventId: string): Promise<boolean> {
   const row = await db.asaasEvent.findUnique({ where: { asaasEventId } });

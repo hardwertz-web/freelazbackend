@@ -538,6 +538,82 @@ async function main() {
     body: { adminId: contractor.id },
   });
   check(payManual.status >= 400, `repasse MANUAL com chargeback ativo é bloqueado (HTTP ${payManual.status})`);
+
+  // ----------------------------------------------------------------------
+  // 6d. Visibilidade admin (Etapa 3.3): GET /api/admin/chargebacks/blocked.
+  // Semeia ≥2 chargebacks ATIVOS em estados externos DIFERENTES ligados a
+  // contratações CONCLUIDO (bloqueando), mais um chargeback ENCERRADO que NÃO
+  // deve contar. Só leitura: nada é desbloqueado.
+  section("6d. /api/admin/chargebacks/blocked (somente leitura)");
+
+  const hVis1 = await newHiring("CONCLUIDO");
+  const hVis2 = await newHiring("CONCLUIDO");
+  const hVisEncerrado = await newHiring("CONCLUIDO");
+  const nowVis = Date.now();
+  await prisma.chargebackEvent.create({
+    data: {
+      hiringId: hVis1.id,
+      paymentId: `pay_vis1_${hVis1.id}`,
+      externalStatus: "REQUESTED",
+      externalReason: "FRAUD",
+      state: "ATIVO",
+      receivedAt: new Date(nowVis - 5 * 24 * 60 * 60 * 1000), // 5 dias (mais antigo)
+    },
+  });
+  await prisma.chargebackEvent.create({
+    data: {
+      hiringId: hVis2.id,
+      paymentId: `pay_vis2_${hVis2.id}`,
+      externalStatus: "IN_DISPUTE",
+      externalReason: "PRODUCT_NOT_RECEIVED",
+      state: "ATIVO",
+      receivedAt: new Date(nowVis - 1 * 24 * 60 * 60 * 1000),
+    },
+  });
+  await prisma.chargebackEvent.create({
+    data: {
+      hiringId: hVisEncerrado.id,
+      paymentId: `pay_vis3_${hVisEncerrado.id}`,
+      externalStatus: "DONE",
+      externalReason: "FRAUD",
+      state: "ENCERRADO", // NÃO deve contar
+    },
+  });
+
+  const blockedRes = await api("GET", "/api/admin/chargebacks/blocked", {
+    headers: { "x-internal-secret": INTERNAL_SECRET },
+  });
+  check(blockedRes.status === 200, `GET blocked → 200 (obtido ${blockedRes.status})`);
+  const bjson = blockedRes.json ?? {};
+  check(typeof bjson.total === "number", `corpo tem total numérico (${bjson.total})`);
+  check(
+    bjson.total >= 2,
+    `conta pelo menos os 2 bloqueados (ATIVO + CONCLUIDO) (total=${bjson.total})`
+  );
+  check(
+    bjson.porStatus && bjson.porStatus.REQUESTED >= 1 && bjson.porStatus.IN_DISPUTE >= 1,
+    `porStatus traz estados externos distintos (${JSON.stringify(bjson.porStatus)})`
+  );
+  check(
+    !bjson.porStatus || bjson.porStatus.DONE === undefined,
+    `chargeback ENCERRADO não entra em porStatus (${JSON.stringify(bjson.porStatus?.DONE)})`
+  );
+  check(
+    bjson.maisAntigo && typeof bjson.maisAntigo.hiringId === "string" && !!bjson.maisAntigo.bloqueadoDesde,
+    `maisAntigo traz { hiringId, bloqueadoDesde } (${JSON.stringify(bjson.maisAntigo)})`
+  );
+  // Somente leitura: os ativos continuam ativos e nada foi desbloqueado.
+  const stillActive = await prisma.chargebackEvent.count({
+    where: { state: "ATIVO", hiringId: { in: [hVis1.id, hVis2.id] } },
+  });
+  check(stillActive === 2, `consulta NÃO alterou o estado dos chargebacks (${stillActive})`);
+
+  // Sem credencial de admin: recusa (nem segredo errado nem sessão).
+  const blockedNoAuth = await api("GET", "/api/admin/chargebacks/blocked", {
+    headers: { "x-internal-secret": "segredo-errado" },
+  });
+  check(blockedNoAuth.status === 403, `sem credencial válida → 403 (obtido ${blockedNoAuth.status})`);
+
   // ----------------------------------------------------------------------
   section("7. Chargeback após liberação (não reverte automaticamente)");
   const hReleased = await newHiring("CONCLUIDO");

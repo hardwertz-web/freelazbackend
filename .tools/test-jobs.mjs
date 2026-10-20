@@ -1,12 +1,14 @@
-// Testes versionados da Etapa 3.2 — AGENDADOR DE JOBS.
+// Testes versionados da Etapa 3.2/3.3 — AGENDADOR DE JOBS.
 //
 // Roda CONTRA O SERVIDOR REAL (rotas /api/jobs/*/run) com banco de dev. Nada
 // aqui move dinheiro real: o repasse semanal usa PAYOUT_SANDBOX=1 (o wrapper
 // .tools/test-jobs.ps1 garante). Nenhum Sandbox real do Asaas é chamado.
 //
 // Cobre:
+//   - guard de startup do JOBS_ALLOW_UNTOKEN (helper PURO, 3 casos);
 //   - 401 sem token; 401 token errado; 200 token certo;
 //   - idempotência OBSERVADA (rodar 2x não duplica efeito);
+//   - log estruturado da reconciliação (chargebacks bloqueando repasse);
 //   - rota de job inexistente → 404.
 //
 // Pré-requisitos (o .tools/test-jobs.ps1 garante):
@@ -15,7 +17,7 @@
 //
 // Uso: node .tools\test-jobs.mjs   (exit 0 = todos os testes passaram)
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -147,8 +149,68 @@ async function seedHiring(ctx, { status, startsAt, endsAt, openingCode = null, c
 }
 
 // ==========================================================================
+// Guard de startup (Etapa 3.3): helper PURO compilado pelo wrapper .ps1.
+// Testamos a função REAL (não uma cópia): o .ps1 compila src/lib/jobsStartup.ts
+// para um .js temporário e passa o caminho em JOBS_STARTUP_HELPER.
+async function loadStartupHelper() {
+  const file = process.env.JOBS_STARTUP_HELPER;
+  if (!file || !fs.existsSync(file)) {
+    console.error(
+      "JOBS_STARTUP_HELPER não definido/encontrado — o wrapper .ps1 compila o helper."
+    );
+    process.exit(1);
+  }
+  return import(pathToFileURL(file).href);
+}
+
+async function testStartupGuard() {
+  section("0. Guard de startup JOBS_ALLOW_UNTOKEN (helper puro)");
+  const { isUntokenJobsForbidden, assertJobsAllowUntokenSafe } = await loadStartupHelper();
+
+  // (a) dev + flag: PERMITIDO (escape hatch de dev).
+  check(
+    isUntokenJobsForbidden("development", "1") === false,
+    "dev + JOBS_ALLOW_UNTOKEN=1 → permitido"
+  );
+  // (b) produção + flag: PROIBIDO (deve lançar no startup).
+  check(
+    isUntokenJobsForbidden("production", "1") === true,
+    "production + JOBS_ALLOW_UNTOKEN=1 → proibido"
+  );
+  let threw = false;
+  let message = "";
+  try {
+    assertJobsAllowUntokenSafe("production", "1");
+  } catch (err) {
+    threw = true;
+    message = err instanceof Error ? err.message : String(err);
+  }
+  check(threw, "assertJobsAllowUntokenSafe(production,1) lança (impede subir)");
+  check(
+    /proibido em produção/i.test(message),
+    `mensagem clara de proibição (${message.slice(0, 60)}...)`
+  );
+  // (c) produção + flag AUSENTE: PERMITIDO.
+  check(
+    isUntokenJobsForbidden("production", undefined) === false &&
+      isUntokenJobsForbidden("production", "") === false,
+    "production sem JOBS_ALLOW_UNTOKEN → permitido"
+  );
+  let okNoFlag = true;
+  try {
+    assertJobsAllowUntokenSafe("production", undefined);
+    assertJobsAllowUntokenSafe("production", "");
+  } catch {
+    okNoFlag = false;
+  }
+  check(okNoFlag, "assertJobsAllowUntokenSafe(production,sem flag) não lança");
+}
+
+// ==========================================================================
 async function main() {
   const ctx = await seedContext();
+
+  await testStartupGuard();
 
   // ------- 1. Autenticação -------------------------------------------------
   section("1. Autenticação por x-jobs-token");
@@ -237,12 +299,53 @@ async function main() {
 
   // ------- 5. Reconciliação diária — somente leitura -----------------------
   section("5. daily-reconciliation: somente leitura (2x sem efeito)");
+  // Semeia uma contratação CONCLUIDO com chargeback ATIVO (bloqueio de repasse)
+  // para exercitar o log estruturado de visibilidade.
+  const blockedHiring = await seedHiring(ctx, {
+    status: "CONCLUIDO",
+    startsAt: new Date(Date.now() - 8 * HOUR),
+    endsAt: new Date(Date.now() - 4 * HOUR),
+    openingCode: "333333",
+    closingCode: "444444",
+    closingCodeUsedAt: new Date(Date.now() - 3 * HOUR),
+  });
+  await prisma.chargebackEvent.create({
+    data: {
+      hiringId: blockedHiring.id,
+      paymentId: `pay_jobs_cb_${runId}`,
+      externalStatus: "REQUESTED",
+      externalReason: "FRAUD",
+      state: "ATIVO",
+    },
+  });
+  const blockedCount = await prisma.chargebackEvent.count({
+    where: { state: "ATIVO", hiring: { status: "CONCLUIDO" } },
+  });
+  check(blockedCount >= 1, `chargeback ATIVO bloqueando repasse semeado (${blockedCount})`);
+
   const ledBefore = await prisma.ledgerEntry.count();
   const payBefore = await prisma.payout.count();
   const rec1 = await callJob("daily-reconciliation", { token: JOBS_TOKEN });
   check(rec1.status === 200, `1ª execução → 200 (obtido ${rec1.status})`);
   check(rec1.json?.ok === true, `resposta { ok: true }`);
   check(typeof rec1.json?.report?.ok === "boolean", `relatório presente (ok=${rec1.json?.report?.ok})`);
+
+  // Log estruturado (Etapa 3.3): sem PII, com contagem de bloqueados.
+  const devLog = process.env.JOBS_DEV_LOG;
+  if (devLog && fs.existsSync(devLog)) {
+    const logText = fs.readFileSync(devLog, "utf8");
+    const match = logText.match(/chargebacks bloqueando repasse=(\d+) mais antigo há (\d+) dia\(s\)/);
+    check(!!match, "log de reconciliação traz 'chargebacks bloqueando repasse=N mais antigo há X dia(s)'");
+    if (match) {
+      check(
+        Number(match[1]) >= 1,
+        `log conta os bloqueados corretamente (${match[1]})`
+      );
+    }
+  } else {
+    check(false, `log do dev server legível (JOBS_DEV_LOG=${devLog})`);
+  }
+
   const rec2 = await callJob("daily-reconciliation", { token: JOBS_TOKEN });
   check(rec2.status === 200, `2ª execução → 200 (obtido ${rec2.status})`);
   const ledAfter = await prisma.ledgerEntry.count();

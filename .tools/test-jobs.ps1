@@ -24,6 +24,7 @@ $env:PATH = "$(Join-Path $root '.tools\node-v20.20.2-win-x64');$env:PATH"
 $APP_PORT = 3000
 $devLog = Join-Path $env:TEMP "freelaz-jobs-dev.out"
 $devErr = Join-Path $env:TEMP "freelaz-jobs-dev.err"
+$startupHelperDir = Join-Path $env:TEMP "freelaz-jobs-startup-helper"
 
 # Token de teste DESTA bateria (nunca o de produção; nunca é o .env real).
 $TEST_JOBS_TOKEN = "jobs-token-de-teste-3.2-nao-usar-em-producao-0000"
@@ -75,13 +76,29 @@ try {
   }
   Write-Host "  OK    dev server ouvindo em 127.0.0.1:$APP_PORT"
 
+  Write-Host "`n### 1b. Compilando o helper de startup (funcao pura real) #####"
+  Remove-Item $startupHelperDir -Recurse -Force -ErrorAction SilentlyContinue
+  Push-Location $BackendDir
+  try {
+    & npx tsc "src/lib/jobsStartup.ts" --outDir $startupHelperDir --module esnext --target es2020 --moduleResolution bundler 2>&1 | Out-Null
+  } finally {
+    Pop-Location
+  }
+  $helperJs = Join-Path $startupHelperDir "jobsStartup.js"
+  if (-not (Test-Path $helperJs)) { throw "helper de startup nao compilou: $helperJs" }
+  Write-Host "  OK    helper compilado em $helperJs"
+
   Write-Host "`n### 2. test-jobs.mjs #########################"
   $env:JOBS_RUN_TOKEN = $TEST_JOBS_TOKEN
+  $env:JOBS_STARTUP_HELPER = $helperJs
+  $env:JOBS_DEV_LOG = $devLog
   & $node (Join-Path $tools "test-jobs.mjs")
   if ($LASTEXITCODE -eq 0) { $failed = $false }
 } finally {
   Stop-Port $APP_PORT
   Remove-Item Env:PAYOUT_SANDBOX -ErrorAction SilentlyContinue
+  Remove-Item Env:JOBS_STARTUP_HELPER -ErrorAction SilentlyContinue
+  Remove-Item Env:JOBS_DEV_LOG -ErrorAction SilentlyContinue
   if ($null -eq $savedToken) { Remove-Item Env:JOBS_RUN_TOKEN -ErrorAction SilentlyContinue }
   else { $env:JOBS_RUN_TOKEN = $savedToken }
 

@@ -126,6 +126,61 @@ Registro de descobertas e restrições técnicas encontradas ao longo do desenvo
 | **P4** | Política de retry | ✅ **RESOLVIDO** (fonte: https://docs.asaas.com/docs/penalização-de-filas, 2026-10-20) | Backoff progressivo: 0 / 30s / 1m / 3,5m / 5m / 15m / 25m / 1h / 1h / 1h / 1h / 1h / 2h / 2h / 3h; **após 15 falhas consecutivas a fila é pausada** (eventos guardados 14 dias). Sucesso = 2xx. Confirma a premissa do código. |
 | **P5** | Base URL do Sandbox | ⚠️ **RESOLVIDO (doc) / DIVERGÊNCIA NO `.env` MANTIDA** (fonte: https://docs.asaas.com/docs/sandbox, 2026-10-20) | A URL **oficial** é **`https://api-sandbox.asaas.com/v3`**; o `.env` usa `https://sandbox.asaas.com/api/v3` (formato **legado**). Ambos respondem (HTTP 401 sem credencial — alias legado ainda ativo). `src/lib/asaas.ts` tem comentário documentando; **`.env` NÃO alterado** (decisão do usuário: só registrar). |
 
+## Workflow de jobs + visibilidade de chargeback (Etapa 3.3)
+
+**Hardening do escape hatch `JOBS_ALLOW_UNTOKEN`.** O escape hatch existe só para o
+harness local exercitar o caminho de sucesso sem token. Em produção ele abriria as rotas
+`/api/jobs/*/run` — **inclusive o repasse semanal** — para qualquer um. Por isso:
+- A checagem pura `isUntokenJobsForbidden(nodeEnv, allowUntoken)` e a de startup
+  `assertJobsAllowUntokenSafe(...)` vivem em **`src/lib/jobsStartup.ts`** (módulo **sem**
+  `crypto`/`next/server`, para poder ser importado pelo hook de startup sem puxar deps
+  Node para o bundle Edge).
+- O **startup** é barrado por `src/instrumentation.ts` (`register()`, habilitado por
+  `next.config.js` > `experimental.instrumentationHook`), que só roda no runtime Node
+  (`process.env.NEXT_RUNTIME === "nodejs"`). Com `NODE_ENV=production` + `JOBS_ALLOW_UNTOKEN=1`
+  o app **não sobe** (erro explícito; melhor não subir do que subir inseguro).
+- **Limite observado e documentado:** `next dev` **força** `NODE_ENV=development` (o Next
+  avisa "non-standard NODE_ENV"), então o caso "produção" não é reproduzível em `dev` — é
+  exatamente por isso que a validação tem uma **função pura** testável isoladamente. O teste
+  compila `src/lib/jobsStartup.ts` (o código REAL, não uma cópia) e cobre os 3 casos:
+  dev+flag = permitido; prod+flag = **lança**; prod sem flag = permitido.
+
+**Visibilidade de chargebacks bloqueados (`GET /api/admin/chargebacks/blocked`).**
+Enquanto D1–D8 não é decidido, um chargeback ATIVO bloqueia o repasse e nada marca o
+caso como resolvido — o "D6 pendente". Para o admin **ver** esse acúmulo (sem destravar
+nada), o endpoint devolve `{ total, porStatus, maisAntigo }`:
+- `total` = **contratações** distintas bloqueadas (`ChargebackEvent.state = "ATIVO"` +
+  `hiring.status = "CONCLUIDO"` — o MESMO critério de `payoutBlockReason` →
+  `hasActiveChargeback`, agora extraído para `chargebacksBlockingPayout` no
+  `asaasEventService` para não duplicar regra);
+- `porStatus` = distribuição do status externo **cru** (REQUESTED/IN_DISPUTE/...);
+- `maisAntigo` = `{ hiringId, bloqueadoDesde }` do registro ativo mais antigo.
+- **SOMENTE LEITURA**: não desbloqueia, não muda `state`/`payoutBlockReason`, não move
+  dinheiro. Guarda igual à dos demais `/api/admin/*` (`checkAdminAccess`). Nunca devolve
+  payload bruto/PII.
+
+**Log estruturado na reconciliação diária.** O job `POST /api/jobs/daily-reconciliation/run`
+emite, ao final, **uma linha sem PII**:
+`[Freelaz][reconciliacao] chargebacks bloqueando repasse=N mais antigo há X dia(s)`.
+Usa o mesmo helper `chargebacksBlockingPayout`. **Não** altera `ok`/`discrepancies` do
+relatório nem qualquer estado — é só observabilidade (o serviço `runReconciliation`
+continua puro/somente-leitura; o log é emitido na rota do job).
+
+**Workflow GitHub Actions (`.github/workflows/jobs.yml`).** 4 schedules + `workflow_dispatch`:
+`opening-codes`/`closing-codes` a cada **15 min** (`*/15 * * * *`), `weekly-payout`
+segunda **03:00 UTC** (`0 3 * * 1`), `daily-reconciliation` **04:00 UTC** (`0 4 * * *`).
+Cada job chama `POST ${JOBS_URL}/api/jobs/<job>/run` com `x-jobs-token:
+${{ secrets.JOBS_RUN_TOKEN }}`. **⚠️ O workflow só é útil quando o secret `JOBS_URL` for
+configurado** — enquanto não existe deploy, `JOBS_URL` não está definido e as chamadas
+falham (URL vazia); é intencional. **Nenhum secret foi criado** (só o arquivo); tokens
+vivem apenas em `secrets.*`.
+
+**Template de decisão D1–D8.** Criado `.protocol/decisions/D1-D8.md` — **matriz de apoio,
+não decisão**: para cada D1–D8 lista problema, default conservador atual, 2–3 alternativas
+com prós/contras e o que muda em código/schema. **Nenhuma alternativa marcada**; traz a nota
+"Não implementar sem aprovação explícita". Nenhum service/política de reembolso foi criado
+ou alterado.
+
 ## Agendamento de jobs (Etapa 3.2)
 
 Os 4 jobs têm **rotas finas** (`POST /api/jobs/<nome>/run`, autenticadas por `x-jobs-token` = `JOBS_RUN_TOKEN`), mas **quem os chama periodicamente é externo ao processo**: o agendador é **infraestrutura**, não código do app. As rotas são a superfície estável; o agendador só as chama.
