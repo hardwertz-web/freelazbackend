@@ -1,0 +1,749 @@
+// Freelaz — schema Prisma (PostgreSQL)
+// Valores monetários em CENTAVOS (Int), para evitar erro de arredondamento
+// de ponto flutuante em dinheiro. Reflete o cadastro único (CPF/CNPJ +
+// papéis) e a arquitetura financeira descrita no CLAUDE.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentType {
+  CPF
+  CNPJ
+}
+
+enum UserRole {
+  PROFISSIONAL
+  CONTRATANTE
+  // Papel do painel administrativo (Fase 5). Nasce fora da API — atribuído
+  // manualmente pelo operador (Prisma Studio/script), nunca por auto-cadastro:
+  // proteção rigorosa das operações de administração.
+  ADMIN
+}
+
+enum VerificationStatus {
+  NAO_VERIFICADO
+  EM_ANALISE
+  VERIFICADO
+}
+
+// Situação do papel dentro da conta. Um papel nasce PENDENTE quando o
+// cadastro pede verificação (Profissional) e só vira ATIVO depois da
+// aprovação — já o Contratante nasce ATIVO (verificação leve: confirmação
+// de e-mail/telefone, que dá o selo, não bloqueia a publicação de vagas).
+enum UserRoleStatus {
+  PENDENTE
+  ATIVO
+}
+
+// ---------- Identidade ----------
+
+model User {
+  id           String       @id @default(cuid())
+  documentType DocumentType
+  document     String       @unique // CPF ou CNPJ (somente dígitos)
+  name         String // nome completo (CPF) ou razão social (CNPJ)
+  tradeName    String? // nome fantasia (CNPJ)
+  birthDate    DateTime? // obrigatório para CPF; bloqueado se < 18 anos
+  email        String       @unique
+  phone        String       @unique
+  passwordHash String
+  city         String?
+  state        String?
+  pixKey       String? // chave Pix para receber repasses (papel Profissional)
+
+  // Cliente na conta Asaas criado na PRIMEIRA cobrança (Etapa 2 — decisão
+  // humana "cliente por usuário"): POST /payments exige o campo `customer`
+  // (docs.asaas.com > Criar nova cobrança). Criado uma vez, persistido aqui e
+  // reutilizado em todas as cobranças seguintes do mesmo usuário.
+  asaasCustomerId String? @unique
+
+  // Aceite dos Termos de Uso/Privacidade (LGPD): obrigatório no cadastro,
+  // registrado com data/hora exata.
+  termsAcceptedAt  DateTime?
+  emailConfirmedAt DateTime? // confirmação via token enviado por e-mail
+  phoneConfirmedAt DateTime? // confirmação via token (SMS/WhatsApp — Fase 6)
+
+  roles                 UserRoleAssignment[]
+  sessions              Session[]
+  authTokens            AuthToken[]
+  identityVerifications IdentityVerification[]
+  portfolioItems        PortfolioItem[]
+  workExperiences       WorkExperience[]
+  professionalProfile   ProfessionalProfile?
+  contractorProfile     ContractorProfile?
+  socialAccounts        SocialAccount[]
+  jobPostings           JobPosting[]  @relation("JobPostingContractor")
+  applications          Application[] @relation("ApplicationProfessional")
+  hiringsAsProfessional Hiring[]      @relation("HiringProfessional")
+  hiringsAsContractor   Hiring[]      @relation("HiringContractor")
+  messages              Message[]
+  payoutsReceived       Payout[]
+  evaluationsWritten    Evaluation[]  @relation("EvaluationAuthor")
+  evaluationsReceived   Evaluation[]  @relation("EvaluationTarget")
+  checkIns              CheckIn[]
+  reportsWritten        Report[]      @relation("ReportReporter")
+  reportsReceived       Report[]      @relation("ReportReported")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Um usuário pode ter os dois papéis ativos ao mesmo tempo
+model UserRoleAssignment {
+  id     String         @id @default(cuid())
+  userId String
+  user   User           @relation(fields: [userId], references: [id])
+  role   UserRole
+  status UserRoleStatus @default(ATIVO)
+  // Papel Profissional nasce PENDENTE e só ativa quando a verificação de
+  // identidade (documento + selfie, ou CNPJ) for aprovada.
+  activeAt DateTime @default(now())
+
+  @@unique([userId, role])
+}
+
+// Sessão = token opaco (32 bytes aleatórios) guardado no cookie httpOnly.
+// Só o HASH do token vai pro banco — se o banco vazar, os tokens continuam
+// inúteis. Tokens de reset/confirmação seguem a mesma lógica (AuthToken).
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+enum AuthTokenType {
+  EMAIL_CONFIRM
+  PASSWORD_RESET
+}
+
+model AuthToken {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  type      AuthTokenType
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+}
+
+// Submissão de verificação de identidade por papel (o selo é por papel, não
+// por conta). Aprovação é manual via Prisma Studio até o painel admin (Fase 5).
+model IdentityVerification {
+  id              String             @id @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id])
+  role            UserRole // para qual papel foi enviada
+  documentUrl     String? // RG/CNH (papel Profissional CPF) ou comprovante
+  selfieUrl       String? // obrigatório para CPF
+  status          VerificationStatus @default(EM_ANALISE)
+  rejectionReason String?
+  // Auditoria de quem decidiu (id do ADMIN que aprovou/rejeitou no painel).
+  decidedById     String?
+  submittedAt     DateTime           @default(now())
+  analyzedAt      DateTime?
+}
+
+model ProfessionalProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id])
+  bio                String?
+  categories         String[] // ex: ["bartender"], ou ["influenciador-digital"]
+  // Campos de enriquecimento do perfil (CRUD básico — Fase 1)
+  headline           String? // frase curta exibida no topo do perfil
+  region             String? // bairro/cidade de atuação
+  availability       String[] // exemplos: ["SEG_MANHA", "QUA_TARDE", "SAB_INTEIRO"]
+  referencePriceCents Int? // preço de referência (em centavos) — opcional
+  softSkills          String[] // tags de soft skills, disponíveis mesmo sem experiência
+  resumeUrl           String? // currículo (PDF) enviado pelo próprio usuário
+  verificationStatus VerificationStatus @default(NAO_VERIFICADO)
+  reliabilityScore   Float? // confiabilidade (% separado da nota, ex: 98.0)
+  ratingAverage      Float?
+  isInfluencer       Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+// Galeria do perfil (fotos + vídeos de até 60s, sem autoplay no front).
+// Sem item aqui → o front usa a ilustração padrão da categoria.
+model PortfolioItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  kind      MediaKind
+  url       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+enum MediaKind {
+  FOTO
+  VIDEO
+}
+
+// Experiência estruturada: Empresa / Cargo / Período (MM-AAAA)
+model WorkExperience {
+  id          String  @id @default(cuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id])
+  company     String
+  role        String
+  periodStart String // MM-AAAA
+  periodEnd   String? // null = até o momento atual
+  createdAt   DateTime @default(now())
+}
+
+model ContractorProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id])
+  verificationStatus VerificationStatus @default(NAO_VERIFICADO)
+  ratingAverage      Float?
+  cltPlanId          String?
+  cltPlan            CltPlan?           @relation(fields: [cltPlanId], references: [id])
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+// ---------- Redes sociais (influenciadores) ----------
+
+enum SocialProvider {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+}
+
+// Apenas enriquece/verifica o perfil do profissional (categoria "influenciador digital").
+// NÃO existe fluxo de contratação separado para influenciador — ele usa o mesmo
+// Hiring, "Me contrate", pagamento, chat, códigos e avaliação de qualquer outra categoria.
+model SocialAccount {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  provider        SocialProvider
+  externalId      String // ID da conta na plataforma de origem
+  handle          String // @usuario
+  followersCount  Int?
+  accessTokenEnc  String // token criptografado — nunca em texto puro
+  refreshTokenEnc String?
+  tokenExpiresAt  DateTime?
+  verifiedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([provider, externalId])
+}
+
+// ---------- Vagas, candidaturas e lista de suplentes ----------
+
+enum JobPostingStatus {
+  ABERTA // aceitando candidaturas
+  PREENCHIDA // alguém foi selecionado e pagou — some do marketplace
+  EXPIRADA // prazo passou sem preenchimento
+  CANCELADA // excluída manualmente pela empresa
+}
+
+enum JobPostingVisibility {
+  PUBLICA // aparece no marketplace normalmente
+  PRIVADA // gerada pelo botão "Me contrate" — visível só para targetProfessionalId
+}
+
+model JobPosting {
+  id                  String               @id @default(cuid())
+  contractorId        String
+  contractor          User                 @relation("JobPostingContractor", fields: [contractorId], references: [id])
+  title               String
+  description         String
+  category            String
+  valueCents          Int
+  status              JobPostingStatus     @default(ABERTA)
+  visibility          JobPostingVisibility @default(PUBLICA)
+  targetProfessionalId String? // obrigatório quando visibility = PRIVADA ("Me contrate")
+  urgentBoost         Boolean              @default(false) // true se a empresa pagou o destaque de R$10
+  startsAt            DateTime
+  endsAt              DateTime // necessário para checar conflito de agenda dos suplentes
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  applications Application[]
+  hirings      Hiring[]
+  boosts       JobBoost[]
+}
+
+enum ApplicationStatus {
+  PENDENTE // aguardando decisão da empresa (ou do profissional, se veio de "Me contrate")
+  CONTRAPROPOSTA // uma das partes propôs valor/condição diferente — aguardando resposta da outra
+  SELECIONADO // foi escolhido/aceito — gera o Hiring
+  SUPLENTE // não foi o escolhido, mas segue disponível na lista de suplentes
+  DESISTIU // o próprio profissional retirou a candidatura, ou recusou a proposta
+}
+
+// Candidatura a uma vaga PÚBLICA, ou resposta a uma proposta PRIVADA ("Me contrate").
+// Quem não é selecionado vira SUPLENTE automaticamente (nunca é rejeitado em
+// definitivo) — fica disponível para o botão "Retomar vaga".
+model Application {
+  id                    String            @id @default(cuid())
+  jobPostingId          String
+  jobPosting            JobPosting        @relation(fields: [jobPostingId], references: [id])
+  professionalId        String
+  professional          User              @relation("ApplicationProfessional", fields: [professionalId], references: [id])
+  status                ApplicationStatus @default(PENDENTE)
+  // Contraproposta (ida e volta até alguém aceitar ou desistir):
+  counterOfferValueCents Int?
+  counterOfferBy        String? // "CONTRACTOR" ou "PROFESSIONAL" — quem fez a última oferta
+  // Valor final acordado (usado para criar o Hiring) — igual ao valueCents da
+  // vaga se nunca houve contraproposta, ou ao último counterOfferValueCents aceito.
+  agreedValueCents      Int?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  hiring Hiring?
+
+  @@unique([jobPostingId, professionalId])
+}
+
+// Impulsionamento pago ("Publicar com urgência") — R$10,00 fixo (1000 centavos),
+// configurável em Configurações Financeiras. Cobrado via Mercado Pago, separado
+// da comissão da contratação.
+model JobBoost {
+  id             String   @id @default(cuid())
+  jobPostingId   String   @unique // um boost por vaga: a unicidade é garantida pelo banco
+  jobPosting     JobPosting @relation(fields: [jobPostingId], references: [id])
+  amountCents    Int        @default(1000)
+  // Id do pagamento no provedor (Asaas desde a migração da Fase 4). O nome é
+  // genérico de propósito: se o provedor mudar de novo, só a lib/rota muda.
+  providerPaymentId String? @unique
+  status         String     @default("PENDENTE") // PENDENTE, PAGO, FALHOU
+  createdAt      DateTime   @default(now())
+}
+
+// Tentativa de criação de cobrança no provedor (Etapa 1 — idempotência).
+//
+// A contratação/boost é a OPERAÇÃO; cada chamada ao provedor é uma TENTATIVA.
+// A serialização de requisições concorrentes é feita por uma trava advisory
+// transacional por operação (ver services/chargeService.ts > claimAttempt);
+// a unicidade de (entity, entityId, attempt) é a última linha de defesa —
+// sozinha ela não basta, porque em READ COMMITTED duas transações podem
+// alocar números de tentativa diferentes e não colidir.
+//
+// Estados:
+//  - PROVIDER_UNCONFIRMED: tentativa iniciada mas o resultado não foi confirmado
+//    (resposta perdida, falha de rede/5xx, ou crash antes de persistir). Estado
+//    AMBÍGUO: nunca criar nova cobrança sem antes reconciliar com o provedor.
+//  - CONFIRMED: o provedor criou a cobrança e o id foi registrado aqui.
+//  - RECONCILED_ABSENT: reconciliação com o provedor provou que NÃO existe
+//    cobrança para esta tentativa — a próxima tentativa pode ser criada.
+//  - REJECTED: o provedor recusou definitivamente (4xx) — nada foi criado.
+model ChargeAttempt {
+  id        String   @id @default(cuid())
+  entity    String   // "HIRING" (contratação) ou "BOOST" (destaque de vaga)
+  entityId  String   // Hiring.id ou JobBoost.id
+  attempt   Int      // 1, 2, 3... tentativas de cobrar a MESMA operação
+  state     String   @default("PROVIDER_UNCONFIRMED")
+  providerPaymentId String? @unique
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entity, entityId, attempt])
+  @@index([entity, entityId])
+}
+
+model Hiring {
+  id               String      @id @default(cuid())
+  jobPostingId     String
+  jobPosting       JobPosting  @relation(fields: [jobPostingId], references: [id])
+  applicationId    String      @unique // a candidatura SELECIONADO que originou esta contratação
+  application      Application @relation(fields: [applicationId], references: [id])
+  jobTitle         String
+  professionalId   String
+  professional     User        @relation("HiringProfessional", fields: [professionalId], references: [id])
+  contractorId     String
+  contractor       User        @relation("HiringContractor", fields: [contractorId], references: [id])
+  grossValueCents  Int // valor total pago pela empresa
+  netValueCents    Int // valor líquido ao profissional
+  commissionBps    Int // comissão em pontos-base (ex: 1000 = 10%)
+  // status: AGUARDANDO_PAGAMENTO, RETIDO, EM_ANDAMENTO, CONCLUIDO, LIBERADO,
+  // CANCELADO, EM_DISPUTA
+  // Caminho único de encerramento (ver CLAUDE.md > "Lista de suplentes e
+  // cancelamento"): não existe um status separado para "desfazer match" —
+  // toda interrupção antes da conclusão vira CANCELADO, com multa/reembolso/
+  // nota decididos pela política de cancelamento assimétrica de sempre.
+  //
+  // Este campo só pode ser escrito por hiringService.setHiringStatus, que
+  // valida a transição — escrita livre aqui quebra a rastreabilidade do
+  // VLAEG (seção A) e o webhook/reciliação diária.
+  status           String      @default("AGUARDANDO_PAGAMENTO")
+  // Referência do pagamento no provedor (Asaas). Gravada já na criação do
+  // cobrança (`/api/payments/create`); o webhook casa por `external_reference`
+  // e confirma o status — id nomescente de propósito.
+  providerPaymentId String?    @unique
+  openingCode      String? // gerado 1h antes do início
+  closingCode      String? // gerado 1h antes do fim
+  closingCodeUsedAt DateTime? // dispara a liberação da avaliação 2h depois
+  disputeOpen      Boolean     @default(false)
+  completedAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  ledgerEntries LedgerEntry[]
+  payout        Payout?
+  chat          Chat?
+  evaluations   Evaluation[]
+  checkIn       CheckIn?
+  codeAttempts  CodeAttempt[]
+  disputes      Dispute[]
+  reports       Report[]
+  chargebacks   ChargebackEvent[]
+}
+
+// ---------- Financeiro ----------
+
+enum LedgerEntryType {
+  RETENCAO // dinheiro entrou e ficou retido
+  LIBERACAO // repasse liberado ao profissional
+  REEMBOLSO // devolvido à empresa (cancelamento/disputa)
+  AJUSTE // correção manual — exige revisão humana, nunca entra automático nos totais
+}
+
+// Livro-razão interno: TODA movimentação de saldo retido passa por aqui.
+// Nunca editar um registro existente — sempre criar um novo lançamento.
+// O saldo retido de uma contratação é sempre CALCULADO a partir daqui,
+// nunca armazenado como um número solto em outra tabela.
+model LedgerEntry {
+  id          String          @id @default(cuid())
+  hiringId    String
+  hiring      Hiring          @relation(fields: [hiringId], references: [id])
+  type        LedgerEntryType
+  amountCents Int
+  reason      String
+  createdBy   String // "system" ou o id do admin que registrou um ajuste/decisão de disputa
+  createdAt   DateTime        @default(now())
+}
+
+enum PayoutStatus {
+  PENDENTE
+  PROCESSANDO
+  CONCLUIDO
+  FALHOU
+}
+
+// Toda transferência Pix de saída (repasse ao profissional) fica registrada
+// aqui, com chave de idempotência obrigatória.
+model Payout {
+  id             String       @id @default(cuid())
+  hiringId       String       @unique
+  hiring         Hiring       @relation(fields: [hiringId], references: [id])
+  professionalId String
+  professional   User         @relation(fields: [professionalId], references: [id])
+  amountCents    Int
+  status         PayoutStatus @default(PENDENTE)
+  idempotencyKey String       @unique
+  providerTransferId String?  @unique // id da transferência no provedor (Asaas)
+  failureReason  String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+// ---------- Eventos de webhook do Asaas (Etapa 3 — durabilidade/idempotência) ----------
+
+// Evento BRUTO recebido do webhook do Asaas, persistido ANTES do HTTP 200.
+//
+// Motivo (contrato oficial docs.asaas.com > Webhooks): a entrega é
+// "at-least-once" e o provedor reenvia o mesmo evento (o campo `id` é a chave
+// de idempotência documentada). Sem uma tabela durável, um evento perdido
+// (falha do processo depois do parse e antes do efeito) nunca seria
+// reconciliado — e um reenvio poderia duplicar efeitos financeiros.
+//
+// Esta entidade é ADITIVA e de AUDITORIA: nunca sobrescreve lançamento do
+// ledger nem move dinheiro por si só. Guarda só o HASH do payload sanitizado
+// (nunca o corpo cru, que pode conter dados pessoais), o identificador do
+// evento e o desfecho do processamento.
+//
+// Estados de `processingStatus`:
+//  - RECEBIDO:    persistido, aguardando/em processamento (caminho normal: a
+//                 linha é criada e atualizada na mesma transação do efeito).
+//  - PROCESSADO:  efeito (ou no-op idempotente) concluído com sucesso.
+//  - IGNORADO:    evento reconhecido mas sem efeito de estado nesta versão
+//                 (ex.: status de pagamento que não muda nada) — auditável.
+//  - NAO_TRATADO: evento desconhecido — preservado para auditoria, sem efeito.
+//  - FALHA:       erro definitivo/recuperável do processamento — reprocessável.
+model AsaasEvent {
+  id                String    @id @default(cuid())
+  // `id` do evento Asaas (`evt_...`). Único: a unicidade é a última defesa da
+  // idempotência (a primeira é a transação que cria a linha antes do efeito).
+  asaasEventId      String    @unique
+  event             String    // ex.: PAYMENT_CONFIRMED, PAYMENT_CHARGEBACK_REQUESTED...
+  paymentId         String?   // `payment.id` do payload, quando houver
+  externalReference String?   // `payment.externalReference` (hiringId ou "boost:...")
+  payloadHash       String?   // SHA-256 do payload sanitizado (nunca o corpo cru)
+  processingStatus  String    @default("RECEBIDO")
+  actionTaken       String?   // o que o processamento fez (curto, auditável)
+  errorMessage      String?   // motivo de FALHA (sem dados sensíveis)
+  receivedAt        DateTime  @default(now())
+  processedAt       DateTime?
+
+  chargebacks ChargebackEvent[]
+
+  @@index([event, receivedAt])
+  @@index([paymentId])
+  @@index([processingStatus, receivedAt])
+}
+
+// Representação EXTERNA de uma contestação (chargeback) do Asaas — distinta da
+// `Dispute` INTERNA do Freelaz. As duas podem estar relacionadas (mesmo caso),
+// mas nunca são a mesma coisa: a disputa interna é a decisão humana da
+// plataforma; o chargeback é o processo do emissor/provedor.
+//
+// Campos externos guardados como TEXT (status/reason) e não enum do Prisma: a
+// doc oficial lista valores que podem EVOLUIR (chargeback.status =
+// REQUESTED/IN_DISPUTE/DISPUTE_LOST/REVERSED/DONE; reason = 32 valores). Um
+// valor desconhecido é PRESERVADO (auditoria) em vez de quebrar o webhook —
+// nunca convertido silenciosamente em outro status.
+//
+// NÃO guarda política financeira: nenhum reembolso/estorno é criado a partir
+// desta entidade. Ela só registra o fato externo e alimenta o BLOQUEIO de
+// repasse enquanto a contestação estiver ativa.
+model ChargebackEvent {
+  id               String    @id @default(cuid())
+  // Id do evento Asaas que originou/atualizou este registro (idempotência).
+  asaasEventId     String?
+  asaasEvent       AsaasEvent? @relation(fields: [asaasEventId], references: [id])
+  // Id do chargeback no provedor, quando o contrato o fornecer.
+  providerChargebackId String?
+  paymentId        String    // id do pagamento contestado no Asaas
+  // Status externo ORIGINAL (não traduzido): REQUESTED/IN_DISPUTE/DISPUTE_LOST/
+  // REVERSED/DONE — ou o valor cru se o provedor devolver algo novo.
+  externalStatus   String
+  // Motivo externo ORIGINAL (reason do Asaas) — texto cru, nunca inferido.
+  externalReason   String?
+  // Valor contestado em CENTAVOS (o payload vem em reais; a conversão é feita
+  // no parse e validada — nunca float).
+  disputedValueCents Int?
+  // Datas fornecidas pelo provedor (quando houver no payload).
+  providerCreatedAt DateTime?
+  providerUpdatedAt DateTime?
+  // Vínculos internos (opcionais): contratação e disputa interna correspondentes.
+  hiringId         String?
+  hiring           Hiring?   @relation(fields: [hiringId], references: [id])
+  disputeId        String?
+  dispute          Dispute?  @relation(fields: [disputeId], references: [id])
+  // Ação tomada sem efeito financeiro automático (bloqueio, sinalização...).
+  actionTaken      String?
+  // "ATIVO" enquanto a contestação não tiver desfecho inequívoco. Um desfecho
+  // confirmado (ou decisão humana) marca "ENCERRADO" — é o que libera o
+  // bloqueio de repasse no payoutService.
+  state            String    @default("ATIVO")
+  receivedAt       DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([paymentId])
+  @@index([hiringId])
+  @@index([state])
+}
+
+// ---------- Mensageria (chat vinculado à contratação) ----------
+
+// O chat não existe "solto": ele nasce junto do Hiring e só desbloqueia
+// quando o pagamento é CONFIRMADO pelo evento do webhook (VLAEG, seção G:
+// "Pagamento aprovado → retém saldo, marca vaga PREENCHIDA, libera o chat").
+// Não existe chat de "conversa preliminar" — a decisão do usuário foi pagar
+// antes de trocar mensagens (ver findings.md > riscos de produto).
+enum ChatStatus {
+  AGUARDANDO_PAGAMENTO // criado com a contratação — mensagens bloqueadas
+  ABERTO // pagamento confirmado — empresa e profissional podem conversar
+  ENCERRADO // contratação terminal (cancelada/liberada) — vira só histórico
+}
+
+model Chat {
+  id           String     @id @default(cuid())
+  hiringId     String     @unique // um chat por contratação, sem duplicar
+  hiring       Hiring     @relation(fields: [hiringId], references: [id])
+  status       ChatStatus @default(AGUARDANDO_PAGAMENTO)
+  openedAt     DateTime? // preenchido na primeira abertura (pagamento aprovado)
+  closedAt     DateTime? // encerramento automático no status terminal do Hiring
+  closeReason  String?
+  lastMessageAt DateTime? // ordena a lista de conversas sem varrer as mensagens
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  messages Message[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id])
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  body      String
+  readAt    DateTime? // sem controle de "digitando"/recibo por enquanto
+  createdAt DateTime @default(now())
+
+  @@index([chatId, createdAt])
+}
+
+// ---------- Plano CLT ----------
+
+model CltPlan {
+  id                 String               @id @default(cuid())
+  name               String
+  monthlyPriceCents  Int
+  simultaneousCap    Int? // null = ilimitado
+  active             Boolean              @default(true)
+  contractors        ContractorProfile[]
+}
+
+// ---------- Fase 4 — confiança e segurança ----------
+
+// Avaliação mútua (1 a 5 estrelas + comentário): cada parte avalia a outra
+// UMA vez por contratação, e só depois que a janela de 2h pós código de
+// fechamento passar (ver codeService.isEvaluationUnlocked). A nota de
+// estrelas NÃO é a confiabilidade — métricas separadas por decisão de
+// produto (ProfessionalProfile.reliabilityScore).
+model Evaluation {
+  id        String   @id @default(cuid())
+  hiringId  String
+  hiring    Hiring   @relation(fields: [hiringId], references: [id])
+  authorId  String
+  author    User     @relation("EvaluationAuthor", fields: [authorId], references: [id])
+  targetId  String
+  target    User     @relation("EvaluationTarget", fields: [targetId], references: [id])
+  rating    Int // 1 a 5 estrelas (faixa garantida por CHECK no banco)
+  comment   String? // opcional
+  createdAt DateTime @default(now())
+
+  @@unique([hiringId, authorId])
+  @@index([targetId, createdAt])
+}
+
+// Check-in por geolocalização — EVIDÊNCIA do início do turno, registrada
+// pelo profissional. Decisão de produto: NÃO bloqueia o código de abertura;
+// serve de prova em disputas e alimenta a confiabilidade. Um por
+// contratação (hiringId único).
+model CheckIn {
+  id             String   @id @default(cuid())
+  hiringId       String   @unique
+  hiring         Hiring   @relation(fields: [hiringId], references: [id])
+  professionalId String
+  professional   User     @relation(fields: [professionalId], references: [id])
+  latitude       Float
+  longitude      Float
+  accuracyMeters Float? // precisão relatada pelo dispositivo
+  note           String?
+  recordedAt     DateTime @default(now())
+}
+
+// Auditoria das tentativas de código de turno (o protocolo exige limite de
+// tentativas + registro). 5 falhas por código bloqueiam o canal e o desfecho
+// passa a ser a disputa — nunca força bruta.
+model CodeAttempt {
+  id            String   @id @default(cuid())
+  hiringId      String
+  hiring        Hiring   @relation(fields: [hiringId], references: [id])
+  kind          String // "OPENING" | "CLOSING"
+  success       Boolean
+  attemptedById String? // sessão de quem digitou (a empresa, normalmente)
+  createdAt     DateTime @default(now())
+
+  @@index([hiringId, kind, createdAt])
+}
+
+enum DisputeStatus {
+  EM_ANALISE
+  RESOLVIDA
+}
+
+enum DisputeResolution {
+  DEVOLUCAO_TOTAL // saldo retido todo volta ao contratante (REEMBOLSO)
+  LIBERACAO_TOTAL // repasse integral ao profissional (Payout + LIBERACAO)
+  DIVISAO // splitPercentToProfessional do líquido ao profissional; resto reembolsado
+}
+
+// Disputa: canal de controvérsia com evidências e decisão administrativa.
+// É a ÚNICA via em que dinheiro move por ação humana — sempre pelo ledger
+// (REEMBOLSO/LIBERACAO/AJUSTE) com `decidedById` auditado. Máximo de UMA
+// disputa aberta por contratação (índice único parcial no banco).
+model Dispute {
+  id          String             @id @default(cuid())
+  hiringId    String
+  hiring      Hiring             @relation(fields: [hiringId], references: [id])
+  openedById  String
+  openedBySide String // "CONTRACTOR" | "PROFESSIONAL" (deduzido da sessão)
+  reason      String // por que a parte abriu a disputa
+  status      DisputeStatus      @default(EM_ANALISE)
+  resolution  DisputeResolution?
+  // Em DIVISAO: 0-100 — percentual do valor LÍQUIDO do profissional que será
+  // repassado a ele; o restante do líquido é reembolsado à empresa. A
+  // comissão da plataforma permanece (o serviço teve execução).
+  splitPercentToProfessional Int?
+  decisionNote String? // justificativa da decisão (obrigatória na rota)
+  decidedById String? // identificador do admin auditado (painel real na Fase 5)
+  decidedAt   DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  evidences DisputeEvidence[]
+  chargebacks ChargebackEvent[]
+
+  @@index([status, createdAt])
+}
+
+// Evidência anexada a uma disputa — arquivo enviado pelo canal de upload
+// já existente (`/api/uploads`), servido só para as partes/admin.
+model DisputeEvidence {
+  id           String   @id @default(cuid())
+  disputeId    String
+  dispute      Dispute  @relation(fields: [disputeId], references: [id])
+  uploadedById String
+  url          String // caminho relativo servido por /api/uploads/...
+  kind         String? // "FOTO" | "DOCUMENTO" | "TEXTO"
+  createdAt    DateTime @default(now())
+}
+
+enum ReportCategory {
+  ABUSO // comportamento abusivo — fila PRIORITÁRIA
+  FRAUDE
+  NAO_COMPARECEU
+  OUTRO
+}
+
+enum ReportStatus {
+  ABERTA
+  EM_ANALISE
+  ACAO_TOMADA
+  ARQUIVADA
+}
+
+// Denúncia de comportamento — fila SEPARADA das disputas e prioritária para
+// ABUSO (task_plan Fase 4). Nunca move dinheiro sozinha: se dinheiro for o
+// caso, ele sai de uma decisão de disputa auditada.
+model Report {
+  id           String         @id @default(cuid())
+  reporterId   String
+  reporter     User           @relation("ReportReporter", fields: [reporterId], references: [id])
+  reportedId   String
+  reported     User           @relation("ReportReported", fields: [reportedId], references: [id])
+  hiringId     String? // contexto opcional da denúncia
+  hiring       Hiring?        @relation(fields: [hiringId], references: [id])
+  category     ReportCategory
+  priority     String         @default("NORMAL") // "ALTA" quando ABUSO — deriva da categoria
+  description  String
+  status       ReportStatus   @default(ABERTA)
+  decidedById  String?
+  decisionNote String?
+  resolvedAt   DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@index([status, priority, createdAt])
+}

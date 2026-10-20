@@ -1,0 +1,39 @@
+# --- Segredos: NUNCA versionar ---
+.env
+.env.*
+!.env.example
+
+# --- Dependências e artefatos de build ---
+node_modules/
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# --- Logs ---
+*.log
+
+# --- Uploads de usuários (dados de runtime, não são código) ---
+freelaz-backend/uploads/
+
+# --- Toolchain e dados locais (baixados/gerados: não são fonte) ---
+.tools/node-v20.20.2-win-x64/
+.tools/PortableGit/
+.tools/pgdata/
+.tools/pgpkg/
+.tools/pg/
+.tools/tarballs/
+.tools/pg.jar
+.tools/pg.tgz
+.tools/node.zip
+.tools/PortableGit.7z.exe
+.tools/freelaz-*.zip
+*.zip
+
+# --- Executáveis de terceiros (não são fonte do projeto) ---
+opencode-desktop-win-x64.exe
+opencode-desktop-*.exe
+
+# --- Sistema ---
+Thumbs.db
+desktop.ini

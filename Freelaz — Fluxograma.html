@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Freelaz — Fluxograma das telas</title>
+<style>
+:root{
+  --blue:#0066FF; --dark:#0B1F3B; --light:#F2F4F7;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--light);color:var(--dark)}
+header{padding:20px 20px 10px;max-width:1100px;margin:0 auto}
+header h1{font-size:20px;margin:0 0 4px}
+header p{font-size:13px;color:#5F5E5A;margin:0}
+main{max-width:1200px;margin:0 auto;padding:10px 12px 60px;overflow-x:auto}
+.mermaid{background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --light:#0B1220; --dark:#F2F4F7; }
+  :root:not([data-theme="light"]) .mermaid{ background:#151E2E; }
+  :root:not([data-theme="light"]) header p{ color:#94A3B8; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Freelaz — Fluxograma completo das telas</h1>
+  <p>Do cadastro até o repasse financeiro. Role na horizontal se precisar — o diagrama é largo de propósito.</p>
+</header>
+<main>
+<pre class="mermaid">
+flowchart TD
+  A["Cadastro único<br/>CPF ou CNPJ"] --> B["Dados básicos<br/>nome/razão social, email, telefone"]
+  B --> C{"O que você<br/>quer fazer?"}
+  C -->|Oferecer serviços| D["Onboarding profissional<br/>categorias, portfólio"]
+  C -->|Contratar| E["Onboarding contratante"]
+  C -->|Os dois| D
+  C -->|Os dois| E
+  D --> F["Verificação: documento + selfie"]
+  E --> G["Verificação leve<br/>email/telefone"]
+  F --> H["Home"]
+  G --> H
+
+  H --> H1["Feed de vagas freelance<br/>perto de você"]
+  H --> H2["Abas: Freelance / CLT / Prestadoras"]
+  H --> H3{"Toggle de modo<br/>(se os 2 papéis ativos)"}
+
+  H3 -->|Modo profissional| H1
+  H3 -->|Modo contratante| V2["Publicar vaga"]
+
+  H1 --> V1["Detalhe da vaga"]
+  V1 --> V4["Candidatar-se"]
+  V1 --> V5p["Me contrate<br/>(perfil do profissional)"]
+
+  V2 --> V2a{"Publicar com<br/>urgência? R$10"}
+  V2a -->|Sim| V2b["Checkout do boost"]
+  V2a -->|Não| V3["Vaga publicada<br/>(ABERTA)"]
+  V2b --> V3
+  V3 --> V4
+
+  V5p --> V5["Gera vaga PRIVADA<br/>só para esse profissional"]
+  V5 --> V5n{"Profissional decide"}
+  V5n -->|Aceita| V6
+  V5n -->|Recusa| V5end["Vaga privada encerrada"]
+  V5n -->|Contraproposta| V5c["Nova oferta de valor"]
+  V5c --> V5n2{"Empresa decide"}
+  V5n2 -->|Aceita| V6
+  V5n2 -->|Recusa/nova oferta| V5c
+  V5n2 -->|Desiste| V5end
+
+  V4 --> V6["Lista de candidaturas"]
+  V6 --> V7{"Empresa seleciona<br/>um candidato"}
+  V7 -->|Selecionado| V8["Demais viram SUPLENTES<br/>(nunca recusados de vez)"]
+  V7 -->|Ninguém selecionado| V3
+
+  V8 --> P1["Checkout Mercado Pago"]
+  P1 --> P2{"Pagamento<br/>aprovado?"}
+  P2 -->|Não| V3
+  P2 -->|Sim| P3["Vaga some do marketplace<br/>(status PREENCHIDA)"]
+  P3 --> P4["Chat desbloqueia"]
+
+  P4 --> X1["1h antes do início:<br/>código de abertura gerado"]
+  X1 --> X2["Trabalho em andamento"]
+  X2 --> X3["1h antes do fim:<br/>código de fechamento gerado"]
+  X3 --> X4{"Código de fechamento<br/>confirmado pela empresa?"}
+  X4 -->|Sim| X5["Serviço concluído"]
+  X4 -->|Desacordo no chat| X6["Cancelamento<br/>(caminho único — mesma política<br/>sempre, não importa a origem)"]
+
+  X2 -->|Profissional desiste| X6
+
+  X6 --> R1["Vaga reabre<br/>botão 'Retomar vaga'"]
+  R1 --> R2["Filtra suplentes:<br/>remove quem já tem<br/>bico no mesmo dia/horário"]
+  R2 --> V6
+
+  X5 --> X7["2h depois:<br/>avaliação mútua libera"]
+  X7 --> AV1["Avaliação mútua<br/>1 a 5 estrelas + comentário"]
+
+  AV1 --> FN1["Saldo liberado<br/>(LedgerEntry)"]
+  FN1 --> FN2["Repasse Pix<br/>ao profissional"]
+  FN2 --> FN3["Extrato / Carteira<br/>(detalhado por serviço, sem taxa visível)"]
+
+  V7 -.cancelamento antes do pagamento.-> V3
+
+  subgraph ADMIN["Painel administrativo (fora do fluxo do usuário comum)"]
+    AD1["Configurações financeiras<br/>comissão, plano CLT, boost"]
+    AD2["Reconciliação diária<br/>ledger x saldo Mercado Pago"]
+    AD3["Disputas e denúncias"]
+  end
+
+  X6 -.encaminha casos ambíguos.-> AD3
+</pre>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: dark ? 'dark' : 'default',
+    flowchart: { curve: 'basis', useMaxWidth: false }
+  });
+</script>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+</body>
+</html>
