@@ -416,3 +416,152 @@ export async function isAsaasEventProcessed(db: Db, asaasEventId: string): Promi
   if (!row) return false;
   return row.processingStatus === "PROCESSADO" || row.processingStatus === "IGNORADO" || row.processingStatus === "NAO_TRATADO";
 }
+
+// ==========================================================================
+// D6 = A2 — encerramento do chargeback SOMENTE em desfecho VERIFICADO
+// (decisão aprovada pelo usuário em 2026-10-20; ver .protocol/decisions/D1-D8.md)
+// ==========================================================================
+
+/**
+ * Eventos que, SEGUNDO A DOC OFICIAL DO ASAAS, seguem `AWAITING_CHARGEBACK_REVERSAL`
+ * quando a disputa é vencida pela plataforma — ou seja, o dinheiro VOLTA:
+ * `PAYMENT_CONFIRMED` | `PAYMENT_RECEIVED`.
+ *
+ * Fonte: https://docs.asaas.com/docs/payment-events (consultada 2026-10-20):
+ * "When the dispute is won by the Asaas customer, the event after
+ * `PAYMENT_AWAITING_CHARGEBACK_REVERSAL` will be `PAYMENT_CONFIRMED` or
+ * `PAYMENT_RECEIVED`, depending on whether the charge has already reached its
+ * credit date."
+ *
+ * ⚠️ `AWAITING_CHARGEBACK_REVERSAL` SOZINHO **não** encerra: ele só diz
+ * "aguardando repasse da adquirente" — o desfecho inequívoco é o evento
+ * SEGUINTE (P3). Timeout também NÃO encerra (isso seria D6=A3, rejeitado).
+ */
+export const CHARGEBACK_WON_EVENTS = [
+  "PAYMENT_CONFIRMED",
+  "PAYMENT_RECEIVED",
+] as const;
+
+export function isChargebackWonEvent(event: string): boolean {
+  return (CHARGEBACK_WON_EVENTS as readonly string[]).includes(event);
+}
+
+/**
+ * Status do PROVEDOR compatíveis com "ganho inequívoco" (conjunto MAIS
+ * RESTRITIVO — só o que significa desfecho confirmado):
+ *  - `DONE`     = contestação concluída no provedor;
+ *  - `REVERSED` = valor revertido de volta à conta (chargeback desfeito);
+ *  - `disputeStatus = ACCEPTED` = a disputa enviada foi ACEITA (ganhamos).
+ * `IN_DISPUTE`/`REQUESTED` NÃO entram (contestação ainda em andamento).
+ * `DISPUTE_LOST` NÃO entra (perda — nunca encerra como "ganho").
+ */
+export function isVerifiedWonStatus(
+  status: string | null | undefined,
+  disputeStatus: string | null | undefined
+): boolean {
+  const s = (status ?? "").toUpperCase();
+  const d = (disputeStatus ?? "").toUpperCase();
+  return s === "DONE" || s === "REVERSED" || d === "ACCEPTED";
+}
+
+export type CloseChargebackResult =
+  | { closed: true; chargebackId: string; hiringId: string | null; reason: string }
+  | { closed: false; reason: string };
+
+/**
+ * D6=A2: encerra (`state` `ATIVO` → `ENCERRADO`) o(s) chargeback(s) ATIVOS do
+ * pagamento SOMENTE quando TODAS as condições abaixo são verdadeiras:
+ *
+ *  (a) o evento é de ganho verificado (`isChargebackWonEvent`) —
+ *      `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`;
+ *  (b) existe `ChargebackEvent` com `state="ATIVO"` correlacionado ao pagamento
+ *      (por `paymentId` OU pelo vínculo via `AsaasEvent`/contratação);
+ *  (c) o registro ativo tem status do provedor compatível com ganho
+ *      (`isVerifiedWonStatus`) OU o próprio evento de ganho carrega esse status.
+ *
+ * NUNCA move dinheiro: **não** cria `REEMBOLSO` (D7=A1), **não** reverte
+ * `LIBERADO` (D1=A1), **não** toca em `payoutBlockReason` — o desbloqueio é
+ * CONSEQUÊNCIA natural da guarda transacional (`hasActiveChargeback` deixa de
+ * achar `ATIVO`). Idempotente: reenvio do mesmo evento (ou evento de ganho
+ * repetido) é no-op — só há `ATIVO` para encerrar uma vez.
+ *
+ * Não imprime payload/PII; o `closedReason` é texto curto e genérico.
+ */
+export async function closeChargebackOnVerifiedOutcome(
+  tx: Db,
+  event: string,
+  paymentId: string,
+  body?: AsaasWebhookEvent
+): Promise<CloseChargebackResult> {
+  if (!isChargebackWonEvent(event)) {
+    return { closed: false, reason: "evento_nao_verificado" };
+  }
+
+  // Status eventualmente presente no PRÓPRIO corpo do evento de ganho (a doc
+  // pode trazer `payment.chargeback`); usado como origem alternativa do
+  // critério (c) quando o registro ativo não trouxer status compatível.
+  const cb = body?.payment?.chargeback ?? body?.chargeback ?? {};
+  const bodyStatus = cb.status != null ? String(cb.status) : null;
+  const bodyDisputeStatus = cb.disputeStatus != null ? String(cb.disputeStatus) : null;
+
+  // Correlação por pagamento: TODOS os chargebacks ATIVOS daquele paymentId.
+  const actives = await tx.chargebackEvent.findMany({
+    where: { paymentId, state: "ATIVO" },
+    orderBy: { receivedAt: "desc" },
+  });
+  if (actives.length === 0) {
+    // Caso negativo crítico: evento de ganho SEM chargeback ativo correlacionado
+    // (ex.: confirmação normal de um pagamento que nunca teve contestação).
+    return { closed: false, reason: "sem_chargeback_ativo_correlacionado" };
+  }
+
+  const now = new Date();
+  const closedIds: string[] = [];
+  let closedHiringId: string | null = null;
+
+  for (const cbRow of actives) {
+    const won =
+      isVerifiedWonStatus(cbRow.externalStatus, cbRow.providerDisputeStatus) ||
+      isVerifiedWonStatus(bodyStatus, bodyDisputeStatus);
+    if (!won) {
+      // Caso negativo crítico: chargeback ATIVO cujo status NÃO indica ganho
+      // (ex.: IN_DISPUTE/REQUESTED) — não encerra.
+      continue;
+    }
+    await tx.chargebackEvent.update({
+      where: { id: cbRow.id },
+      data: {
+        state: "ENCERRADO",
+        closedAt: now,
+        closedReason: `desfecho_verificado:${event}`,
+        actionTaken: `${cbRow.actionTaken ?? ""};encerrado_por_desfecho_verificado`.replace(/^;/, ""),
+      },
+    });
+    closedIds.push(cbRow.id);
+    if (cbRow.hiringId) closedHiringId = cbRow.hiringId;
+  }
+
+  if (closedIds.length === 0) {
+    return { closed: false, reason: "status_sem_desfecho_de_ganho" };
+  }
+
+  // ESCOPO DELIBERADAMENTE MÍNIMO (D6=A2): encerramos APENAS o(s) ChargebackEvent.
+  //
+  // A disputa interna automática (`system:asaas_chargeback`) e o `disputeOpen`
+  // NÃO são alterados aqui — de propósito:
+  //   - resolvê-la por `resolveDispute` moveria dinheiro (liberação/reembolso),
+  //     o que viola D7=A1 (sem REEMBOLSO) e D1=A1 (sem reverter);
+  //   - reverter `EM_DISPUTA -> CONCLUIDO` seria uma reversão de estado não
+  //     autorizada por D6=A2 (a decisão de destravar a disputa é humana — D5).
+  // Com o chargeback fora de `ATIVO`, o bloqueio de REPASSE por chargeback
+  // desaparece da guarda transacional (payoutBlockReason -> hasActiveChargeback).
+  // A contratação em `EM_DISPUTA` segue exigindo decisão humana de administrador
+  // (rota auditada), como manda D5=A1.
+
+  return {
+    closed: true,
+    chargebackId: closedIds[0],
+    hiringId: closedHiringId,
+    reason: `desfecho_verificado:${event}:${closedIds.length}`,
+  };
+}

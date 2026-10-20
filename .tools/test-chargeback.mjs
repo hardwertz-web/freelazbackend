@@ -696,6 +696,172 @@ async function main() {
   check(consistentAll, "webhook × releasePayout: resultado sempre consistente (sem LIBERACAO órfã/duplicada)");
 
   // ----------------------------------------------------------------------
+  // 10. D6=A2 — desbloqueio SOMENTE em desfecho VERIFICADO.
+  //
+  // Regra: `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED` (eventos seguintes ao
+  // AWAITING_CHARGEBACK_REVERSAL quando a plataforma VENCE — fonte:
+  // docs.asaas.com/docs/payment-events) encerram (ATIVO→ENCERRADO) o chargeback
+  // SOMENTE se houver chargeback ATIVO correlacionado E status compatível com
+  // ganho (DONE/REVERSED ou disputeStatus=ACCEPTED). Nunca por timeout;
+  // AWAITING_CHARGEBACK_REVERSAL sozinho não encerra.
+  section("10. D6=A2 — encerramento só em desfecho verificado");
+
+  // 10a. Evento de ganho + chargeback ATIVO + status compatível → ENCERRADO,
+  //      e a guarda transacional PASSA a permitir repasse.
+  //      A contratação fica CONCLUIDO sem disputa interna: o chargeback é
+  //      semeado DIRETO (não pelo handler) com status DONE — assim o único
+  //      bloqueio é o CHARGEBACK, e o teste prova que D6=A2 o remove (a guarda
+  //      `payoutBlockReason` passa a permitir o repasse).
+  const hWin = await newHiring("CONCLUIDO");
+  await prisma.hiring.update({
+    where: { id: hWin.id },
+    data: { closingCodeUsedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) },
+  });
+  await prisma.chargebackEvent.create({
+    data: {
+      hiringId: hWin.id,
+      paymentId: hWin.providerPaymentId,
+      providerChargebackId: `cbk_win_${hWin.id}`,
+      externalStatus: "DONE",
+      externalReason: "FRAUD",
+      disputedValueCents: 80000,
+      state: "ATIVO",
+    },
+  });
+  const winActiveBefore = await prisma.chargebackEvent.count({
+    where: { hiringId: hWin.id, state: "ATIVO" },
+  });
+  check(winActiveBefore >= 1, `há chargeback ATIVO antes do desfecho (${winActiveBefore})`);
+  // Guarda antes: repasse bloqueado (422) — bloqueio por CHARGEBACK.
+  const payBeforeWin = await api("POST", `/api/payouts/release`, {
+    headers: { "x-internal-secret": INTERNAL_SECRET },
+    body: { hiringId: hWin.id },
+  });
+  check(payBeforeWin.status >= 400, `repasse bloqueado com chargeback ativo (HTTP ${payBeforeWin.status})`);
+
+  // Evento de GANHO verificado: PAYMENT_CONFIRMED (a contratação já está RETIDO/
+  // CONCLUIDO). Deve encerrar o chargeback ATIVO.
+  await seedMockPayment({
+    id: hWin.providerPaymentId,
+    status: "CONFIRMED",
+    value: 800,
+    externalReference: hWin.id,
+  });
+  const winConfirm = await webhook("PAYMENT_CONFIRMED", paymentOf(hWin), {
+    id: `evt_win_conf_${hWin.id}`,
+  });
+  check(winConfirm.status === 200, `PAYMENT_CONFIRMED de desfecho aceito (HTTP ${winConfirm.status})`);
+  const winRow = await prisma.chargebackEvent.findFirst({
+    where: { hiringId: hWin.id, state: "ENCERRADO" },
+    orderBy: { receivedAt: "desc" },
+  });
+  check(!!winRow, "chargeback ATIVO virou ENCERRADO (desfecho verificado)");
+  check(!!winRow?.closedAt, `closedAt gravado (${winRow?.closedAt?.toISOString?.().slice(0, 19)})`);
+  check(
+    String(winRow?.closedReason ?? "").startsWith("desfecho_verificado:PAYMENT_CONFIRMED"),
+    `closedReason registra o evento (${winRow?.closedReason})`
+  );
+  const winActiveAfter = await prisma.chargebackEvent.count({
+    where: { hiringId: hWin.id, state: "ATIVO" },
+  });
+  check(winActiveAfter === 0, `nenhum chargeback ATIVO após encerrar (${winActiveAfter})`);
+  // D7=A1/D1=A1: encerrar NÃO cria REEMBOLSO nem reverte pagamento.
+  const winRefunds = await prisma.ledgerEntry.count({
+    where: { hiringId: hWin.id, type: "REEMBOLSO" },
+  });
+  check(winRefunds === 0, `encerrar NÃO cria REEMBOLSO (D7=A1) (${winRefunds})`);
+  // Autoridade: a guarda transacional agora PERMITE repasse (o único bloqueio
+  // era o chargeback). Repasse em dev usa PAYOUT_SANDBOX — sem Asaas real.
+  const payAfterWin = await api("POST", `/api/payouts/release`, {
+    headers: { "x-internal-secret": INTERNAL_SECRET },
+    body: { hiringId: hWin.id },
+  });
+  check(
+    [200, 201].includes(payAfterWin.status),
+    `após ENCERRADO, guarda transacional PERMITE repasse (HTTP ${payAfterWin.status})`
+  );
+  // E o helper de guarda (hasActiveChargeback) reflete o encerramento.
+  const stillActiveForGuard = await prisma.chargebackEvent.count({
+    where: { hiringId: hWin.id, state: "ATIVO" },
+  });
+  check(
+    stillActiveForGuard === 0,
+    `guarda de chargeback (hasActiveChargeback) fica FALSE após ENCERRADO (ativos=${stillActiveForGuard})`
+  );
+
+  // 10b. Idempotência: repetir o evento de ganho não muda nada (já ENCERRADO).
+  const winRepeat = await webhook("PAYMENT_RECEIVED", paymentOf(hWin), {
+    id: `evt_win_recv_${hWin.id}`,
+  });
+  check(winRepeat.status === 200, `2º evento de ganho aceito (HTTP ${winRepeat.status})`);
+  const winRowsStill = await prisma.chargebackEvent.count({
+    where: { hiringId: hWin.id, state: "ENCERRADO" },
+  });
+  const winRowsTotal = await prisma.chargebackEvent.count({ where: { hiringId: hWin.id } });
+  check(
+    winRowsStill === winRowsTotal && winRowsStill === 1,
+    `rodar 2x não altera o ENCERRADO (encerrados=${winRowsStill}/${winRowsTotal})`
+  );
+
+  // 10c. Caso NEGATIVO: PAYMENT_CONFIRMED SEM chargeback correlacionado → no-op
+  //      (não cria nem altera ChargebackEvent).
+  const hNoCb = await newHiring("CONCLUIDO");
+  const noCbCountBefore = await prisma.chargebackEvent.count({
+    where: { paymentId: hNoCb.providerPaymentId },
+  });
+  await seedMockPayment({
+    id: hNoCb.providerPaymentId,
+    status: "CONFIRMED",
+    value: 800,
+    externalReference: hNoCb.id,
+  });
+  const noCbWebhook = await webhook("PAYMENT_CONFIRMED", paymentOf(hNoCb), {
+    id: `evt_nocb_conf_${hNoCb.id}`,
+  });
+  check(noCbWebhook.status === 200, `PAYMENT_CONFIRMED sem chargeback aceito (HTTP ${noCbWebhook.status})`);
+  const noCbCountAfter = await prisma.chargebackEvent.count({
+    where: { paymentId: hNoCb.providerPaymentId },
+  });
+  check(
+    noCbCountBefore === noCbCountAfter && noCbCountAfter === 0,
+    `evento de ganho SEM chargeback não cria registro (${noCbCountBefore}→${noCbCountAfter})`
+  );
+
+  // 10d. Caso NEGATIVO: PAYMENT_CONFIRMED com chargeback ATIVO em status NÃO de
+  //      ganho (IN_DISPUTE) → NÃO encerra.
+  const hNotWon = await newHiring("CONCLUIDO");
+  await webhook("PAYMENT_CHARGEBACK_REQUESTED", paymentOf(hNotWon), {
+    id: `evt_notwon_open_${hNotWon.id}`,
+    chargeback: { id: `cbk_notwon_${hNotWon.id}`, status: "IN_DISPUTE", value: 800 },
+  });
+  await seedMockPayment({
+    id: hNotWon.providerPaymentId,
+    status: "CONFIRMED",
+    value: 800,
+    externalReference: hNotWon.id,
+  });
+  const notWonWebhook = await webhook("PAYMENT_CONFIRMED", paymentOf(hNotWon), {
+    id: `evt_notwon_conf_${hNotWon.id}`,
+  });
+  check(notWonWebhook.status === 200, `PAYMENT_CONFIRMED com status em disputa aceito (HTTP ${notWonWebhook.status})`);
+  const notWonStillActive = await prisma.chargebackEvent.count({
+    where: { hiringId: hNotWon.id, state: "ATIVO" },
+  });
+  check(notWonStillActive >= 1, `status IN_DISPUTE NÃO encerra (segue ATIVO=${notWonStillActive})`);
+
+  // 10e. Caso NEGATIVO CRÍTICO: AWAITING_CHARGEBACK_REVERSAL sozinho NÃO
+  //      encerra (é "aguardando repasse", não ganho confirmado — P3).
+  const hAwait = await newHiring("CONCLUIDO");
+  await webhook("PAYMENT_CHARGEBACK_REQUESTED", paymentOf(hAwait), {
+    id: `evt_await_open_${hAwait.id}`,
+    chargeback: { id: `cbk_await_${hAwait.id}`, status: "AWAITING_CHARGEBACK_REVERSAL", value: 800 },
+  });
+  const awaitBefore = await prisma.chargebackEvent.count({
+    where: { hiringId: hAwait.id, state: "ATIVO" },
+  });
+  check(awaitBefore >= 1, `AWAITING_CHARGEBACK_REVERSAL sozinho mantém ATIVO (${awaitBefore})`);
+
+  // ----------------------------------------------------------------------
   console.log(`\n=================================================`);
   console.log(`Etapa 3 (chargeback/webhook): ${pass} OK, ${fail} FALHA`);
   console.log(`=================================================`);

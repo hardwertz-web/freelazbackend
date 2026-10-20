@@ -12,6 +12,7 @@ import {
   persistAsaasEvent,
   finalizeAsaasEvent,
   handleChargebackEvent,
+  closeChargebackOnVerifiedOutcome,
   isChargebackEvent,
   isKnownPaymentEvent,
   isAsaasEventProcessed,
@@ -255,8 +256,15 @@ async function routeEvent(
     const outcome = await prisma.$transaction(async (tx) => {
       const locked = await lockHiringForUpdate(tx, hiring.id);
       if (!locked) return { notFound: true as const };
+      // D6=A2 (2026-10-20): evento de ganho verificado (`PAYMENT_CONFIRMED`/
+      // `PAYMENT_RECEIVED` — ver CHARGEBACK_WON_EVENTS) encerra chargeback ATIVO
+      // com status compatível. Roda SEMPRE (não só quando o pagamento é novo):
+      // é o caso normal — a contratação já está RETIDO e o evento tardio de
+      // ganho é justamente o que destrava. Idempotente (só ATIVO encerra 1x).
+      // NUNCA move dinheiro nem toca payoutBlockReason.
+      const cbOutcome = await closeChargebackOnVerifiedOutcome(tx, event, paymentId, body);
       if (locked.status !== "AGUARDANDO_PAGAMENTO") {
-        return { alreadyProcessed: true as const };
+        return { alreadyProcessed: true as const, cbOutcome };
       }
       await tx.jobPosting.update({
         where: { id: hiring.jobPostingId },
@@ -264,19 +272,22 @@ async function routeEvent(
       });
       await setHiringStatus(tx, hiring.id, "RETIDO", { providerPaymentId: paymentId });
       await recordRetention(hiring.id, locked.grossValueCents, tx);
-      return { ok: true as const };
+      return { ok: true as const, cbOutcome };
     });
 
+    const cbNote = outcome.cbOutcome?.closed
+      ? `;chargeback_encerrado_desfecho_verificado:${outcome.cbOutcome.reason}`
+      : "";
     if (outcome.alreadyProcessed) {
       await finalizeAsaasEvent(prisma, eventRowId, {
         processingStatus: "PROCESSADO",
-        actionTaken: "pagamento_ja_confirmado",
+        actionTaken: `pagamento_ja_confirmado${cbNote}`,
       });
       return { status: 200, body: { received: true, alreadyProcessed: true } };
     }
     await finalizeAsaasEvent(prisma, eventRowId, {
       processingStatus: "PROCESSADO",
-      actionTaken: "pagamento_confirmado_retido",
+      actionTaken: `pagamento_confirmado_retido${cbNote}`,
     });
     return { status: 200, body: { received: true } };
   }

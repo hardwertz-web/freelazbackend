@@ -24,6 +24,10 @@ on:
     - cron: "0 3 * * 1"
     # Reconciliação diária: todo dia 04:00 UTC.
     - cron: "0 4 * * *"
+    # Escalonamento de chargeback (D8=A2): todo dia 05:00 UTC (após a
+    # reconciliação). SOMENTE LEITURA: alerta prazos vencendo/vencidos, não
+    # encerra nada.
+    - cron: "0 5 * * *"
   # Permite disparar manualmente pelo painel do GitHub (Actions > jobs > Run).
   workflow_dispatch: {}
 
@@ -70,6 +74,21 @@ jobs:
       - name: reconciliação diária
         run: |
           curl -fsS -X POST "${JOBS_URL}/api/jobs/daily-reconciliation/run" \
+            -H "x-jobs-token: ${JOBS_RUN_TOKEN}" \
+            --max-time 120
+        env:
+          JOBS_URL: ${{ secrets.JOBS_URL }}
+          JOBS_RUN_TOKEN: ${{ secrets.JOBS_RUN_TOKEN }}
+
+  # Escalonamento de chargeback (D8=A2): alerta prazos vencendo/vencidos.
+  # SOMENTE LEITURA — não encerra chargeback (encerrar por prazo seria D6=A3).
+  chargeback-escalation:
+    if: github.event.schedule == '0 5 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: escalonamento de chargeback
+        run: |
+          curl -fsS -X POST "${JOBS_URL}/api/jobs/chargeback-escalation/run" \
             -H "x-jobs-token: ${JOBS_RUN_TOKEN}" \
             --max-time 120
         env:

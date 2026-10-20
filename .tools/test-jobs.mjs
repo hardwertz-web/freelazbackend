@@ -9,6 +9,7 @@
 //   - 401 sem token; 401 token errado; 200 token certo;
 //   - idempotência OBSERVADA (rodar 2x não duplica efeito);
 //   - log estruturado da reconciliação (chargebacks bloqueando repasse);
+//   - chargeback-escalation (D8=A2): prazos vencendo/vencidos, somente leitura;
 //   - rota de job inexistente → 404.
 //
 // Pré-requisitos (o .tools/test-jobs.ps1 garante):
@@ -357,6 +358,72 @@ async function main() {
   section("6. Rota inexistente → 404");
   const missing = await callJob("nao-existe", { token: JOBS_TOKEN });
   check(missing.status === 404, `job inexistente → 404 (obtido ${missing.status})`);
+
+  // ------- 7. chargeback-escalation (D8=A2) — somente leitura --------------
+  section("7. chargeback-escalation: prazos (somente leitura, NÃO encerra)");
+  const nowMs = Date.now();
+  // Semeia 2 chargebacks ATIVOS com prazos: 1 vencendo em 2 dias, 1 vencido há 1.
+  const escHiring = await seedHiring(ctx, {
+    status: "CONCLUIDO",
+    startsAt: new Date(nowMs - 8 * HOUR),
+    endsAt: new Date(nowMs - 4 * HOUR),
+    openingCode: "555555",
+    closingCode: "666666",
+    closingCodeUsedAt: new Date(nowMs - 3 * HOUR),
+  });
+  const cbVencendo = await prisma.chargebackEvent.create({
+    data: {
+      hiringId: escHiring.id,
+      paymentId: `pay_esc_venc_${runId}`,
+      externalStatus: "IN_DISPUTE",
+      externalReason: "FRAUD",
+      state: "ATIVO",
+      deadlineToSendDisputeDocuments: new Date(nowMs + 2 * 24 * HOUR),
+    },
+  });
+  const cbVencido = await prisma.chargebackEvent.create({
+    data: {
+      hiringId: escHiring.id,
+      paymentId: `pay_esc_vencido_${runId}`,
+      externalStatus: "IN_DISPUTE",
+      externalReason: "FRAUD",
+      state: "ATIVO",
+      deadlineToSendDisputeDocuments: new Date(nowMs - 1 * 24 * HOUR),
+    },
+  });
+
+  // Auth: 401 sem token.
+  const escNoToken = await callJob("chargeback-escalation");
+  check(escNoToken.status === 401, `escalation sem token → 401 (obtido ${escNoToken.status})`);
+
+  const esc1 = await callJob("chargeback-escalation", { token: JOBS_TOKEN });
+  check(esc1.status === 200, `escalation com token → 200 (obtido ${esc1.status})`);
+  check(esc1.json?.ok === true, `resposta { ok: true }`);
+  check(
+    esc1.json?.vencendo >= 1,
+    `pelo menos 1 vencendo em 2 dias (vencendo=${esc1.json?.vencendo})`
+  );
+  check(
+    esc1.json?.vencidos >= 1,
+    `pelo menos 1 vencido há 1 dia (vencidos=${esc1.json?.vencidos})`
+  );
+
+  // Roda 2x → mesmo resultado (somente leitura, idempotente).
+  const esc2 = await callJob("chargeback-escalation", { token: JOBS_TOKEN });
+  check(
+    esc2.json?.vencendo === esc1.json?.vencendo && esc2.json?.vencidos === esc1.json?.vencidos,
+    `2ª execução com mesmo resultado (vencendo=${esc2.json?.vencendo}, vencidos=${esc2.json?.vencidos})`
+  );
+
+  // NÃO encerra: os 2 chargebacks continuam ATIVO e sem closedAt.
+  const escStillActive = await prisma.chargebackEvent.findMany({
+    where: { id: { in: [cbVencendo.id, cbVencido.id] } },
+    select: { state: true, closedAt: true },
+  });
+  check(
+    escStillActive.length === 2 && escStillActive.every((c) => c.state === "ATIVO" && c.closedAt === null),
+    `escalonamento NÃO encerra (state permanece ATIVO, closedAt nulo) (${JSON.stringify(escStillActive)})`
+  );
 
   console.log(`\n=================================================`);
   console.log(`Etapa 3.2 (agendador de jobs): ${pass} OK, ${fail} FALHA`);

@@ -181,6 +181,67 @@ com prós/contras e o que muda em código/schema. **Nenhuma alternativa marcada*
 "Não implementar sem aprovação explícita". Nenhum service/política de reembolso foi criado
 ou alterado.
 
+## Etapa 4 — D6=A2 (desbloqueio em desfecho verificado) e D8=A2 (escalonamento)
+
+> **Decisões aprovadas pelo usuário em 2026-10-20** (ver `.protocol/decisions/D1-D8.md`).
+> Das 8 decisões, **apenas D6=A2 e D8=A2 exigem código**; D1=A1, D2=A1, D3=A1, D4=A1, D7=A1
+> mantêm o default (nenhum código novo) e D5=A1 já estava implementado (Etapa 3). **Nada
+> de D1–D5/D7 foi tocado.**
+
+### D6=A2 — quais eventos ENCERRAM o chargeback (`ATIVO` → `ENCERRADO`)
+
+**Fonte da doc (tarefa 1):** `https://docs.asaas.com/docs/payment-events` (consultada
+**2026-10-20**): *"When the dispute is won by the Asaas customer, the event after
+`PAYMENT_AWAITING_CHARGEBACK_REVERSAL` will be `PAYMENT_CONFIRMED` or `PAYMENT_RECEIVED`,
+depending on whether the charge has already reached its credit date."* (Corrobora P3.)
+
+Conjunto **MAIS RESTRITIVO** adotado (`CHARGEBACK_WON_EVENTS`): apenas os dois eventos
+que a doc lista como desfecho de ganho — **`PAYMENT_CONFIRMED`** e **`PAYMENT_RECEIVED`**.
+
+| Evento (Asaas) | Encerra chargeback ATIVO? | Condição | Fonte |
+| --- | --- | --- | --- |
+| `PAYMENT_CONFIRMED` | **SIM** (evento de ganho) | + chargeback ATIVO correlacionado **e** status compatível | docs.asaas.com/docs/payment-events (2026-10-20) |
+| `PAYMENT_RECEIVED` | **SIM** (evento de ganho) | idem | docs.asaas.com/docs/payment-events (2026-10-20) |
+| `PAYMENT_AWAITING_CHARGEBACK_REVERSAL` | **NÃO sozinho** | só "aguardando repasse da adquirente" (P3) | docs.asaas.com/docs/webhook-para-cobrancas |
+| `PAYMENT_CHARGEBACK_REQUESTED` / `PAYMENT_CHARGEBACK_DISPUTE` | **NÃO** | são ABERTURA/andamento, nunca ganho | idem |
+| Qualquer outro / timeout | **NÃO** | timeout seria D6=A3 (**rejeitado**) | decisão do usuário |
+
+Critério do **status do provedor** compatível com ganho (`isVerifiedWonStatus`), o mais
+restritivo: `status ∈ {DONE, REVERSED}` **ou** `disputeStatus = ACCEPTED`. `IN_DISPUTE`/
+`REQUESTED` **não** encerram; `DISPUTE_LOST` **nunca** encerra como ganho.
+
+**O que NÃO faz parte do desbloqueio (não negociável):**
+- `AWAITING_CHARGEBACK_REVERSAL` **sozinho** não encerra (é espera, não desfecho);
+- **timeout** não encerra (seria D6=A3, rejeitado);
+- evento de ganho **sem** chargeback ATIVO correlacionado é **no-op** (não cria nem altera
+  `ChargebackEvent`);
+- **NÃO** cria `REEMBOLSO` (D7=A1), **NÃO** reverte `LIBERADO` (D1=A1), **NÃO** toca em
+  `payoutBlockReason` (o desbloqueio é **consequência** da guarda transacional, que deixa
+  de achar `ATIVO`);
+- **NÃO** mexe em `payoutService.ts` (nenhuma alteração).
+
+**Implementação:** `closeChargebackOnVerifiedOutcome(tx, event, paymentId, body)` em
+`asaasEventService.ts`, chamada no webhook (`route.ts`) no ramo de pagamento aprovado.
+Grava `state="ENCERRADO"` + `closedAt` + `closedReason` (`desfecho_verificado:<evento>`).
+Idempotente: reenvio do mesmo evento (ou evento de ganho repetido) é **no-op** — só há
+`ATIVO` para encerrar uma vez. Migração **aditiva** `20261020180000_etapa4_chargeback_desfecho_verificado`
+(adiciona `closedAt`/`closedReason`; nenhuma linha existente alterada).
+
+**Escopo deliberadamente mínimo:** a **disputa interna automática** (`system:asaas_chargeback`)
+e `disputeOpen` **não** são alterados por D6=A2 — resolvê-la moveria dinheiro via
+`resolveDispute` (violaria D7/D1) e reverter `EM_DISPUTA → CONCLUIDO` seria reversão de
+estado não autorizada. A decisão de destravar a disputa segue humana (D5=A1).
+
+### D8=A2 — job de escalonamento (somente leitura)
+
+Novo service `chargebackEscalationService.ts` (`escalateChargebacksNearDeadline`) e rota
+`POST /api/jobs/chargeback-escalation/run` (auth `x-jobs-token`, mesmo padrão). Lê
+`ChargebackEvent` com `state="ATIVO"` e `deadlineToSendDisputeDocuments` não-nulo, calcula
+`diasRestantes` e devolve `{ vencendo: [...], vencidos: [...] }` (janela default 3 dias).
+**Somente leitura:** NÃO encerra, NÃO muda `state`, NÃO cria lançamento, NÃO chama o
+provedor. Log estruturado sem PII (`vencendo=N vencidos=M`). Schedule diário `0 5 * * *`
+no `.github/workflows/jobs.yml` (após a reconciliação).
+
 ## Agendamento de jobs (Etapa 3.2)
 
 Os 4 jobs têm **rotas finas** (`POST /api/jobs/<nome>/run`, autenticadas por `x-jobs-token` = `JOBS_RUN_TOKEN`), mas **quem os chama periodicamente é externo ao processo**: o agendador é **infraestrutura**, não código do app. As rotas são a superfície estável; o agendador só as chama.

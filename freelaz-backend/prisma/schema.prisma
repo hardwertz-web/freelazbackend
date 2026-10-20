@@ -555,6 +555,11 @@ model ChargebackEvent {
   // confirmado (ou decisão humana) marca "ENCERRADO" — é o que libera o
   // bloqueio de repasse no payoutService.
   state            String    @default("ATIVO")
+  // D6=A2 (2026-10-20): quando e por que o chargeback foi ENCERRADO por
+  // desfecho VERIFICADO (evento de ganho + status compatível). Nulos enquanto
+  // `state="ATIVO"`. Nunca preenchido por timeout/heurística.
+  closedAt         DateTime?
+  closedReason     String?
   receivedAt       DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
