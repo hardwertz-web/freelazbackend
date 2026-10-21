@@ -63,6 +63,16 @@ model User {
   // reutilizado em todas as cobranças seguintes do mesmo usuário.
   asaasCustomerId String? @unique
 
+  // Subconta Asaas do usuário (Etapa 7.3a — FUNDAÇÃO apenas; nada chama
+  // estes campos em produção ainda). `asaasSubaccountId` é o `id` devolvido
+  // por POST /v3/accounts; `asaasSubaccountApiKey` é a chave PRIVADA da
+  // subconta (só existe na resposta de criação — nunca logar); o status é
+  // string livre por enquanto (PENDING/ACTIVE/REJECTED/SUSPENDED) e vira
+  // enum na 7.3b. Os 3 campos NÃO são usados por cobrança/split/payout.
+  asaasSubaccountId       String?
+  asaasSubaccountApiKey   String?
+  asaasSubaccountStatus   String?
+
   // Aceite dos Termos de Uso/Privacidade (LGPD): obrigatório no cadastro,
   // registrado com data/hora exata.
   termsAcceptedAt  DateTime?

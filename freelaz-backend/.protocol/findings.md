@@ -603,11 +603,42 @@ Levantamento feito **antes** de criar qualquer rota (nenhuma assinatura foi inve
 - Pagamento acontece antes de qualquer troca de mensagem entre as partes — risco de atrito identificado, mas a decisão do usuário foi manter assim, confiando na retenção do saldo como proteção suficiente.
 - Suplentes "parados no tempo": resolvido parcialmente com o filtro automático de conflito de agenda (`listSubstitutes`), mas isso só cobre sobreposição de **outra contratação já confirmada** — não cobre o suplente simplesmente não querer mais aquele trabalho por outro motivo. Ele ainda pode recusar quando for selecionado via "Retomar vaga".
 
- # #   4 e .   E t a p a   7 . 1      s o f t - h i d e   w i r e d   ( i F o o d ) 
- 
- -   S c h e m a :   C h a t . h i d d e n A t   D a t e T i m e ?   +   m i g r a c a o   2 0 2 6 1 0 2 0 2 1 0 0 0 0 _ e t a p a 7 _ c h a t _ h i d e . 
- -   h i d e C o n c l u d e d C h a t s ( ) :   C O N C L U I D O   +   c o m p l e t e d A t   < =   n o w - 2 h ,   e x c e c o e s   d i s p u t e O p e n / D i s p u t e   E M _ A N A L I S E / C h a r g e b a c k E v e n t   A T I V O . 
- -   g e t C h a t F o r U s e r :   4 0 4   n a o - a d m i n   q u a n d o   h i d d e n A t ;   g e t C h a t F o r A d m i n :   s e m p r e . 
- -   R o t a s :   G E T / P O S T   / a p i / h i r i n g s / [ i d ] / c h a t   f i l t r a m ;   P A T C H   . . . / c h a t / m e s s a g e s / r e a d ;   G E T   / a p i / a d m i n / h i r i n g s / [ i d ] / c h a t . 
-  
- 
+## 4e. Etapa 7.1 — soft-hide wired (iFood)
+
+- **Schema**: `Chat.hiddenAt DateTime?` em `prisma/schema.prisma`. Migração aditiva `20261020210000_etapa7_chat_hide/migration.sql` (`ALTER TABLE "Chat" ADD COLUMN "hiddenAt" TIMESTAMP(3);`), aplicada.
+- **Job**: `POST /api/jobs/hide-concluded-chats/run` (`checkJobsToken`, log sem PII) executa `chatService.hideConcludedChats()`; schedule `*/15` em `.github/workflows/jobs.yml`. Oculta `Chat` quando `Hiring.status='CONCLUIDO'` **e** `completedAt <= now - 2h` **e** `hiddenAt IS NULL`.
+- **Exceções**: não oculta se `Hiring.disputeOpen=true` OU existe `Dispute` com `status='EM_ANALISE'` OU `ChargebackEvent.state='ATIVO'`; cada motivo incrementa `skipped.dispute` / `skipped.chargeback`. Nunca deleta `Chat` nem `Message` — só preenche `hiddenAt`.
+- **Visibilidade**: `getChatForUser(hiringId, userId, isAdmin)` devolve 404 (`{ error: 'Conversa não encontrada' }`) para não-admin quando `hiddenAt` está preenchido; `getChatForAdmin(hiringId)` **sempre** devolve (`chatId`, `hiddenAt`, mensagens), sem filtro de ocultação.
+- **Rotas plugadas**: `GET /api/hirings/[id]/chat` e `POST /api/hirings/[id]/chat/messages` filtram por `getChatForUser` (404 antes da checagem de status no POST). `PATCH /api/hirings/[id]/chat/messages/read` marca `readAt` das mensagens recebidas e devolve `{ marked }`. `GET /api/admin/hirings/[id]/chat` usa `checkAdminAccess` e devolve `{ chatId, hiddenAt, messages }` mesmo com o chat oculto.
+- **Testes**: `test-chat.mjs` §8–§11 (19 asserts: 5 readAt, 7 soft-hide, 4 disputa, 3 chargeback) rodam contra o dev server real + mock Asaas. Não há `skip`, `try/catch` nem `if (404) return` nessas seções: cada `check` falha o processo (`process.exit(1)`).
+- **Correção da asserção §9**: o teste esperava `json.chat.hiddenAt`, mas o contrato do admin (desde `ca9cf4d`) é `json.hiddenAt` (top-level). A asserção foi alinhada ao contrato atual em 2026-10-21; não era um teste "passando por engano".
+
+## 4f. Etapa 7.3a — fundação subcontas Asaas
+
+Escopo desta etapa: **somente schema + helpers**, nenhum fluxo ligado. Onboarding (7.3b), split (7.3c) e payout via subconta (7.3d) ficam pendentes.
+
+| item | status | arquivo |
+|---|---|---|
+| Campos `User.asaasSubaccountId` / `asaasSubaccountApiKey` / `asaasSubaccountStatus` | **feito** (nullable; status string livre) | `prisma/schema.prisma` |
+| Migração aditiva | **feita** (`20261021150000_etapa73a_subcontas`) | `prisma/migrations/20261021150000_etapa73a_subcontas/migration.sql` |
+| `POST /v3/accounts` | **feito** via `createAsaasSubaccount()` (não chamado em produção) | `src/lib/asaas.ts` |
+| `GET /v3/accounts/{id}` | **feito** via `getAsaasSubaccount()` | `src/lib/asaas.ts` |
+| `GET /v3/finance/balance` com chave da subconta | **feito** via `getAsaasSubaccountBalance()` (retorna `balance` + `balanceCents`) | `src/lib/asaas.ts` |
+| Tipos exportados | `AsaasSubaccount`, `AsaasSubaccountPayload` (+ resultados `Create…Result`, `Get…Result`, `…BalanceResult`) | `src/lib/asaas.ts` |
+| Feature flag | `ASAAS_SUBACCOUNT_ENABLED="false"` (default OFF) | `.env.example` |
+| Onboarding / split / payout via subconta | **NÃO feito** (7.3b/c/d) | — |
+
+### Período de avaliação regulatória
+
+A doc oficial (consultada em 2026-10-21) avisa que **toda conta nova que cria subcontas via API entra no período de avaliação regulatória do Asaas**; durante esse período, operações de subcontas e cobranças ficam sujeitas a **limites iniciais**. Fonte: https://docs.asaas.com/docs/criacao-de-subcontas (callout "Atenção") e https://docs.asaas.com/docs/subcontas. Regras relevantes:
+
+- A **conta-pai precisa ser pessoa jurídica (CNPJ)** — https://docs.asaas.com/reference/criar-subconta.
+- O payload exige `name`, `email`, `cpfCnpj`, `mobilePhone`, `incomeValue`, `address`, `addressNumber`, `province`, `postalCode`; `postalCode` inválido devolve 400.
+- A `apiKey` da subconta vem em `accessToken.apiKey` **somente na criação** e é irrecuperável depois (por isso o campo `asaasSubaccountApiKey`, nunca logado).
+- `GET /v3/accounts/{id}` **não** devolve a `apiKey`.
+
+### Bloqueios descobertos na inspeção
+
+- **Conta principal do Sandbox é CPF (`personType=FISICA`, `companyType=null`)**, não CNPJ. Como a criação de subconta exige conta-pai PJ, **não é possível validar o fluxo de criação no Sandbox atual** — precisa de conta Sandbox PJ (ou validação em produção após o CNPJ da plataforma).
+- `.env` local estava com um `\` antes da chave (`ASAAS_API_KEY="\$aact...`): o app recebia 401 `invalid_access_token` em qualquer chamada real. Corrigido localmente (arquivo é gitignored; backup em `.tools/tmp/.env.bak-73a`). Isto não afeta a bateria mock, que injeta a própria chave.
+- **Próximo passo 7.3b**: endpoint de onboarding (feature flag `ASAAS_SUBACCOUNT_ENABLED`), persistência de id/apiKey/status, tratamento do período de avaliação e definição de qual documento (CPF do profissional vs CNPJ) vira subconta.

@@ -550,10 +550,16 @@ async function main() {
     cookie: contractorCookie,
     body: { kind: "OPENING", code: "555555" },
   });
-  await prisma.hiring.update({ where: { id: hHide.id }, data: { closingCode: "666666", completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) } });
+  await prisma.hiring.update({ where: { id: hHide.id }, data: { closingCode: "666666" } });
   await api("POST", `/api/hirings/${hHide.id}/codes`, {
     cookie: contractorCookie,
     body: { kind: "CLOSING", code: "666666" },
+  });
+  // O fechamento grava completedAt = agora (setHiringStatus). Retrocedemos 3h
+  // DEPOIS do POST para exercitar de verdade a janela de 2h do soft-hide.
+  await prisma.hiring.update({
+    where: { id: hHide.id },
+    data: { completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) },
   });
   const hHideAfter = await prisma.hiring.findUnique({ where: { id: hHide.id } });
   check(hHideAfter.status === "CONCLUIDO", `hiring CONCLUIDO com completedAt no passado (${hHideAfter.completedAt})`);
@@ -579,7 +585,7 @@ async function main() {
     headers: INTERNAL_SECRET ? { "x-internal-secret": INTERNAL_SECRET } : {},
   });
   check(getAdminHidden.status === 200, `GET admin chat oculto → 200 (HTTP ${getAdminHidden.status})`);
-  check(getAdminHidden.json?.chat?.hiddenAt != null, `admin vê hiddenAt (${getAdminHidden.json?.chat?.hiddenAt})`);
+  check(getAdminHidden.json?.hiddenAt != null, `admin vê hiddenAt (${getAdminHidden.json?.hiddenAt})`);
 
   // ----------------------------------------------------------------------
   section("§10. Não oculta com disputa aberta/em análise");
@@ -590,10 +596,16 @@ async function main() {
     cookie: contractorCookie,
     body: { kind: "OPENING", code: "777777" },
   });
-  await prisma.hiring.update({ where: { id: hDisp.id }, data: { closingCode: "888888", completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) } });
+  await prisma.hiring.update({ where: { id: hDisp.id }, data: { closingCode: "888888" } });
   await api("POST", `/api/hirings/${hDisp.id}/codes`, {
     cookie: contractorCookie,
     body: { kind: "CLOSING", code: "888888" },
+  });
+  // Backdate DEPOIS do fechamento: sem isso o chat nem entraria na janela de
+  // hide e o teste de exceção passaria pelo motivo errado.
+  await prisma.hiring.update({
+    where: { id: hDisp.id },
+    data: { completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) },
   });
   // Abre disputa (via rota) — garante flag
   const disp = await api("POST", `/api/hirings/${hDisp.id}/dispute`, {
@@ -620,10 +632,16 @@ async function main() {
     cookie: contractorCookie,
     body: { kind: "OPENING", code: "999999" },
   });
-  await prisma.hiring.update({ where: { id: hCb.id }, data: { closingCode: "000000", completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) } });
+  await prisma.hiring.update({ where: { id: hCb.id }, data: { closingCode: "000000" } });
   await api("POST", `/api/hirings/${hCb.id}/codes`, {
     cookie: contractorCookie,
     body: { kind: "CLOSING", code: "000000" },
+  });
+  // Backdate DEPOIS do fechamento (ver §10): garante que o único motivo de
+  // não ocultar seja o ChargebackEvent ATIVO.
+  await prisma.hiring.update({
+    where: { id: hCb.id },
+    data: { completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) },
   });
   // Insere chargeback ATIVO
   await prisma.chargebackEvent.create({

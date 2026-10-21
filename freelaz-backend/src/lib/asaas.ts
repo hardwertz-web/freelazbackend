@@ -431,3 +431,227 @@ export async function transferPix(params: {
     };
   }
 }
+
+// ============================================================================
+// SUBCONTAS ASAAS — Etapa 7.3a (FUNDAÇÃO)
+//
+// ⚠️ Nada aqui é chamado por código de produção ainda: onboarding (7.3b),
+// split (7.3c) e payout via subconta (7.3d) vêm depois. A feature flag
+// `ASAAS_SUBACCOUNT_ENABLED` (default false, ver .env.example) é a trava
+// humana para quando o fluxo for ligado.
+//
+// Referências consultadas (2026-10-21):
+//  - https://docs.asaas.com/docs/subcontas
+//  - https://docs.asaas.com/docs/criacao-de-subcontas
+//  - https://docs.asaas.com/reference/criar-subconta
+//  - https://docs.asaas.com/reference/recuperar-uma-unica-subconta
+//
+// Contrato de erro (igual ao resto do arquivo): 4xx é resposta DEFINITIVA do
+// provedor → `{ ok: false, error }`; 5xx e falha de rede/timeout → throw
+// (resultado DESCONHECIDO — quem chamar precisa reconciliar antes de repetir).
+//
+// 🔒 A `apiKey` da subconta NUNCA aparece em log nem em mensagem de erro: o
+// AsaasApiError carrega só a `description` devolvida pelo provedor.
+// ============================================================================
+
+/** Tipo de pessoa da subconta (o Asaas devolve `personType`). */
+export type AsaasSubaccountPersonType = "FISICA" | "JURIDICA";
+
+/**
+ * Payload de `POST /v3/accounts` (AccountSaveRequestDTO). Os 9 primeiros
+ * campos são OBRIGATÓRIOS na doc oficial; o resto é opcional.
+ */
+export type AsaasSubaccountPayload = {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  mobilePhone: string;
+  incomeValue: number;
+  address: string;
+  addressNumber: string;
+  province: string;
+  postalCode: string;
+  loginEmail?: string;
+  birthDate?: string; // "YYYY-MM-DD" — obrigatório para CPF
+  companyType?: "MEI" | "LIMITED" | "INDIVIDUAL" | "ASSOCIATION";
+  phone?: string;
+  site?: string;
+  complement?: string;
+  taxRegime?: "MEI" | "NATIONAL_SIMPLE" | "NORMAL_REGIME" | "UNKNOWN";
+};
+
+/**
+ * Subconta como o Asaas a representa. `apiKey` só vem no RETORNO DA CRIAÇÃO
+ * (campo `accessToken.apiKey` no JSON) — depois disso é irrecuperável.
+ */
+export type AsaasSubaccount = {
+  id: string;
+  walletId: string;
+  name?: string;
+  email?: string;
+  cpfCnpj?: string;
+  personType?: AsaasSubaccountPersonType | string;
+  companyType?: string;
+  city?: number;
+  state?: string;
+  country?: string;
+  tradingName?: string | null;
+  site?: string | null;
+  accountNumber?: { agency: string; account: string; accountDigit: string };
+};
+
+export type CreateAsaasSubaccountResult =
+  | { ok: true; id: string; apiKey: string | null; walletId: string }
+  | { ok: false; error: string };
+
+export type GetAsaasSubaccountResult =
+  | { ok: true; subaccount: AsaasSubaccount }
+  | { ok: false; error: string };
+
+export type AsaasSubaccountBalanceResult =
+  | { ok: true; balance: number; balanceCents: number }
+  | { ok: false; error: string };
+
+type AsaasSubaccountResponse = AsaasSubaccount & {
+  accessToken?: { apiKey?: string | null } | null;
+};
+
+/**
+ * fetch autenticado com a chave da SUBCONTA (não a da conta-pai). Separado de
+ * `asaasFetch` de propósito: o header `access_token` aqui é a credencial da
+ * subconta e não pode ser trocado/acidentalmente logado.
+ */
+async function asaasFetchWithKey<T>(
+  path: string,
+  key: string,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      access_token: key,
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const detail =
+      body && Array.isArray(body.errors) && body.errors[0]?.description
+        ? body.errors[0].description
+        : `HTTP ${res.status}`;
+    throw new AsaasApiError(res.status, detail);
+  }
+  return body as T;
+}
+
+/** 4xx → resultado definitivo; 5xx/rede → relança (resultado desconhecido). */
+function isDefinitiveClientError(err: unknown): err is AsaasApiError {
+  return err instanceof AsaasApiError && err.status >= 400 && err.status < 500;
+}
+
+/**
+ * Cria uma subconta (`POST /v3/accounts`).
+ *
+ * A conta-pai precisa ser PESSOA JURÍDICA (CNPJ). Subcontas novas ficam
+ * sujeitas ao PERÍODO DE AVALIAÇÃO REGULATÓRIA do Asaas (limites iniciais).
+ *
+ * Devolve `{ id, apiKey, walletId }`; `apiKey` é `null` se o Asaas não a
+ * devolver — capture-a AGORA, pois não é recuperável depois.
+ */
+export async function createAsaasSubaccount(
+  data: AsaasSubaccountPayload
+): Promise<CreateAsaasSubaccountResult> {
+  try {
+    const account = await asaasFetch<AsaasSubaccountResponse>("/accounts", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return {
+      ok: true,
+      id: account.id,
+      apiKey: account.accessToken?.apiKey ?? null,
+      walletId: account.walletId,
+    };
+  } catch (err) {
+    if (isDefinitiveClientError(err)) {
+      return { ok: false, error: err.message };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Recupera uma subconta (`GET /v3/accounts/{id}`). A resposta NÃO inclui a
+ * `apiKey` — por isso não há campo de credencial no retorno.
+ */
+export async function getAsaasSubaccount(
+  subaccountId: string
+): Promise<GetAsaasSubaccountResult> {
+  try {
+    const account = await asaasFetch<AsaasSubaccountResponse>(
+      `/accounts/${encodeURIComponent(subaccountId)}`,
+      { method: "GET" }
+    );
+    return {
+      ok: true,
+      subaccount: {
+        id: account.id,
+        walletId: account.walletId,
+        name: account.name,
+        email: account.email,
+        cpfCnpj: account.cpfCnpj,
+        personType: account.personType,
+        companyType: account.companyType,
+        city: account.city,
+        state: account.state,
+        country: account.country,
+        tradingName: account.tradingName,
+        site: account.site,
+        accountNumber: account.accountNumber,
+      },
+    };
+  } catch (err) {
+    if (isDefinitiveClientError(err)) {
+      return { ok: false, error: err.message };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Saldo da SUBCONTA (`GET /v3/finance/balance` autenticado com a chave dela).
+ * Retorna em reais e em centavos (inteiro, para não comparar float).
+ *
+ * 🔒 `subaccountApiKey` não é logada em nenhum caminho (inclusive erro).
+ */
+export async function getAsaasSubaccountBalance(
+  subaccountApiKey: string
+): Promise<AsaasSubaccountBalanceResult> {
+  if (!subaccountApiKey) {
+    return { ok: false, error: "apiKey da subconta ausente" };
+  }
+  try {
+    const body = await asaasFetchWithKey<{ balance?: number }>(
+      "/finance/balance",
+      subaccountApiKey,
+      { method: "GET" }
+    );
+    const balance =
+      typeof body?.balance === "number" && Number.isFinite(body.balance)
+        ? body.balance
+        : 0;
+    return {
+      ok: true,
+      balance,
+      balanceCents: Math.round(balance * 100),
+    };
+  } catch (err) {
+    if (isDefinitiveClientError(err)) {
+      return { ok: false, error: err.message };
+    }
+    throw err;
+  }
+}
