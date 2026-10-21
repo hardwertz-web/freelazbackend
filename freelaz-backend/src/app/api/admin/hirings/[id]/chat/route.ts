@@ -5,17 +5,6 @@ import { getChatForAdmin } from "@/services/chatService";
 
 const MAX_MESSAGES_PER_PAGE = 200;
 
-/**
- * GET /api/admin/hirings/:id/chat — histórico da conversa para AUDITORIA.
- *
- * Diferente da rota das partes (`/api/hirings/:id/chat`), esta NUNCA aplica o
- * soft-hide: o ADMIN enxerga a conversa mesmo depois de `Chat.hiddenAt`
- * preenchido (Etapa 7 — estilo iFood). O `hiddenAt` vai no payload para que o
- * painel possa sinalizar que a conversa já "sumiu" para as partes.
- *
- * Acesso por `checkAdminAccess` (segredo interno OU sessão com papel ADMIN
- * ativo) — não exige ser participante da contratação.
- */
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -33,12 +22,11 @@ export async function GET(
     return NextResponse.json({ error: "Contratação não encontrada" }, { status: 404 });
   }
 
-  // Nunca oculta: `getChatForAdmin` devolve o `hiddenAt` para o painel.
   const adminView = await getChatForAdmin(hiring.id);
 
   const chat = await prisma.chat.findUnique({ where: { hiringId: hiring.id } });
   if (!chat) {
-    return NextResponse.json({ chat: null, messages: [], hiddenAt: null });
+    return NextResponse.json({ chatId: null, hiddenAt: adminView.hiddenAt, messages: [] });
   }
 
   const { searchParams } = new URL(req.url);
@@ -61,18 +49,11 @@ export async function GET(
     include: { sender: { select: { id: true, name: true, tradeName: true } } },
   });
 
-  const messages = recent.reverse(); // cronológico para renderizar
-  const hasMore = recent.length === limit;
+  const messages = recent.reverse();
 
   return NextResponse.json({
-    chat: {
-      id: chat.id,
-      status: chat.status,
-      openedAt: chat.openedAt,
-      closedAt: chat.closedAt,
-      closeReason: chat.closeReason,
-      hiddenAt: adminView.hiddenAt,
-    },
+    chatId: chat.id,
+    hiddenAt: adminView.hiddenAt,
     messages: messages.map((message) => ({
       id: message.id,
       body: message.body,
@@ -80,7 +61,5 @@ export async function GET(
       readAt: message.readAt,
       sender: message.sender,
     })),
-    hasMore,
-    nextBefore: hasMore && messages.length > 0 ? messages[0].createdAt : null,
   });
 }
