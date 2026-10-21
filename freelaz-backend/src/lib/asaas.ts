@@ -39,6 +39,15 @@ export type AsaasPayment = {
   externalReference: string | null;
   dateCreated: string;
   paymentAddress?: string | null;
+  // Presente quando a cobrança foi criada com divisão (Etapa 7.3c). Só
+  // rastreamento: o split é liquidado na origem, nada é movido por aqui.
+  split?: AsaasSplit[] | null;
+};
+
+/** Item do `split` de POST /payments (percentual do valor que vai ao wallet). */
+export type AsaasSplit = {
+  walletId: string;
+  percentualValue: number;
 };
 
 /**
@@ -247,6 +256,12 @@ export async function createPixPayment(params: {
    * validado no Sandbox da Etapa 2.
    */
   idempotencyKey?: string;
+  /**
+   * Split opcional (Etapa 7.3c): divisão na ORIGEM entre o wallet da subconta
+   * do profissional e a conta principal. Ausente = comportamento antigo
+   * (cobrança inteira na conta principal).
+   */
+  split?: AsaasSplit[];
 }): Promise<AsaasPayment> {
   if (!Number.isInteger(params.valueCents) || params.valueCents <= 0) {
     throw new Error("valueCents deve ser um inteiro positivo (centavos)");
@@ -273,6 +288,7 @@ export async function createPixPayment(params: {
       externalReference: params.externalReference,
       description: params.description.slice(0, 120), // limite do campo do Asaas
       dueDate: today,
+      ...(params.split && params.split.length > 0 ? { split: params.split } : {}),
     }),
   });
 }

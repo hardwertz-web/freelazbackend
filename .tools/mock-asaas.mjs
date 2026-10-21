@@ -82,7 +82,7 @@ function readBody(req) {
   });
 }
 
-function createPayment({ value, externalReference, customer, id }) {
+function createPayment({ value, externalReference, customer, id, split }) {
   state.counter += 1;
   const payment = {
     id: id ?? `pay_mock_${state.counter}_${Date.now()}`,
@@ -92,6 +92,8 @@ function createPayment({ value, externalReference, customer, id }) {
     customer: customer ?? null,
     dateCreated: new Date().toISOString(),
     paymentAddress: null,
+    // Etapa 7.3c: ecoa o split recebido (somente rastreamento no mock).
+    split: Array.isArray(split) && split.length > 0 ? split : null,
   };
   state.payments.set(payment.id, payment);
   return payment;
@@ -285,6 +287,36 @@ async function handle(req, res) {
         errors: [{ description: "Cliente não encontrado (campo customer).", code: "invalid_customer" }],
       });
     }
+    // Split (Etapa 7.3c): quando presente, TODOS os walletId precisam existir
+    // entre as subcontas criadas neste mock. Contrato real: wallet inválido é
+    // recusa definitiva (400), nada é criado.
+    if (body.split !== undefined) {
+      if (!Array.isArray(body.split)) {
+        return send(res, 400, {
+          errors: [{ description: "split deve ser uma lista.", code: "invalid_split" }],
+        });
+      }
+      const knownWallets = new Set(
+        [...state.subaccounts.values()].map((entry) => entry.account.walletId)
+      );
+      for (const item of body.split) {
+        if (!item || typeof item.walletId !== "string" || !knownWallets.has(item.walletId)) {
+          return send(res, 400, {
+            errors: [{ description: "walletId do split não encontrado.", code: "invalid_split_wallet" }],
+          });
+        }
+        if (
+          typeof item.percentualValue !== "number" ||
+          !Number.isFinite(item.percentualValue) ||
+          item.percentualValue <= 0 ||
+          item.percentualValue > 100
+        ) {
+          return send(res, 400, {
+            errors: [{ description: "percentualValue inválido no split.", code: "invalid_split_percentual" }],
+          });
+        }
+      }
+    }
     const { createMode, createDelayMs, forcedId } = state.scenario;
     if (createDelayMs > 0) await new Promise((r) => setTimeout(r, createDelayMs));
 
@@ -297,6 +329,7 @@ async function handle(req, res) {
       externalReference: body.externalReference,
       customer: body.customer,
       id: createMode === "forced_id" ? forcedId : undefined,
+      split: body.split,
     });
     if (createMode === "drop") {
       // Resposta perdida: o provedor criou, mas o cliente nunca recebe nada.

@@ -31,6 +31,8 @@ const DEV_LOG = process.env.DEV_LOG || "";
 // ---- contadores/asserts ---------------------------------------------------
 let pass = 0;
 let fail = 0;
+const sectionStats = [];
+let currentSection = null;
 function check(cond, label) {
   if (cond) {
     console.log(`  OK    ${label}`);
@@ -41,7 +43,23 @@ function check(cond, label) {
   }
 }
 function section(name) {
+  if (currentSection) {
+    currentSection.pass = pass - currentSection.pass0;
+    currentSection.fail = fail - currentSection.fail0;
+  }
+  currentSection = { name, pass0: pass, fail0: fail, pass: 0, fail: 0 };
+  sectionStats.push(currentSection);
   console.log(`\n== ${name} ==`);
+}
+function printSectionStats() {
+  if (currentSection) {
+    currentSection.pass = pass - currentSection.pass0;
+    currentSection.fail = fail - currentSection.fail0;
+  }
+  console.log("\n---- resultado por seção ----");
+  for (const s of sectionStats) {
+    console.log(`  ${s.name}: ${s.pass} OK / ${s.fail} FALHA`);
+  }
 }
 
 // ---- HTTP -----------------------------------------------------------------
@@ -171,6 +189,77 @@ const ADDRESS = {
   incomeValueCents: 350000,
 };
 
+let hiringCounter = 0;
+async function newJob(title) {
+  const res = await api("POST", "/api/jobs", {
+    cookie: contractorCookie,
+    body: {
+      title,
+      description: "Vaga de teste de split com descricao suficientemente longa.",
+      category: "EVENTOS",
+      valueCents: 80000,
+      startsAt: new Date(Date.now() + 86_400_000).toISOString(),
+      endsAt: new Date(Date.now() + 172_800_000).toISOString(),
+    },
+  });
+  if (res.status !== 201) {
+    throw new Error(`criar vaga falhou: HTTP ${res.status} ${JSON.stringify(res.json)}`);
+  }
+  return res.json.jobPosting.id;
+}
+
+async function newHiring(jobPostingId, jobTitle, professionalId) {
+  hiringCounter += 1;
+  const application = await prisma.application.create({
+    data: {
+      jobPostingId,
+      professionalId,
+      status: "SELECIONADO",
+      agreedValueCents: 80000,
+    },
+  });
+  return prisma.hiring.create({
+    data: {
+      jobPostingId,
+      applicationId: application.id,
+      jobTitle,
+      professionalId,
+      contractorId: contractor.id,
+      grossValueCents: 80000,
+      netValueCents: 72000,
+      commissionBps: 1000,
+      status: "AGUARDANDO_PAGAMENTO",
+    },
+  });
+}
+
+/** Profissional SEM subconta, para o fallback obrigatório da 7.3c. */
+async function createFallbackPro() {
+  const cpf = makeCpf(`${runId}42`);
+  const email = `${prefix}-sem-subconta@exemplo.com`;
+  const reg = await api("POST", "/api/auth/register", {
+    body: {
+      documentType: "CPF",
+      document: cpf,
+      name: "Profissional Sem Subconta",
+      birthDate: "1991-04-20",
+      email,
+      phone: `(35) 6${runId}`,
+      password,
+      roles: ["PROFISSIONAL"],
+      acceptedTerms: true,
+    },
+  });
+  check(reg.status === 201, `cadastro do profissional sem subconta (HTTP ${reg.status})`);
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) throw new Error("profissional sem subconta não encontrado no banco");
+  await prisma.userRoleAssignment.updateMany({
+    where: { userId: user.id },
+    data: { status: "ATIVO" },
+  });
+  return user;
+}
+
 async function phaseOff() {
   section("§1. Sem session → 401");
   const noSession = await api("POST", "/api/profile/subaccount");
@@ -247,10 +336,18 @@ async function phaseOn() {
   check(saved?.asaasSubaccountId === create.json?.subaccountId, "asaasSubaccountId persistido no User");
   check(typeof saved?.asaasSubaccountApiKey === "string" && saved.asaasSubaccountApiKey.length > 0, "asaasSubaccountApiKey persistida");
   check(saved?.asaasSubaccountStatus === "PENDING", `asaasSubaccountStatus = ${saved?.asaasSubaccountStatus}`);
+  check(
+    typeof saved?.asaasSubaccountWalletId === "string" && saved.asaasSubaccountWalletId.length > 0,
+    "asaasSubaccountWalletId persistido no User"
+  );
 
   const mock = await mockState();
   check(mock.subaccounts.length === 1, `mock recebeu 1 subconta (${mock.subaccounts.length})`);
   check(mock.calls.createSubaccount === 1, `POST /v3/accounts chamado 1x (${mock.calls.createSubaccount})`);
+  check(
+    mock.subaccounts[0]?.account?.walletId === saved?.asaasSubaccountWalletId,
+    "walletId persistido é o mesmo devolvido pelo provedor"
+  );
 
   if (DEV_LOG && fs.existsSync(DEV_LOG)) {
     const log = fs.readFileSync(DEV_LOG, "utf8");
@@ -269,6 +366,59 @@ async function phaseOn() {
   check(mock2.calls.createSubaccount === 1, `provedor continua com 1 criação (${mock2.calls.createSubaccount})`);
   const saved2 = await prisma.user.findUnique({ where: { id: pro.id } });
   check(saved2?.asaasSubaccountId === create.json?.subaccountId, "id persistido não mudou");
+
+  section("§7. Split ON — cobrança usa o walletId da subconta");
+  const job7 = await newJob(`Vaga Split ${runId}`);
+  const hiring7 = await newHiring(job7, `Vaga Split ${runId}`, pro.id);
+  const charge7 = await api("POST", "/api/payments/create", {
+    cookie: contractorCookie,
+    body: { hiringId: hiring7.id },
+  });
+  check(charge7.status === 200, `POST /api/payments/create com split → HTTP ${charge7.status}`);
+  check(typeof charge7.json?.paymentId === "string", "paymentId devolvido");
+
+  const after7 = await prisma.hiring.findUnique({ where: { id: hiring7.id } });
+  check(
+    after7?.asaasSplitId === charge7.json?.paymentId,
+    `hiring.asaasSplitId persistido (${after7?.asaasSplitId})`
+  );
+
+  const mock7 = await mockState();
+  const splitPayment = mock7.payments.find((p) => p.id === charge7.json?.paymentId);
+  check(
+    Array.isArray(splitPayment?.split) && splitPayment.split.length === 1,
+    `payload do mock contém 1 item de split (${JSON.stringify(splitPayment?.split ?? null)})`
+  );
+  check(
+    splitPayment?.split?.[0]?.walletId === saved?.asaasSubaccountWalletId,
+    "split usa o walletId da subconta (não o subaccountId)"
+  );
+  check(
+    splitPayment?.split?.[0]?.percentualValue === 90,
+    `percentualValue = net/gross = 90 (${splitPayment?.split?.[0]?.percentualValue})`
+  );
+
+  section("§8. Fallback — profissional sem subconta (sem split)");
+  const fallbackPro = await createFallbackPro();
+  const job8 = await newJob(`Vaga Fallback ${runId}`);
+  const hiring8 = await newHiring(job8, `Vaga Fallback ${runId}`, fallbackPro.id);
+  const charge8 = await api("POST", "/api/payments/create", {
+    cookie: contractorCookie,
+    body: { hiringId: hiring8.id },
+  });
+  check(charge8.status === 200, `cobrança sem subconta continua funcionando (HTTP ${charge8.status})`);
+  const after8 = await prisma.hiring.findUnique({ where: { id: hiring8.id } });
+  check(after8?.asaasSplitId === null, `hiring.asaasSplitId = null (${after8?.asaasSplitId})`);
+  const mock8 = await mockState();
+  const fallbackPayment = mock8.payments.find((p) => p.id === charge8.json?.paymentId);
+  check(
+    fallbackPayment !== undefined && fallbackPayment.split === null,
+    `payload SEM split (${JSON.stringify(fallbackPayment ? fallbackPayment.split : "pagamento ausente")})`
+  );
+  check(
+    typeof after8?.providerPaymentId === "string" && after8.providerPaymentId.length > 0,
+    "providerPaymentId gravado no fallback"
+  );
 }
 
 async function main() {
@@ -280,6 +430,7 @@ async function main() {
   if (PHASE === "off") await phaseOff();
   else await phaseOn();
 
+  printSectionStats();
   console.log(`\n==== SUBCONTA (${PHASE}): ${pass} OK / ${fail} FALHA ====`);
   await prisma.$disconnect();
   if (fail > 0) process.exit(1);

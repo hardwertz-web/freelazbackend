@@ -681,3 +681,32 @@ A conta principal do Sandbox é **CPF** (`GET /v3/myAccount` → `personType=FIS
 ### Próximo passo 7.3c — split
 
 Usar o `walletId` da subconta na cobrança (`chargeService`) para dividir entre plataforma e profissional. Hoje a cobrança é única, sem split; a 7.3b **não** plugou nenhum split/payout.
+
+## 4h. Etapa 7.3c - split no chargeService (feature flag + fallback)
+
+| item | status | arquivo |
+|---|---|---|
+| incomeValue no payload | confirmado: `incomeValueCents / 100` (reais), linha 118 | `src/services/subaccountService.ts` |
+| PF (CPF) | envia name, email, cpfCnpj, mobilePhone, incomeValue, address, addressNumber, province, postalCode e birthDate | `src/services/subaccountService.ts` |
+| PJ (CNPJ) | mesmos campos, SEM birthDate; `tradeName` e validado mas NAO e enviado; `companyType` nao existe no User | `src/services/subaccountService.ts` / pendencias abaixo |
+| `User.asaasSubaccountWalletId` | feito (nullable) | `prisma/schema.prisma` |
+| `Hiring.asaasSplitId` | feito (nullable) | `prisma/schema.prisma` |
+| `Payout.origin` | feito (`@default("MAIN")`, MAIN ou SUBACCOUNT) | `prisma/schema.prisma` |
+| Migracao aditiva (14a) | feita e aplicada (`20261023120000_etapa73c_split`) | `prisma/migrations/20261023120000_etapa73c_split/migration.sql` |
+| Persistencia do walletId na criacao | feito | `src/services/subaccountService.ts` |
+| Split no `ensureCharge` | feito (somente HIRING; flag ON + subconta + walletId) | `src/services/chargeService.ts` |
+| Fallback | flag OFF ou sem subconta -> payload sem split, `asaasSplitId=null` | `src/services/chargeService.ts` |
+| Mock `POST /v3/payments` | aceita e ecoa `split`; valida walletId existente e percentual 0 < x <= 100 | `.tools/mock-asaas.mjs` |
+| Webhook | log `[webhook] split recebido hiring=<id>`; NAO move dinheiro | `src/app/api/webhooks/asaas/route.ts` |
+| Testes | 14 OFF + 53 ON = 67 asserts, 0 falhas; ?7 split ON, ?8 fallback | `.tools/test-subaccount.mjs` |
+| Bateria | 1098 OK / 0 FALHA / BATTERY_EXIT=0 (antes 1085; +13) | `.tools/run-all-tests.ps1` |
+
+### Notas da 7.3c
+
+- **walletId != subaccountId**: o split usa o `wallet_...` devolvido por POST /v3/accounts; `acc_...` identifica a subconta. Os dois sao persistidos.
+- **Webhook so loga**: a divisao acontece na liquidacao do POST /payments; o webhook nao transfere dinheiro nem cria lancamento.
+- **Taxa de saque da subconta**: quem paga? Pendencia de produto para a 7.3d.
+- **Pendencias PF/PJ**: `User` nao tem `companyType`; `tradeName` e exigido para CNPJ mas nao vai no payload atual. Validar com conta Sandbox PJ antes de producao.
+- **Payout**: `Payout.origin` e apenas rastreamento; `payoutService` NAO foi alterado (fica para 7.3d).
+
+Proximo passo 7.3d: payout via subconta (decidir taxa de saque e origem do saldo).

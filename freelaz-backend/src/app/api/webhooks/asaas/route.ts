@@ -252,6 +252,13 @@ async function routeEvent(
     return { status: 400, body: { error: "valor do pagamento não confere" } };
   }
 
+  if (APPROVED_STATUSES.includes(payment.status) && hiring.asaasSplitId) {
+    // Etapa 7.3c — SÓ rastreamento. O split já foi liquidado na origem
+    // (divisão no POST /payments): o webhook NÃO move dinheiro nem cria
+    // lançamento. Log sem walletId/PII.
+    console.log(`[webhook] split recebido hiring=${hiring.id}`);
+  }
+
   if (APPROVED_STATUSES.includes(payment.status)) {
     const outcome = await prisma.$transaction(async (tx) => {
       const locked = await lockHiringForUpdate(tx, hiring.id);

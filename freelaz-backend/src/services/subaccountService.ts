@@ -33,6 +33,7 @@ type SubaccountUser = {
   incomeValueCents: number | null;
   asaasSubaccountId: string | null;
   asaasSubaccountStatus: string | null;
+  asaasSubaccountWalletId: string | null;
 };
 
 export type CreateSubaccountForUserResult =
@@ -86,6 +87,7 @@ export async function createSubaccountForUser(
       incomeValueCents: true,
       asaasSubaccountId: true,
       asaasSubaccountStatus: true,
+      asaasSubaccountWalletId: true,
     },
   })) as SubaccountUser | null;
 
@@ -141,6 +143,9 @@ export async function createSubaccountForUser(
       asaasSubaccountId: result.id,
       asaasSubaccountApiKey: result.apiKey,
       asaasSubaccountStatus: "PENDING",
+      // O split (7.3c) usa o walletId, e ele também só é recuperável na
+      // criação — persistir junto evita reconsulta/irreversibilidade.
+      asaasSubaccountWalletId: result.walletId,
     },
   });
 

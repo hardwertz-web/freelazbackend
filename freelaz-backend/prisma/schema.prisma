@@ -83,6 +83,10 @@ model User {
   asaasSubaccountId       String?
   asaasSubaccountApiKey   String?
   asaasSubaccountStatus   String?
+  // `walletId` da subconta — usado pelo SPLIT da cobrança (Etapa 7.3c).
+  // NÃO confundir com `asaasSubaccountId` (`acc_...`): o split referencia o
+  // wallet (`wallet_...`) devolvido por POST /v3/accounts.
+  asaasSubaccountWalletId String?
 
   // Aceite dos Termos de Uso/Privacidade (LGPD): obrigatório no cadastro,
   // registrado com data/hora exata.
@@ -411,6 +415,10 @@ model Hiring {
   // cobrança (`/api/payments/create`); o webhook casa por `external_reference`
   // e confirma o status — id nomescente de propósito.
   providerPaymentId String?    @unique
+  // Id da cobrança criada COM split (Etapa 7.3c). Nulo quando a cobrança foi
+  // criada no caminho antigo (flag off ou profissional sem subconta). O split
+  // é liquidado na origem; este campo é só rastreamento/auditoria.
+  asaasSplitId      String?
   openingCode      String? // gerado 1h antes do início
   closingCode      String? // gerado 1h antes do fim
   closingCodeUsedAt DateTime? // dispara a liberação da avaliação 2h depois
@@ -473,6 +481,10 @@ model Payout {
   status         PayoutStatus @default(PENDENTE)
   idempotencyKey String       @unique
   providerTransferId String?  @unique // id da transferência no provedor (Asaas)
+  // Origem do saldo do repasse (Etapa 7.3c — campo de RASTREAMENTO apenas).
+  // MAIN = conta principal; SUBACCOUNT = saldo já separado na subconta.
+  // Não muda nenhum fluxo de payout (7.3d decide isso).
+  origin         String       @default("MAIN")
   failureReason  String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

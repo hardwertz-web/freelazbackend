@@ -8,6 +8,7 @@ import {
   isChargeActive,
   type AsaasPayment,
   type AsaasPaymentPage,
+  type AsaasSplit,
 } from "@/lib/asaas";
 
 /**
@@ -268,12 +269,18 @@ async function adoptAndReuse(
 async function persistToTarget(
   entity: ChargeEntity,
   entityId: string,
-  providerPaymentId: string
+  providerPaymentId: string,
+  asaasSplitId?: string
 ): Promise<void> {
   if (entity === "HIRING") {
     await prisma.hiring.updateMany({
       where: { id: entityId },
-      data: { providerPaymentId },
+      data: {
+        providerPaymentId,
+        // Só grava quando a criação usou split; adoção/reconciliação não
+        // reescreve o campo (não se sabe se a cobrança adotada tinha split).
+        ...(asaasSplitId ? { asaasSplitId } : {}),
+      },
     });
     return;
   }
@@ -468,6 +475,63 @@ export async function ensureAsaasCustomerForUser(userId: string): Promise<Custom
 }
 
 /**
+ * Etapa 7.3c — decide se a cobrança da contratação usa split.
+ *
+ * Regra: flag `ASAAS_SUBACCOUNT_ENABLED=true` E profissional com subconta
+ * (`asaasSubaccountId` + `asaasSubaccountWalletId`). O split usa o `walletId`
+ * (NÃO o `asaasSubaccountId`: são identificadores diferentes). O percentual
+ * vem dos valores JÁ gravados no Hiring — nada é recalculado:
+ * `percentualValue = netValueCents / grossValueCents * 100`.
+ *
+ * Qualquer ausência/valor inválido cai no FALLBACK (cobrança sem split), que
+ * é exatamente o comportamento anterior à 7.3c. Log sem PII: só id e motivo,
+ * nunca walletId/apiKey/valores.
+ */
+async function resolveHiringSplit(
+  hiringId: string
+): Promise<
+  | { split: AsaasSplit; reason?: never }
+  | { split: null; reason: "flag_off" | "no_subaccount" }
+> {
+  if (process.env.ASAAS_SUBACCOUNT_ENABLED !== "true") {
+    return { split: null, reason: "flag_off" };
+  }
+
+  const hiring = await prisma.hiring.findUnique({
+    where: { id: hiringId },
+    select: {
+      grossValueCents: true,
+      netValueCents: true,
+      professional: {
+        select: { asaasSubaccountId: true, asaasSubaccountWalletId: true },
+      },
+    },
+  });
+  if (!hiring) return { split: null, reason: "no_subaccount" };
+
+  const { asaasSubaccountId, asaasSubaccountWalletId } = hiring.professional;
+  if (!asaasSubaccountId || !asaasSubaccountWalletId) {
+    return { split: null, reason: "no_subaccount" };
+  }
+
+  const { grossValueCents, netValueCents } = hiring;
+  const valuesValid =
+    Number.isInteger(grossValueCents) &&
+    grossValueCents > 0 &&
+    Number.isInteger(netValueCents) &&
+    netValueCents > 0 &&
+    netValueCents <= grossValueCents;
+  if (!valuesValid) return { split: null, reason: "no_subaccount" };
+
+  return {
+    split: {
+      walletId: asaasSubaccountWalletId,
+      percentualValue: Number(((netValueCents / grossValueCents) * 100).toFixed(2)),
+    },
+  };
+}
+
+/**
  * Garante UMA cobrança vigente para a operação, criando-a apenas quando isso
  * é seguro. Nunca duplica: reconcilia antes, trava a concorrência no banco e
  * trata estado ambíguo como parada obrigatória.
@@ -539,6 +603,20 @@ export async function ensureCharge(params: {
   // 3) Criação no provedor. Qualquer falha que NÃO seja recusa definitiva
   //    (4xx) deixa a tentativa PROVIDER_UNCONFIRMED — estado ambíguo, que só a
   //    reconciliação do próximo request pode encerrar.
+  //
+  //    Etapa 7.3c: somente contratações podem ter split. BOOST mantém o
+  //    comportamento antigo (sem split) — o profissional não recebe destaque.
+  let splitItem: AsaasSplit | null = null;
+  if (entity === "HIRING") {
+    const decision = await resolveHiringSplit(entityId);
+    if (decision.split) {
+      splitItem = decision.split;
+      console.log(`[charge] split=on hiring=${entityId}`);
+    } else {
+      console.log(`[charge] split=off reason=${decision.reason}`);
+    }
+  }
+
   let payment: AsaasPayment;
   try {
     payment = await createPixPayment({
@@ -547,6 +625,7 @@ export async function ensureCharge(params: {
       externalReference,
       description: params.description,
       idempotencyKey: idempotencyKeyFor(entity, entityId, attempt.attempt),
+      ...(splitItem ? { split: [splitItem] } : {}),
     });
   } catch (err) {
     if (err instanceof AsaasApiError && err.status >= 400 && err.status < 500) {
@@ -580,7 +659,7 @@ export async function ensureCharge(params: {
     data: { state: "CONFIRMED", providerPaymentId: payment.id },
   });
   try {
-    await persistToTarget(entity, entityId, payment.id);
+    await persistToTarget(entity, entityId, payment.id, splitItem ? payment.id : undefined);
   } catch (err) {
     return {
       outcome: "ambiguous",
