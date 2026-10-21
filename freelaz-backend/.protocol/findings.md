@@ -642,3 +642,42 @@ A doc oficial (consultada em 2026-10-21) avisa que **toda conta nova que cria su
 - **Conta principal do Sandbox é CPF (`personType=FISICA`, `companyType=null`)**, não CNPJ. Como a criação de subconta exige conta-pai PJ, **não é possível validar o fluxo de criação no Sandbox atual** — precisa de conta Sandbox PJ (ou validação em produção após o CNPJ da plataforma).
 - `.env` local estava com um `\` antes da chave (`ASAAS_API_KEY="\$aact...`): o app recebia 401 `invalid_access_token` em qualquer chamada real. Corrigido localmente (arquivo é gitignored; backup em `.tools/tmp/.env.bak-73a`). Isto não afeta a bateria mock, que injeta a própria chave.
 - **Próximo passo 7.3b**: endpoint de onboarding (feature flag `ASAAS_SUBACCOUNT_ENABLED`), persistência de id/apiKey/status, tratamento do período de avaliação e definição de qual documento (CPF do profissional vs CNPJ) vira subconta.
+
+## 4g. Etapa 7.3b — onboarding de subconta Asaas (mock; Sandbox deferido)
+
+Escopo: coletar endereço/renda no perfil do profissional e criar a subconta via **mock**. Nenhuma chamada ao Sandbox/produção; a feature flag continua `false` por padrão.
+
+| item | status | arquivo |
+|---|---|---|
+| `User.postalCode` / `address` / `addressNumber` / `province` / `incomeValueCents Int?` | **feito** (nullable; MVP em `User`, sem `UserAddress` 1:N) | `prisma/schema.prisma` |
+| Migração aditiva (13ª) | **feita e aplicada** (`20261022120000_etapa73b_endereco_subconta`) | `prisma/migrations/20261022120000_etapa73b_endereco_subconta/migration.sql` |
+| `PUT /api/profile/professional` aceita os 5 campos | **feito** (opcionais; `postalCode` 8 dígitos normalizado, `incomeValueCents` inteiro > 0, demais não-vazios; ausência/vazio = null) | `src/app/api/profile/professional/route.ts` |
+| `createSubaccountForUser(userId)` | **feito** (idempotente + validação de todos os campos) | `src/services/subaccountService.ts` |
+| `POST /api/profile/subaccount` | **feito** (401/403/503/400/200) | `src/app/api/profile/subaccount/route.ts` |
+| `POST /v3/accounts` + `GET /v3/accounts/{id}` no mock | **feito** (`apiKey` só no POST; GET não devolve) | `.tools/mock-asaas.mjs` |
+| `test-subaccount.mjs` + `.ps1` | **feito** — 54 asserts (14 na fase OFF + 40 na fase ON), 6 seções | `.tools/test-subaccount.mjs` / `.tools/test-subaccount.ps1` |
+| Bateria | passo **14/14** | `.tools/run-all-tests.ps1` |
+| Onboarding real no Sandbox | **NÃO validado** (bloqueio CPF, abaixo) | — |
+
+### Contrato implementado
+
+- `createSubaccountForUser(userId): Promise<CreateSubaccountForUserResult>` — união `{ok:true, subaccountId, status, skipped}` | `{ok:false, missing}` | `{ok:false, error}`.
+- **Idempotência**: se `User.asaasSubaccountId` já existe, devolve o id/status persistidos com `skipped:true` e **não** chama o provedor (a `apiKey` só existe na criação e é irrecuperável).
+- **Campos exigidos**: `name`, `email`, `document`, `phone`, `postalCode`, `address`, `addressNumber`, `province`, `incomeValueCents` + `birthDate` (CPF) **ou** `tradeName` (CNPJ). Faltando → `400 {ok:false, missing:[...]}` sem chamar o provedor.
+- **Erros**: 4xx do Asaas → `{ok:false, error}`; 5xx/rede → relança (resultado desconhecido, exige reconciliação).
+- **Segredos**: `apiKey` só é persistida; `incomeValueCents` só é convertido para `incomeValue` (reais). Nenhum dos dois é logado ou devolvido na resposta.
+
+### Sandbox CPF — validação deferred
+
+A conta principal do Sandbox é **CPF** (`GET /v3/myAccount` → `personType=FISICA`), e subcontas exigem conta-pai **CNPJ**. Portanto a criação real **não foi validada**; o fluxo foi provado contra o mock. Mesmo padrão do chargeback: quando/se houver conta Sandbox PJ (ou CNPJ em produção), reenviar a validação real ao Asaas.
+
+### Notas operacionais
+
+- **`.env` com `$` não escapar**: a chave Asaas começa com `$aact_...`; em `.env`/shell é preciso cuidado para não tratar `$` como variável. O arquivo local estava com `\$` e causava 401; corrigido fora do git. Não usar `eval`/expansão ao ler a chave.
+- **`incomeValueCents` é sensível**: é renda declarada. Não logar, não incluir em mensagens de erro e não expor em listagens públicas.
+- **Bateria**: 1085 OK / 0 FALHA, `BATTERY_EXIT=0` (antes: 1031; +54 da 7.3b). Para rodar, `ASAAS_API_KEY` do `.env` fica vazia (guard 503) e é restaurada ao final.
+- **Harness**: `Stop-Port` de `test-chargeback.ps1`, `test-jobs.ps1` e `test-idempotencia.ps1` passou a isolar o stderr do `taskkill` com `cmd /c` (mesmo padrão de chat/notificações), evitando que um processo-filho já morto abortasse a bateria. Não muda produto.
+
+### Próximo passo 7.3c — split
+
+Usar o `walletId` da subconta na cobrança (`chargeService`) para dividir entre plataforma e profissional. Hoje a cobrança é única, sem split; a 7.3b **não** plugou nenhum split/payout.

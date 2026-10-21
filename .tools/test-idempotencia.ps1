@@ -39,7 +39,7 @@ function Get-PortPid([int]$Port) {
 function Stop-Port([int]$Port) {
   $pid_ = Get-PortPid $Port
   if ($pid_) {
-    taskkill /PID $pid_ /F /T 2>&1 | Out-Null
+    cmd /c "taskkill /PID $pid_ /F /T >nul 2>&1" | Out-Null
     Start-Sleep -Seconds 1
   }
 }

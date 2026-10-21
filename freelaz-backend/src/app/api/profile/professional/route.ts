@@ -141,6 +141,65 @@ export async function PUT(req: NextRequest) {
     pixKey = value || null;
   }
 
+  // Endereço/renda exigidos pelo onboarding de subconta Asaas (Etapa 7.3b).
+  // Campos OPCIONAIS: chamadas antigas (que não os enviam) continuam iguais.
+  // Ausência = null; string vazia também limpa o campo.
+  const subaccountProfile: {
+    postalCode?: string | null;
+    address?: string | null;
+    addressNumber?: string | null;
+    province?: string | null;
+    incomeValueCents?: number | null;
+  } = {};
+
+  if (body.postalCode !== undefined) {
+    const raw = String(body.postalCode ?? "").trim();
+    if (!raw) {
+      subaccountProfile.postalCode = null;
+    } else {
+      const digits = raw.replace(/\D/g, "");
+      if (digits.length !== 8) {
+        return NextResponse.json({ error: "postalCode deve ter 8 dígitos" }, { status: 422 });
+      }
+      subaccountProfile.postalCode = digits;
+    }
+  }
+
+  const addressFields = [
+    ["address", 160],
+    ["addressNumber", 20],
+    ["province", 80],
+  ] as const;
+  for (const [field, maxLength] of addressFields) {
+    if (body[field] === undefined) continue;
+    const value = String(body[field] ?? "").trim();
+    if (!value) {
+      subaccountProfile[field] = null;
+    } else if (value.length > maxLength) {
+      return NextResponse.json(
+        { error: `${field} muito longo (máx. ${maxLength} caracteres)` },
+        { status: 422 }
+      );
+    } else {
+      subaccountProfile[field] = value;
+    }
+  }
+
+  if (body.incomeValueCents !== undefined) {
+    if (body.incomeValueCents === null || String(body.incomeValueCents).trim() === "") {
+      subaccountProfile.incomeValueCents = null;
+    } else {
+      const value = Number(body.incomeValueCents);
+      if (!Number.isInteger(value) || value <= 0) {
+        return NextResponse.json(
+          { error: "incomeValueCents deve ser inteiro positivo (centavos)" },
+          { status: 422 }
+        );
+      }
+      subaccountProfile.incomeValueCents = value;
+    }
+  }
+
   // Currículo só aponta pra arquivo privado enviado pelo próprio usuário.
   let resumeUrl: string | null | undefined;
   if (body.resumeDataUrl !== undefined) {
@@ -261,9 +320,21 @@ export async function PUT(req: NextRequest) {
 
   const updated = await loadProfileBundle(user.id);
 
-  // A chave Pix é do User — atualização separada do perfil do papel.
-  if (pixKey !== undefined) {
-    await prisma.user.update({ where: { id: user.id }, data: { pixKey } });
+  // Dados que vivem no User (Pix + endereço/renda de subconta) — atualização
+  // separada do perfil do papel. Uma única escrita, só com o que foi enviado.
+  const userData: {
+    pixKey?: string | null;
+    postalCode?: string | null;
+    address?: string | null;
+    addressNumber?: string | null;
+    province?: string | null;
+    incomeValueCents?: number | null;
+  } = {
+    ...(pixKey !== undefined ? { pixKey } : {}),
+    ...subaccountProfile,
+  };
+  if (Object.keys(userData).length > 0) {
+    await prisma.user.update({ where: { id: user.id }, data: userData });
   }
 
   return NextResponse.json({

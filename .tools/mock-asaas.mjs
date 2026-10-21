@@ -26,9 +26,20 @@ const PORT = Number(process.env.MOCK_ASAAS_PORT ?? 4010);
 const state = {
   payments: new Map(), // id -> payment
   customers: new Map(), // id -> customer (POST /payments exige `customer`)
+  subaccounts: new Map(), // id -> subconta (Etapa 7.3b)
   counter: 0,
   customerCounter: 0,
-  calls: { create: 0, list: 0, get: 0, qr: 0, createCustomer: 0, getCustomer: 0 },
+  subaccountCounter: 0,
+  calls: {
+    create: 0,
+    list: 0,
+    get: 0,
+    qr: 0,
+    createCustomer: 0,
+    getCustomer: 0,
+    createSubaccount: 0,
+    getSubaccount: 0,
+  },
   scenario: {
     // ok        -> cria e responde normalmente
     // drop      -> CRIA a cobrança e derruba a conexão sem responder
@@ -97,14 +108,26 @@ async function handle(req, res) {
       scenario: state.scenario,
       payments: [...state.payments.values()],
       customers: [...state.customers.values()],
+      subaccounts: [...state.subaccounts.values()],
     });
   }
   if (path === "/__reset" && req.method === "POST") {
     state.payments.clear();
     state.customers.clear();
+    state.subaccounts.clear();
     state.counter = 0;
     state.customerCounter = 0;
-    state.calls = { create: 0, list: 0, get: 0, qr: 0, createCustomer: 0, getCustomer: 0 };
+    state.subaccountCounter = 0;
+    state.calls = {
+      create: 0,
+      list: 0,
+      get: 0,
+      qr: 0,
+      createCustomer: 0,
+      getCustomer: 0,
+      createSubaccount: 0,
+      getSubaccount: 0,
+    };
     state.scenario = {
       createMode: "ok",
       createDelayMs: 0,
@@ -175,6 +198,75 @@ async function handle(req, res) {
     const customer = state.customers.get(customerMatch[1]);
     if (!customer) return send(res, 404, { errors: [{ description: "Cliente não encontrado" }] });
     return send(res, 200, customer);
+  }
+
+  // ---- Subcontas (Etapa 7.3b) -----------------------------------------
+  // Contrato real: POST /v3/accounts devolve `accessToken.apiKey` SOMENTE na
+  // criação; GET /v3/accounts/{id} nunca devolve a chave.
+  if (path === "/v3/accounts" && req.method === "POST") {
+    state.calls.createSubaccount += 1;
+    const body = await readBody(req);
+    const required = [
+      "name",
+      "email",
+      "cpfCnpj",
+      "mobilePhone",
+      "incomeValue",
+      "address",
+      "addressNumber",
+      "province",
+      "postalCode",
+    ];
+    const missing = required.filter(
+      (key) =>
+        body[key] === undefined ||
+        body[key] === null ||
+        (typeof body[key] === "string" && body[key].trim() === "")
+    );
+    if (missing.length > 0) {
+      return send(res, 400, {
+        errors: [
+          {
+            description: `Campos obrigatórios ausentes: ${missing.join(", ")}.`,
+            code: "invalid_subaccount",
+          },
+        ],
+      });
+    }
+    if (String(body.postalCode).replace(/\D/g, "").length !== 8) {
+      return send(res, 400, {
+        errors: [{ description: "postalCode inválido.", code: "invalid_postalCode" }],
+      });
+    }
+    state.subaccountCounter += 1;
+    const id = `acc_mock_${state.subaccountCounter}_${Date.now()}`;
+    const account = {
+      id,
+      walletId: `wallet_mock_${state.subaccountCounter}`,
+      status: "PENDING",
+      name: body.name,
+      email: body.email,
+      cpfCnpj: body.cpfCnpj,
+      personType: String(body.cpfCnpj).replace(/\D/g, "").length > 11 ? "JURIDICA" : "FISICA",
+      incomeValue: body.incomeValue,
+      address: body.address,
+      addressNumber: body.addressNumber,
+      province: body.province,
+      postalCode: body.postalCode,
+      birthDate: body.birthDate ?? null,
+    };
+    // Guarda a chave fora do objeto retornável pelo GET.
+    const apiKey = `aact_mock_sub_${state.subaccountCounter}_${Date.now()}`;
+    state.subaccounts.set(id, { account, apiKey });
+    return send(res, 201, { ...account, accessToken: { apiKey } });
+  }
+
+  const subaccountMatch = path.match(/^\/v3\/accounts\/([^/]+)$/);
+  if (subaccountMatch && req.method === "GET") {
+    state.calls.getSubaccount += 1;
+    const entry = state.subaccounts.get(subaccountMatch[1]);
+    if (!entry) return send(res, 404, { errors: [{ description: "Subconta não encontrada" }] });
+    return send(res, 200, entry.account);
   }
 
   if (path === "/v3/payments" && req.method === "POST") {

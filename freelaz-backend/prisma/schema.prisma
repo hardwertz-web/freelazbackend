@@ -57,6 +57,17 @@ model User {
   state        String?
   pixKey       String? // chave Pix para receber repasses (papel Profissional)
 
+  // Endereço e renda exigidos pelo POST /v3/accounts (subconta Asaas) —
+  // Etapa 7.3b. Nullable porque a maioria dos usuários nunca cria subconta e
+  // os perfis antigos não têm esses dados. `incomeValueCents` é SENSÍVEL
+  // (renda declarada): nunca logar. Migração aditiva
+  // 20261022120000_etapa73b_endereco_subconta.
+  postalCode       String?
+  address          String?
+  addressNumber    String?
+  province         String?
+  incomeValueCents Int?
+
   // Cliente na conta Asaas criado na PRIMEIRA cobrança (Etapa 2 — decisão
   // humana "cliente por usuário"): POST /payments exige o campo `customer`
   // (docs.asaas.com > Criar nova cobrança). Criado uma vez, persistido aqui e
