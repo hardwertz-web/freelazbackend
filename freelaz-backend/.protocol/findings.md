@@ -602,3 +602,12 @@ Levantamento feito **antes** de criar qualquer rota (nenhuma assinatura foi inve
 
 - Pagamento acontece antes de qualquer troca de mensagem entre as partes — risco de atrito identificado, mas a decisão do usuário foi manter assim, confiando na retenção do saldo como proteção suficiente.
 - Suplentes "parados no tempo": resolvido parcialmente com o filtro automático de conflito de agenda (`listSubstitutes`), mas isso só cobre sobreposição de **outra contratação já confirmada** — não cobre o suplente simplesmente não querer mais aquele trabalho por outro motivo. Ele ainda pode recusar quando for selecionado via "Retomar vaga".
+
+ # #   4 e .   E t a p a   7 . 1      s o f t - h i d e   w i r e d   ( i F o o d ) 
+ 
+ -   S c h e m a :   C h a t . h i d d e n A t   D a t e T i m e ?   +   m i g r a c a o   2 0 2 6 1 0 2 0 2 1 0 0 0 0 _ e t a p a 7 _ c h a t _ h i d e . 
+ -   h i d e C o n c l u d e d C h a t s ( ) :   C O N C L U I D O   +   c o m p l e t e d A t   < =   n o w - 2 h ,   e x c e c o e s   d i s p u t e O p e n / D i s p u t e   E M _ A N A L I S E / C h a r g e b a c k E v e n t   A T I V O . 
+ -   g e t C h a t F o r U s e r :   4 0 4   n a o - a d m i n   q u a n d o   h i d d e n A t ;   g e t C h a t F o r A d m i n :   s e m p r e . 
+ -   R o t a s :   G E T / P O S T   / a p i / h i r i n g s / [ i d ] / c h a t   f i l t r a m ;   P A T C H   . . . / c h a t / m e s s a g e s / r e a d ;   G E T   / a p i / a d m i n / h i r i n g s / [ i d ] / c h a t . 
+  
+ 
