@@ -666,3 +666,29 @@ Fase 1a 15 + 1b 8 + 1c 12 + Fase 2 112 + Fase 3 103 + Fase 4 202 + Fase 5 145 (=
 **Nao alterados:** migracoes 1-14, `asaasEventService.ts`, rotas de jobs, qualquer fluxo que mova dinheiro, `.env` real (chave esvaziada so para a bateria e restaurada depois; valor nunca logado).
 
 **Bloqueios/pendencias (inalterados):** Sandbox da conta principal e CPF (subconta exige conta-pai CNPJ) -> criacao real so no mock; chargeback real pendente de solicitacao ao Asaas; agendador real (`JOBS_URL`/deploy) nao apontado; paginacao multi-pagina (>100) nao exercitada (fail-closed 503); frontend bloqueado pelo prototipo; 27 decisoes de produto pendentes em `findings.md`.
+
+---
+
+## Sessao 27 - Etapa 7.3d: modelo de taxa "empresa paga tudo" (custodia, sem subcontas)
+
+**Objetivo:** profissional recebe 100% (`netValue = gross`); a empresa paga
+`gross + serviceFee (10%) + estimatedWithdrawalFee` no checkout. Modelo novo
+(`NEW`) atras de `TAX_MODEL_NEW=false`; historico (`LEGACY`) intocado.
+
+**Feito:**
+1. **Schema (migracao 16, aditiva):** `Hiring.taxModel String @default("LEGACY")`, `serviceFeeCents Int?`, `estimatedWithdrawalFeeCents Int?`, `totalChargedCents Int?`; `LedgerEntryType.RECEITA_PLATAFORMA`. Migracao `20261023140000_etapa73d_tax_model` + backfill `LEGACY`.
+2. **`commission.ts`:** `estimateWithdrawalFeeCents(gross)` -> `<= 25000` = 8; senao 200. `PLATFORM_COMMISSION_BPS=1000` mantido.
+3. **`hiringService.createHiringForApplication`:** branch NEW/LEGACY; em NEW `serviceFee=round(gross*0.10)`, `estimated=estimate(gross)`, `total=gross+fee+est`, `net=gross`; log `[hiring] taxModel=NEW gross=.. fee=.. withdrawal=.. total=..` (sem PII).
+4. **`chargeService.ensureCharge`:** HIRING NEW cobra `totalChargedCents`; LEGACY cobra o bruto. **Sem split** (subcontas off).
+5. **`ledgerService`:** `recordPlatformRevenue` + `RECEITA_PLATAFORMA`; webhook `PAYMENT_CONFIRMED` em NEW cria 2 lancamentos (`RETENCAO=gross`, `RECEITA_PLATAFORMA=taxas`); LEGACY continua 1. `computeRetainedBalance` ignora a receita.
+6. **`payoutService.releasePayout`:** base = bruto em NEW, liquido em LEGACY; `amountCents = base - fee` (saque manual desconta a taxa do profissional); log `[payout] taxModel=NEW ... withdrawalFeeReal=..`.
+7. **`walletService.disponivelCents`:** NEW = bruto; LEGACY = liquido. `POST /wallet/withdraw` inalterado.
+8. **`webhook`:** valor esperado = `totalChargedCents` em NEW (evita falso `valor_divergente`).
+9. **`.env.example`:** `TAX_MODEL_NEW="false"`.
+10. **Docs:** `findings.md` secao **4j** (tabela, decisao, nota regulatoria Resolucao BCB 518/2025 + prazo 2027).
+11. **Testes:** `.tools/test-taxmodel.mjs` + `.ps1` (fases OFF/ON) integrados como passo 15/15; nenhum teste existente alterado.
+
+**Nao feito / proibido mantido:** subcontas e split NAO ativados (flags OFF); migracoes 1-15 intocadas; nenhum dado historico alterado; nenhum dinheiro movido.
+
+**Arquivos criados:** `prisma/migrations/20261023140000_etapa73d_tax_model/migration.sql`, `.tools/test-taxmodel.mjs`, `.tools/test-taxmodel.ps1`.
+**Arquivos alterados:** `prisma/schema.prisma`; `src/lib/commission.ts`; `src/services/hiringService.ts`; `src/services/chargeService.ts`; `src/services/ledgerService.ts`; `src/services/payoutService.ts`; `src/services/walletService.ts`; `src/app/api/webhooks/asaas/route.ts`; `.env.example`; `.tools/run-all-tests.ps1`; `.protocol/{findings.md,progress.md}`.

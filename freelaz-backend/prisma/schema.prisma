@@ -403,6 +403,14 @@ model Hiring {
   grossValueCents  Int // valor total pago pela empresa
   netValueCents    Int // valor líquido ao profissional
   commissionBps    Int // comissão em pontos-base (ex: 1000 = 10%)
+  // Etapa 7.3d - modelo de taxa. LEGACY = histórico (empresa paga o bruto e o
+  // profissional recebe o líquido com a comissão descontada); NEW = empresa
+  // paga todas as taxas (profissional recebe 100% do bruto, custódia).
+  // Só `createHiringForApplication` grava estes campos.
+  taxModel                    String @default("LEGACY")
+  serviceFeeCents             Int? // NEW: 10% do bruto (receita da plataforma)
+  estimatedWithdrawalFeeCents Int? // NEW: taxa de saque estimada, paga pela empresa
+  totalChargedCents           Int? // NEW: bruto + serviceFee + estimatedWithdrawalFee
   // status: AGUARDANDO_PAGAMENTO, RETIDO, EM_ANDAMENTO, CONCLUIDO, LIBERADO,
   // CANCELADO, EM_DISPUTA
   // Caminho único de encerramento (ver CLAUDE.md > "Lista de suplentes e
@@ -448,6 +456,7 @@ enum LedgerEntryType {
   LIBERACAO // repasse liberado ao profissional
   REEMBOLSO // devolvido à empresa (cancelamento/disputa)
   AJUSTE // correção manual — exige revisão humana, nunca entra automático nos totais
+  RECEITA_PLATAFORMA // Etapa 7.3d: taxas do modelo empresa-paga (não é saldo retido)
 }
 
 // Livro-razão interno: TODA movimentação de saldo retido passa por aqui.

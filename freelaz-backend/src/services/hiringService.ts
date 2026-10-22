@@ -1,6 +1,6 @@
 import type { Hiring } from "@prisma/client";
 import type { Db } from "../lib/db";
-import { PLATFORM_COMMISSION_BPS, netCentsFor } from "../lib/commission";
+import { PLATFORM_COMMISSION_BPS, netCentsFor, estimateWithdrawalFeeCents } from "../lib/commission";
 import { chatStatusForHiring, syncChatToHiringStatus } from "./chatService";
 import { refreshProfessionalReliability } from "./reliabilityService";
 
@@ -95,7 +95,29 @@ export async function createHiringForApplication(
   if (existing) return existing;
 
   const grossValueCents = application.agreedValueCents ?? application.jobPosting.valueCents;
-  const netValueCents = netCentsFor(grossValueCents);
+
+  // Etapa 7.3d - modelo de taxa (flag off por padrao = historico intocado).
+  //  LEGACY: profissional recebe o liquido (bruto - comissao de 10%).
+  //  NEW:    profissional recebe 100% do bruto; a empresa paga tambem a
+  //          comissao (serviceFee) e a taxa de saque estimada. O dinheiro
+  //          fica em custodia na conta principal do Freelaz (sem split).
+  const taxModel = process.env.TAX_MODEL_NEW === "true" ? "NEW" : "LEGACY";
+  let netValueCents: number;
+  let serviceFeeCents: number | null = null;
+  let estimatedWithdrawalFeeCents: number | null = null;
+  let totalChargedCents: number | null = null;
+
+  if (taxModel === "NEW") {
+    serviceFeeCents = Math.round(grossValueCents * 0.1);
+    estimatedWithdrawalFeeCents = estimateWithdrawalFeeCents(grossValueCents);
+    totalChargedCents = grossValueCents + serviceFeeCents + estimatedWithdrawalFeeCents;
+    netValueCents = grossValueCents;
+    console.log(
+      `[hiring] taxModel=NEW gross=${grossValueCents} fee=${serviceFeeCents} withdrawal=${estimatedWithdrawalFeeCents} total=${totalChargedCents}`
+    );
+  } else {
+    netValueCents = netCentsFor(grossValueCents);
+  }
 
   return db.hiring.create({
     data: {
@@ -107,6 +129,10 @@ export async function createHiringForApplication(
       grossValueCents,
       netValueCents,
       commissionBps: PLATFORM_COMMISSION_BPS,
+      taxModel,
+      serviceFeeCents,
+      estimatedWithdrawalFeeCents,
+      totalChargedCents,
       status: "AGUARDANDO_PAGAMENTO",
       // o chat já nasce aqui, bloqueado, para existir um único caminho de
       // abertura (o webhook) — nunca criar chat "por fora"

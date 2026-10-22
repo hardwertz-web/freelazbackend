@@ -37,6 +37,10 @@ freelaz-backend/uploads/
 opencode-desktop-win-x64.exe
 opencode-desktop-*.exe
 
+# --- Helpers locais de Postgres (não são fonte do projeto) ---
+INSTALAR-POSTGRES.bat
+INICIAR-POSTGRES.bat
+
 # --- Sistema ---
 Thumbs.db
 desktop.ini

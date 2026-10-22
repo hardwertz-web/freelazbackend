@@ -44,8 +44,13 @@ export async function getProfessionalWallet(professionalId: string): Promise<Wal
     }
 
     if (hiring.status === "CONCLUIDO") {
+      // Etapa 7.3d: NEW paga 100% do bruto ao profissional; LEGACY paga o
+      // líquido. (Em NEW netValueCents == grossValueCents por construção, mas
+      // ler gross deixa a regra explícita e à prova de dados legados.)
+      const payableCents =
+        hiring.taxModel === "NEW" ? hiring.grossValueCents : hiring.netValueCents;
       if (!payout || payout.status === "FALHOU") {
-        disponivelCents += hiring.netValueCents;
+        disponivelCents += payableCents;
       } else if (payout.status === "PENDENTE" || payout.status === "PROCESSANDO") {
         emProcessamentoCents += payout.amountCents;
       } else if (payout.status === "CONCLUIDO") {

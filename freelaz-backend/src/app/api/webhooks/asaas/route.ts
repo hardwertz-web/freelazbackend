@@ -6,7 +6,7 @@ import {
   type AsaasPayment,
   type AsaasWebhookEvent,
 } from "@/lib/asaas";
-import { recordRetention, recordRefund, getRetainedBalance } from "@/services/ledgerService";
+import { recordRetention, recordRefund, recordPlatformRevenue, getRetainedBalance } from "@/services/ledgerService";
 import { setHiringStatus, lockHiringForUpdate } from "@/services/hiringService";
 import {
   persistAsaasEvent,
@@ -241,9 +241,15 @@ async function routeEvent(
   }
 
   const valueCents = Math.round(payment.value * 100);
-  if (APPROVED_STATUSES.includes(payment.status) && valueCents !== hiring.grossValueCents) {
+  // Etapa 7.3d: em NEW o provedor cobra o total (bruto + taxas pagas pela
+  // empresa); em LEGACY cobra o bruto. O valor esperado vem do proprio Hiring.
+  const expectedChargeCents =
+    hiring.taxModel === "NEW"
+      ? hiring.totalChargedCents ?? hiring.grossValueCents
+      : hiring.grossValueCents;
+  if (APPROVED_STATUSES.includes(payment.status) && valueCents !== expectedChargeCents) {
     console.error(
-      `[webhook-asaas] valor divergente: pagamento ${valueCents} x contratação ${hiring.grossValueCents} (${hiringId})`
+      `[webhook-asaas] valor divergente: pagamento ${valueCents} x contratação ${expectedChargeCents} (${hiringId})`
     );
     await finalizeAsaasEvent(prisma, eventRowId, {
       processingStatus: "IGNORADO",
@@ -279,6 +285,15 @@ async function routeEvent(
       });
       await setHiringStatus(tx, hiring.id, "RETIDO", { providerPaymentId: paymentId });
       await recordRetention(hiring.id, locked.grossValueCents, tx);
+      // Etapa 7.3d: no modelo NEW as taxas pagas pela empresa sao receita da
+      // plataforma. Nao entram no saldo retido (nunca vao para o profissional).
+      if (locked.taxModel === "NEW") {
+        const platformRevenueCents =
+          (locked.serviceFeeCents ?? 0) + (locked.estimatedWithdrawalFeeCents ?? 0);
+        if (platformRevenueCents > 0) {
+          await recordPlatformRevenue(hiring.id, platformRevenueCents, tx);
+        }
+      }
       return { ok: true as const, cbOutcome };
     });
 

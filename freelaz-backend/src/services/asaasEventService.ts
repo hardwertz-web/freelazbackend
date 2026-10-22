@@ -91,9 +91,11 @@ export type PersistResult =
  *
  * A unicidade de `asaasEventId` é a defesa atômica: duas entregas simultâneas
  * do mesmo evento colidem no índice — a segunda cai em P2002 e é tratada como
- * duplicata (não reprocessa). Um registro já existente cujo processamento
- * FALHOU pode ser retentado (o caller decide), mas um PROCESSADO/IGNORADO/
- * NAO_TRATADO nunca é reprocessado.
+ * duplicata (200, não reprocessa). Como a linha vencedora pode ainda não estar
+ * visível sob READ COMMITTED, relemos com retry curto e, se mesmo assim ela não
+ * aparecer, devolvemos duplicata "pendente" — P2002 NUNCA vira 5xx. Um registro
+ * já existente cujo processamento FALHOU pode ser retentado (o caller decide),
+ * mas um PROCESSADO/IGNORADO/NAO_TRATADO nunca é reprocessado.
  */
 export async function persistAsaasEvent(
   db: Db,
@@ -124,10 +126,16 @@ export async function persistAsaasEvent(
     });
     return { duplicate: false, record: created };
   } catch (err) {
-    // Corrida: outra transação criou a mesma linha entre o find e o create.
+    // Corrida: outra entrega do MESMO evento venceu o índice único. Como o
+    // `create` falhou, a transação interativa fica ABORTADA — qualquer query
+    // adicional nela falharia com 25P02. Não relemos nada: o P2002 em
+    // `asaasEventId` já PROVA que a linha existe (committed ou em voo), então
+    // isto é duplicata idempotente, jamais falha de persistência (nunca 5xx).
     if (isUniqueViolation(err)) {
-      const raced = await db.asaasEvent.findUnique({ where: { asaasEventId } });
-      if (raced) return { duplicate: true, record: raced };
+      return {
+        duplicate: true,
+        record: { id: "", processingStatus: "RECEBIDO" },
+      };
     }
     throw err;
   }

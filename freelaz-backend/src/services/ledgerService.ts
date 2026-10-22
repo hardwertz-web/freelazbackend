@@ -69,11 +69,34 @@ export async function recordRefund(
 }
 
 /**
+ * Etapa 7.3d — receita da plataforma no modelo NEW: a comissão e a taxa de
+ * saque estimada que a EMPRESA pagou a mais. Não é saldo retido (não entra em
+ * `computeRetainedBalance`), por isso nunca é repassado ao profissional.
+ */
+export async function recordPlatformRevenue(
+  hiringId: string,
+  amountCents: number,
+  db: Db = prisma
+) {
+  return db.ledgerEntry.create({
+    data: {
+      hiringId,
+      type: LedgerEntryType.RECEITA_PLATAFORMA,
+      amountCents,
+      reason: "taxa_empresa_paga",
+      createdBy: "system",
+    },
+  });
+}
+
+/**
  * REGRA ÚNICA de saldo de um conjunto de lançamentos: RETENCAO soma,
  * LIBERACAO e REEMBOLSO subtraem, AJUSTE não entra automaticamente (exige
- * revisão humana). Fica numa função só porque é a mesma conta usada no saldo
- * por contratação, no total da plataforma e na reconciliação diária — se
- * divergissem, a reconciliação acusaria uma diferença que não existe.
+ * revisão humana) e RECEITA_PLATAFORMA também não (é receita da empresa no
+ * modelo NEW, não dinheiro do profissional). Fica numa função só porque é a
+ * mesma conta usada no saldo por contratação, no total da plataforma e na
+ * reconciliação diária — se divergissem, a reconciliação acusaria uma
+ * diferença que não existe.
  */
 export function computeRetainedBalance(
   entries: { type: string; amountCents: number }[]

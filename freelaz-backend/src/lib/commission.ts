@@ -36,6 +36,22 @@ export function commissionCentsFor(
 }
 
 /**
+ * Etapa 7.3d — taxa de saque estimada que a EMPRESA paga no modelo NEW.
+ *
+ * É uma estimativa da taxa que o profissional pagaria ao sacar o valor
+ * (saque manual continua sendo pago por ele). O valor real da taxa do
+ * provedor só é conhecido no momento do saque; a diferença é conciliada.
+ *
+ * Regra de produto: até R$ 250,00 -> R$ 0,08; acima -> R$ 2,00.
+ */
+export function estimateWithdrawalFeeCents(grossValueCents: number): number {
+  if (!Number.isInteger(grossValueCents) || grossValueCents < 0) {
+    throw new Error("grossValueCents deve ser um inteiro não negativo (centavos)");
+  }
+  return grossValueCents <= 25000 ? 8 : 200;
+}
+
+/**
  * Preço do impulsionamento "Publicar com urgência": R$10,00 fixo (valor
  * definido em findings.md). Fica aqui — e não solto na rota — porque a Fase 5
  * torna isso editável nas Configurações Financeiras.

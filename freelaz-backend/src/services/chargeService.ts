@@ -614,6 +614,21 @@ export async function ensureCharge(params: {
   //
   //    Etapa 7.3c: somente contratações podem ter split. BOOST mantém o
   //    comportamento antigo (sem split) — o profissional não recebe destaque.
+  //
+  //    Etapa 7.3d: no modelo NEW a empresa paga o total (bruto + taxas);
+  //    LEGACY continua cobrando o bruto. O valor é relido do Hiring para
+  //    valer para qualquer chamador de ensureCharge.
+  let valueCents = params.valueCents;
+  if (entity === "HIRING") {
+    const target = await prisma.hiring.findUnique({
+      where: { id: entityId },
+      select: { taxModel: true, totalChargedCents: true },
+    });
+    if (target?.taxModel === "NEW" && target.totalChargedCents != null) {
+      valueCents = target.totalChargedCents;
+    }
+  }
+
   let splitItem: AsaasSplit | null = null;
   if (entity === "HIRING") {
     const decision = await resolveHiringSplit(entityId);
@@ -628,7 +643,7 @@ export async function ensureCharge(params: {
   let payment: AsaasPayment;
   try {
     payment = await createPixPayment({
-      valueCents: params.valueCents,
+      valueCents,
       customerId: params.customerId,
       externalReference,
       description: params.description,

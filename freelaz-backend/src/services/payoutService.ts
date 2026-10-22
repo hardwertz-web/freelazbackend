@@ -156,19 +156,29 @@ export async function releasePayout(
   if (!Number.isInteger(feeCents) || feeCents < 0) {
     throw new Error("feeCents deve ser um inteiro não negativo (centavos)");
   }
+  // Etapa 7.3d: em NEW o profissional recebe 100% do bruto (as taxas foram
+  // pagas pela empresa); em LEGACY recebe o líquido de sempre. O saque manual
+  // continua descontando a taxa do próprio profissional (feeCents).
+  const payoutBaseCents =
+    hiring.taxModel === "NEW" ? hiring.grossValueCents : hiring.netValueCents;
   if (opts.amountCents != null) {
     if (
       !Number.isInteger(opts.amountCents) ||
       opts.amountCents <= 0 ||
-      opts.amountCents > hiring.netValueCents
+      opts.amountCents > payoutBaseCents
     ) {
       throw new Error("amountCents deve ser inteiro entre 1 e o valor líquido (centavos)");
     }
   }
-  if (opts.amountCents == null && feeCents >= hiring.netValueCents) {
+  if (opts.amountCents == null && feeCents >= payoutBaseCents) {
     throw new Error("Taxa de saque maior ou igual ao valor a receber");
   }
-  const amountCents = opts.amountCents ?? hiring.netValueCents - feeCents;
+  const amountCents = opts.amountCents ?? payoutBaseCents - feeCents;
+  if (hiring.taxModel === "NEW") {
+    console.log(
+      `[payout] taxModel=NEW hiring=${hiring.id} amount=${hiring.grossValueCents} withdrawalFeeReal=${feeCents}`
+    );
+  }
   const idempotencyKey = buildPayoutIdempotencyKey(hiring.id);
   const reason = opts.reason ?? "payout_completed";
 

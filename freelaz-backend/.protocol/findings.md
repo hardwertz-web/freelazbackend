@@ -765,3 +765,52 @@ Se a criacao da cobranca com split tiver a resposta perdida, a adocao pela recon
 - `mock-asaas.mjs`: valida wallet existente, `0 < percentual <= 100`, soma `<= 100`, e `companyType` no enum.
 - Bateria completa: **1104 OK / 0 FALHA**, `BATTERY_EXIT=0` (Fases 1-5 = 597; Etapa 1+2 = 92; Etapa 3 = 99; Etapa 3.2 jobs = 45; chat = 80; avaliacao = 48; notificacoes = 70; subconta 14 OFF + 59 ON = 73). Contagem anterior (7.3c): 1098; +6 desta etapa. Sessao 26 em `progress.md`.
 - **Harness**: o wrapper da bateria passou a redirecionar a saida direto para arquivo (`cmd /c "... > log 2>&1"`) em vez de `*>` (pipe). Com `*>`, o dev server iniciado pelos passos herda o handle e o pipe nunca recebe EOF, travando a bateria no passo 10 mesmo com os testes ja concluidos. O exit e gravado em arquivo imediatamente apos o `cmd /c`.
+
+## 4j. Etapa 7.3d - modelo de taxa "empresa paga tudo" (custodia, sem subcontas)
+
+Flag `TAX_MODEL_NEW` (default `false`). Com OFF nada muda: todo Hiring antigo e
+novo nasce `LEGACY` e o comportamento historico permanece intocado. Com ON o
+modelo novo vale para contratações NOVAS; as antigas continuam `LEGACY`.
+
+### Regra por modelo
+
+| item | LEGACY (historico) | NEW (empresa paga tudo) |
+|---|---|---|
+| `netValueCents` (profissional) | bruto - 10% | **bruto (100%)** |
+| `serviceFeeCents` | null | `round(bruto * 0.10)` |
+| `estimatedWithdrawalFeeCents` | null | `<= R$250` -> R$0,08; senao R$2,00 |
+| `totalChargedCents` | null | bruto + serviceFee + estimated |
+| cobranca no provedor | bruto | **totalCharged** |
+| ledger no PAYMENT_CONFIRMED | 1x RETENCAO = bruto | RETENCAO = bruto + RECEITA_PLATAFORMA = taxas |
+| `releasePayout` | liquido | **bruto** (saque manual desconta a taxa do profissional) |
+| `walletService.disponivelCents` | liquido | **bruto** |
+
+### Decisao
+
+- O dinheiro continua em **custodia na conta principal** do Freelaz; **sem
+  split e sem subcontas** nesta etapa (flags de subconta permanecem OFF).
+- A comissao deixou de ser descontada do profissional no modelo NEW: ela e
+  cobrada da empresa como `serviceFee`, junto da estimativa da taxa de saque.
+- `RECEITA_PLATAFORMA` e receita da empresa, nao saldo retido: fica fora de
+  `computeRetainedBalance` e nunca e repassada.
+- O saque manual (`POST /api/wallet/withdraw`) NAO muda: o profissional
+  continua pagando a taxa do saque instantaneo sobre o valor que recebe.
+- `estimateWithdrawalFeeCents` e uma ESTIMATIVA (a taxa real do provedor so e
+  conhecida no saque); `withdrawalFeeReal` e registrado no log do payout para
+  conciliacao futura.
+
+### Nota regulatoria
+
+O modelo "empresa paga tudo" com dinheiro em custodia deve ser validado antes
+de producao: a Resolucao BCB 518/2025 (arranjos de pagamento / prestadores de
+servicos de ativos virtuais e regras de custodia) entra em vigor com prazo de
+adequacao ate 2027. Enquanto isso, `TAX_MODEL_NEW=false` mantem o historico e
+nenhum valor novo e cobrado. A validacao contabil/regulatoria e pre-requisito
+para ligar a flag.
+
+### Testes
+
+- `.tools/test-taxmodel.mjs` + `.tools/test-taxmodel.ps1` (fases OFF/ON, mock):
+  ?1 LEGACY, ?2 NEW + estimativa (10000/25000/25001/100000), ?3 webhook com 2
+  lancamentos, ?4 release liquido vs bruto, ?5 carteira liquido vs bruto.
+- Integrado como passo 15/15 da bateria; nenhum teste existente alterado.
