@@ -22,7 +22,8 @@ type SubaccountUser = {
   documentType: "CPF" | "CNPJ";
   document: string;
   name: string;
-  tradeName: string | null;
+  // Tipo da empresa (PJ) - opcional; validado contra o enum do Asaas.
+  companyType: string | null;
   birthDate: Date | null;
   email: string;
   phone: string;
@@ -54,6 +55,14 @@ const REQUIRED_FIELDS = [
   "incomeValueCents",
 ] as const;
 
+/** Enum de `companyType` do Asaas (AccountSaveRequestCompanyType). */
+const COMPANY_TYPES = ["MEI", "LIMITED", "INDIVIDUAL", "ASSOCIATION"] as const;
+type CompanyType = (typeof COMPANY_TYPES)[number];
+
+function isCompanyType(value: string): value is CompanyType {
+  return (COMPANY_TYPES as readonly string[]).includes(value);
+}
+
 function isFilled(value: unknown): boolean {
   if (value === null || value === undefined) return false;
   if (typeof value === "string") return value.trim().length > 0;
@@ -76,7 +85,7 @@ export async function createSubaccountForUser(
       documentType: true,
       document: true,
       name: true,
-      tradeName: true,
+      companyType: true,
       birthDate: true,
       email: true,
       phone: true,
@@ -105,12 +114,15 @@ export async function createSubaccountForUser(
 
   const missing: string[] = REQUIRED_FIELDS.filter((field) => !isFilled(user[field]));
 
-  // Documento define o campo adicional: CPF exige `birthDate`; CNPJ exige
-  // `tradeName` (nome fantasia). `companyType` não é obrigatório na doc.
+  // Documento define o campo adicional: CPF exige `birthDate`. Para CNPJ o
+  // `companyType` é OPCIONAL (doc: AccountSaveRequestCompanyType) e o
+  // `tradeName` NÃO é campo de POST /v3/accounts - a doc devolve
+  // `tradingName` já preenchido automaticamente. Por isso não se exige
+  // tradeName aqui (antes ele bloqueava PJ sem ser enviado).
   if (user.documentType === "CPF") {
     if (!user.birthDate) missing.push("birthDate");
-  } else if (!isFilled(user.tradeName)) {
-    missing.push("tradeName");
+  } else if (user.companyType && !isCompanyType(user.companyType)) {
+    return { ok: false, error: "companyType inválido" };
   }
 
   if (missing.length > 0) return { ok: false, missing };
@@ -131,6 +143,9 @@ export async function createSubaccountForUser(
     postalCode: user.postalCode as string,
     ...(user.documentType === "CPF"
       ? { birthDate: toIsoDate(user.birthDate as Date) }
+      : {}),
+    ...(user.documentType === "CNPJ" && user.companyType
+      ? { companyType: user.companyType as CompanyType }
       : {}),
   });
 

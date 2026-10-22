@@ -240,8 +240,17 @@ async function handle(req, res) {
         errors: [{ description: "postalCode inválido.", code: "invalid_postalCode" }],
       });
     }
+    // `companyType` é opcional e só existe para PJ; valores são os do enum
+    // oficial (AccountSaveRequestCompanyType).
+    const companyTypes = ["MEI", "LIMITED", "INDIVIDUAL", "ASSOCIATION"];
+    if (body.companyType !== undefined && !companyTypes.includes(body.companyType)) {
+      return send(res, 400, {
+        errors: [{ description: "companyType inválido.", code: "invalid_companyType" }],
+      });
+    }
     state.subaccountCounter += 1;
     const id = `acc_mock_${state.subaccountCounter}_${Date.now()}`;
+    const isPj = String(body.cpfCnpj).replace(/\D/g, "").length > 11;
     const account = {
       id,
       walletId: `wallet_mock_${state.subaccountCounter}`,
@@ -249,7 +258,11 @@ async function handle(req, res) {
       name: body.name,
       email: body.email,
       cpfCnpj: body.cpfCnpj,
-      personType: String(body.cpfCnpj).replace(/\D/g, "").length > 11 ? "JURIDICA" : "FISICA",
+      personType: isPj ? "JURIDICA" : "FISICA",
+      companyType: isPj ? body.companyType ?? null : null,
+      // A doc devolve `tradingName` preenchido automaticamente; não é campo
+      // de entrada de POST /v3/accounts.
+      tradingName: null,
       incomeValue: body.incomeValue,
       address: body.address,
       addressNumber: body.addressNumber,
@@ -315,6 +328,23 @@ async function handle(req, res) {
             errors: [{ description: "percentualValue inválido no split.", code: "invalid_split_percentual" }],
           });
         }
+      }
+      // Doc oficial: para splits exclusivamente percentuais a soma NÃO pode
+      // ultrapassar 100%. Menos que 100% é válido: o restante permanece na
+      // conta que criou a cobrança. O mock reproduz essa rejeição.
+      const totalPercent = body.split.reduce(
+        (sum, item) => sum + (typeof item?.percentualValue === "number" ? item.percentualValue : 0),
+        0
+      );
+      if (totalPercent > 100) {
+        return send(res, 400, {
+          errors: [
+            {
+              description: "Soma dos percentuais do split ultrapassa 100%.",
+              code: "invalid_split_total",
+            },
+          ],
+        });
       }
     }
     const { createMode, createDelayMs, forcedId } = state.scenario;

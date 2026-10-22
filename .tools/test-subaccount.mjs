@@ -21,6 +21,7 @@ const root = path.resolve(here, "..");
 const backendDir = path.join(root, "freelaz-backend");
 const require = createRequire(path.join(backendDir, "package.json"));
 const { PrismaClient } = require("@prisma/client");
+const ts = require("typescript");
 const prisma = new PrismaClient();
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -86,6 +87,33 @@ async function mockState() {
   const res = await fetch(`${MOCK}/__state`);
   if (!res.ok) throw new Error(`mock /__state HTTP ${res.status}`);
   return res.json();
+}
+
+/**
+ * §9 - carrega a função PURA `resolvePayoutOrigin` direto do fonte TS, sem
+ * subir fluxo de payout e sem mover dinheiro. O bloco é delimitado por
+ * marcadores para não puxar imports (prisma/provider) no teste.
+ */
+function loadResolvePayoutOrigin() {
+  const file = path.join(backendDir, "src/services/payoutService.ts");
+  const src = fs.readFileSync(file, "utf8");
+  const startMarker = "// __PAYOUT_ORIGIN_START__";
+  const endMarker = "// __PAYOUT_ORIGIN_END__";
+  const start = src.indexOf(startMarker);
+  const end = src.indexOf(endMarker);
+  if (start < 0 || end < 0 || end <= start) {
+    throw new Error("marcadores __PAYOUT_ORIGIN_* ausentes em payoutService.ts");
+  }
+  const snippet = src.slice(start, end + endMarker.length);
+  const js = ts.transpileModule(snippet, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function("module", "exports", "process", js)(mod, mod.exports, process);
+  if (typeof mod.exports.resolvePayoutOrigin !== "function") {
+    throw new Error("resolvePayoutOrigin não exportada no bloco delimitado");
+  }
+  return mod.exports.resolvePayoutOrigin;
 }
 
 // ---- documentos válidos por execução (mesmo padrão das outras baterias) ---
@@ -208,14 +236,14 @@ async function newJob(title) {
   return res.json.jobPosting.id;
 }
 
-async function newHiring(jobPostingId, jobTitle, professionalId) {
+async function newHiring(jobPostingId, jobTitle, professionalId, values = {}) {
   hiringCounter += 1;
   const application = await prisma.application.create({
     data: {
       jobPostingId,
       professionalId,
       status: "SELECIONADO",
-      agreedValueCents: 80000,
+      agreedValueCents: values.grossValueCents ?? 80000,
     },
   });
   return prisma.hiring.create({
@@ -225,8 +253,8 @@ async function newHiring(jobPostingId, jobTitle, professionalId) {
       jobTitle,
       professionalId,
       contractorId: contractor.id,
-      grossValueCents: 80000,
-      netValueCents: 72000,
+      grossValueCents: values.grossValueCents ?? 80000,
+      netValueCents: values.netValueCents ?? 72000,
       commissionBps: 1000,
       status: "AGUARDANDO_PAGAMENTO",
     },
@@ -398,6 +426,25 @@ async function phaseOn() {
     `percentualValue = net/gross = 90 (${splitPayment?.split?.[0]?.percentualValue})`
   );
 
+  section("§7b. Guard de valores inválidos → split OFF");
+  const job7b = await newJob(`Vaga Split Inválido ${runId}`);
+  const hiring7b = await newHiring(job7b, `Vaga Split Inválido ${runId}`, pro.id, {
+    netValueCents: 90000, // net > gross: percentual passaria de 100%
+  });
+  const charge7b = await api("POST", "/api/payments/create", {
+    cookie: contractorCookie,
+    body: { hiringId: hiring7b.id },
+  });
+  check(charge7b.status === 200, `cobrança com net>gross continua criada (HTTP ${charge7b.status})`);
+  const after7b = await prisma.hiring.findUnique({ where: { id: hiring7b.id } });
+  check(after7b?.asaasSplitId === null, `hiring.asaasSplitId = null (${after7b?.asaasSplitId})`);
+  const mock7b = await mockState();
+  const invalidPayment = mock7b.payments.find((p) => p.id === charge7b.json?.paymentId);
+  check(
+    invalidPayment !== undefined && invalidPayment.split === null,
+    `payload SEM split quando valores inválidos (${JSON.stringify(invalidPayment ? invalidPayment.split : "pagamento ausente")})`
+  );
+
   section("§8. Fallback — profissional sem subconta (sem split)");
   const fallbackPro = await createFallbackPro();
   const job8 = await newJob(`Vaga Fallback ${runId}`);
@@ -419,6 +466,31 @@ async function phaseOn() {
     typeof after8?.providerPaymentId === "string" && after8.providerPaymentId.length > 0,
     "providerPaymentId gravado no fallback"
   );
+
+  section("§9. resolvePayoutOrigin (scaffold 7.3d, puro)");
+  const resolvePayoutOrigin = loadResolvePayoutOrigin();
+  const previousFlag = process.env.PAYOUT_FROM_SUBACCOUNT_ENABLED;
+  try {
+    process.env.PAYOUT_FROM_SUBACCOUNT_ENABLED = "false";
+    check(
+      resolvePayoutOrigin({ professional: { asaasSubaccountApiKey: "aact_mock_x" } }) === "MAIN",
+      "flag OFF com subconta → MAIN"
+    );
+
+    process.env.PAYOUT_FROM_SUBACCOUNT_ENABLED = "true";
+    check(
+      resolvePayoutOrigin({ professional: null }) === "MAIN",
+      "flag ON sem subconta → MAIN"
+    );
+    check(
+      resolvePayoutOrigin({ professional: { asaasSubaccountApiKey: "aact_mock_x" } }) ===
+        "SUBACCOUNT",
+      "flag ON + apiKey da subconta → SUBACCOUNT"
+    );
+  } finally {
+    if (previousFlag === undefined) delete process.env.PAYOUT_FROM_SUBACCOUNT_ENABLED;
+    else process.env.PAYOUT_FROM_SUBACCOUNT_ENABLED = previousFlag;
+  }
 }
 
 async function main() {

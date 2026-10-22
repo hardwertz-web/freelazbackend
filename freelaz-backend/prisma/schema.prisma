@@ -49,6 +49,9 @@ model User {
   document     String       @unique // CPF ou CNPJ (somente dígitos)
   name         String // nome completo (CPF) ou razão social (CNPJ)
   tradeName    String? // nome fantasia (CNPJ)
+  // Tipo da empresa (somente PJ) - Etapa 7.3c.1. Valores aceitos pelo Asaas:
+  // MEI | LIMITED | INDIVIDUAL | ASSOCIATION. Nullable: PF não envia.
+  companyType  String?
   birthDate    DateTime? // obrigatório para CPF; bloqueado se < 18 anos
   email        String       @unique
   phone        String       @unique

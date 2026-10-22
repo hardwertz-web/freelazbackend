@@ -480,8 +480,16 @@ export async function ensureAsaasCustomerForUser(userId: string): Promise<Custom
  * Regra: flag `ASAAS_SUBACCOUNT_ENABLED=true` E profissional com subconta
  * (`asaasSubaccountId` + `asaasSubaccountWalletId`). O split usa o `walletId`
  * (NÃO o `asaasSubaccountId`: são identificadores diferentes). O percentual
- * vem dos valores JÁ gravados no Hiring — nada é recalculado:
+ * vem dos valores JÁ gravados no Hiring - nada é recalculado:
  * `percentualValue = netValueCents / grossValueCents * 100`.
+ *
+ * Semântica do split (doc oficial, 2026-10-21 -
+ * https://docs.asaas.com/docs/split-de-pagamentos): `percentualValue` incide
+ * sobre o `netValue`; a soma dos percentuais não pode passar de 100% e o que
+ * não é direcionado PERMANECE na conta que criou a cobrança. Por isso vai
+ * UMA entrada (wallet da subconta) e NÃO se envia o wallet da conta
+ * principal - a doc proíbe explicitamente informar o wallet de quem cria a
+ * cobrança.
  *
  * Qualquer ausência/valor inválido cai no FALLBACK (cobrança sem split), que
  * é exatamente o comportamento anterior à 7.3c. Log sem PII: só id e motivo,
@@ -491,7 +499,7 @@ async function resolveHiringSplit(
   hiringId: string
 ): Promise<
   | { split: AsaasSplit; reason?: never }
-  | { split: null; reason: "flag_off" | "no_subaccount" }
+  | { split: null; reason: "flag_off" | "no_subaccount" | "invalid_values" }
 > {
   if (process.env.ASAAS_SUBACCOUNT_ENABLED !== "true") {
     return { split: null, reason: "flag_off" };
@@ -521,7 +529,7 @@ async function resolveHiringSplit(
     Number.isInteger(netValueCents) &&
     netValueCents > 0 &&
     netValueCents <= grossValueCents;
-  if (!valuesValid) return { split: null, reason: "no_subaccount" };
+  if (!valuesValid) return { split: null, reason: "invalid_values" };
 
   return {
     split: {

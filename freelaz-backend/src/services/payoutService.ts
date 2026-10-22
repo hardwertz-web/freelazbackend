@@ -28,6 +28,29 @@ import { hasActiveChargeback } from "./asaasEventService";
  * para validar o fluxo ponta a ponta sem mover dinheiro.
  */
 
+/**
+ * Etapa 7.3d - SCAFFOLD (puro, NÃO chamado por nenhum fluxo ainda).
+ *
+ * Decide de onde o repasse deve sair:
+ *  - `SUBACCOUNT` somente com `PAYOUT_FROM_SUBACCOUNT_ENABLED=true` E
+ *    `hiring.professional.asaasSubaccountApiKey` preenchida (a chave prova
+ *    que a subconta foi criada; a senha/chave nunca é logada);
+ *  - caso contrário `MAIN` (comportamento atual, sem mover dinheiro).
+ *
+ * Não lê banco, não chama provedor e não altera `Payout.origin`: a 7.3d
+ * decidirá quando (e se) esse valor será gravado/usado.
+ */
+// __PAYOUT_ORIGIN_START__
+export function resolvePayoutOrigin(hiring: {
+  professional?: { asaasSubaccountApiKey?: string | null } | null;
+} | null): "MAIN" | "SUBACCOUNT" {
+  if (process.env.PAYOUT_FROM_SUBACCOUNT_ENABLED !== "true") return "MAIN";
+  const apiKey = hiring?.professional?.asaasSubaccountApiKey;
+  if (typeof apiKey !== "string" || apiKey.trim().length === 0) return "MAIN";
+  return "SUBACCOUNT";
+}
+// __PAYOUT_ORIGIN_END__
+
 export type ReleasePayoutOptions = {
   /** Desconto sobre o líquido (ex.: taxa do saque instantâneo). Default 0. */
   feeCents?: number;

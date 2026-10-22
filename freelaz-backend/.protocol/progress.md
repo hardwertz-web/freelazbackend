@@ -625,3 +625,44 @@ Cenários 11 (cliente 1× e reutilizado) e 12 (exclusão fantasma) — aditivos 
 **NAO alterados:** qualquer arquivo em `src/` ou `prisma/`; `payoutService.ts`, `asaasEventService.ts`, `chargebackEscalationService.ts`, `jobsStartup.ts`; migracoes existentes; `.env` real.
 
 **Procedimento de .env:** a `.env` tinha `ASAAS_API_KEY` preenchida; foi esvaziada SOMENTE para a bateria local (guard 503), com backup em `%TEMP%\freelaz-env-backup-etapa6a.env` e **restaurada ao final**.
+## Sessao 26 - Etapa 7 (7.1 + 7.3a + 7.3b + 7.3c + 7.3c.1): chat soft-hide, subcontas Asaas e semantica do split
+
+**Escopo autorizado:** fechar a Etapa 7.1 (soft-hide do chat), criar a fundacao de subcontas (7.3a), o onboarding (7.3b), o split na cobranca (7.3c) e, nesta rodada, a 7.3c.1: conferir na doc oficial a semantica do split, corrigir PJ (`companyType`/`tradeName`), adicionar guard de valores invalidos e deixar o scaffold puro do payout via subconta (7.3d). **NAO autorizado (e nao feito):** mover dinheiro, chamar Asaas real/Sandbox, ligar feature flags por padrao, alterar migracoes existentes, logar `walletId`/`apiKey`/`incomeValueCents`/`companyType`, ampliar escopo de produto.
+
+**Feito (7.1) - soft-hide do chat:**
+1. `Chat.hiddenAt DateTime?` + migracao aditiva `20261020210000_etapa7_chat_hide`; `chatService.hideConcludedChats()` oculta somente `Hiring.status=CONCLUIDO` com `completedAt <= now-2h` e `hiddenAt IS NULL`, exceto disputa aberta (`Hiring.disputeOpen` / `Dispute.EM_ANALISE`) ou chargeback ATIVO. Nunca deleta chat/mensagem.
+2. Job `POST /api/jobs/hide-concluded-chats/run` (`checkJobsToken`, schedule `*/15`); `getChatForUser` devolve 404 quando oculto; `getChatForAdmin` sempre devolve; `PATCH /api/hirings/[id]/chat/messages/read` marca `readAt`; `GET /api/admin/hirings/[id]/chat`.
+3. `test-chat.mjs` §8-§11: +19 asserts (readAt, soft-hide, disputa, chargeback). `test-chat` passou a **80 OK / 0 FALHA**.
+
+**Feito (7.3a) - fundacao subcontas:**
+- `User.asaasSubaccountId` / `asaasSubaccountApiKey` / `asaasSubaccountStatus`; migracao `20261021150000_etapa73a_subcontas`.
+- `createAsaasSubaccount` / `getAsaasSubaccount` / `getAsaasSubaccountBalance` + tipos em `lib/asaas.ts`; flag `ASAAS_SUBACCOUNT_ENABLED="false"`. Nenhum fluxo ligado.
+
+**Feito (7.3b) - onboarding (mock):**
+- `User.postalCode`/`address`/`addressNumber`/`province`/`incomeValueCents`; migracao `20261022120000_etapa73b_endereco_subconta`; `PUT /api/profile/professional` valida os 5 campos.
+- `subaccountService.createSubaccountForUser` idempotente (id existente -> `skipped`), payload PF/PJ, erros 4xx -> `{ok:false}` e 5xx/rede relancam; `POST /api/profile/subaccount` (401/403/503/400/200). Mock `POST/GET /v3/accounts` (apiKey so no POST).
+- `test-subaccount.mjs` com 54 asserts; bateria **1085 OK / 0 FALHA**.
+
+**Feito (7.3c) - split:**
+- `User.asaasSubaccountWalletId`, `Hiring.asaasSplitId`, `Payout.origin` (`MAIN`/`SUBACCOUNT`); migracao `20261023120000_etapa73c_split`.
+- `chargeService.ensureCharge` inclui split apenas para HIRING, com flag ON + subconta + walletId; senao payload sem split e `asaasSplitId=null`. Webhook apenas loga o split; nao move dinheiro. Mock valida wallet/percentual. 67 asserts; bateria **1098 OK / 0 FALHA**.
+
+**Feito (7.3c.1) - semantica + PJ + scaffold payout:**
+1. **Split (doc oficial):** uma unica entrada `[{walletId: subconta, percentualValue: 90}]` e valida; o restante permanece na conta principal e o wallet da principal **nao** e enviado (proibido pela doc). Mock passou a rejeitar soma **> 100%** (nao `!= 100`).
+2. **`incomeValue`:** confirmado em **reais** (`incomeValueCents / 100`), nao centavos.
+3. **PJ:** `User.companyType String?` + migracao aditiva **15** (`20261023130000_etapa73c1_company_type`); enviado somente para CNPJ e validado contra `MEI|LIMITED|INDIVIDUAL|ASSOCIATION`. **`tradeName` nao existe no request** de `POST /v3/accounts` (a resposta traz `tradingName` automatico), entao a exigencia local foi removida; `name` segue como razao social.
+4. **Guard:** `resolveHiringSplit` devolve `reason=invalid_values` (split OFF) quando `grossValueCents <= 0`, `netValueCents <= 0` ou `netValueCents > grossValueCents`.
+5. **Scaffold 7.3d:** `payoutService.resolvePayoutOrigin(hiring)` puro, **nao chamado no fluxo**: flag `PAYOUT_FROM_SUBACCOUNT_ENABLED=false` -> `MAIN`; ON sem apiKey -> `MAIN`; ON + apiKey -> `SUBACCOUNT`. Nao grava `Payout.origin` nem move dinheiro.
+6. **Testes:** `test-subaccount.mjs` §7b (guard `net>gross`) e §9 (`resolvePayoutOrigin`, 3 casos) -> **14 OFF + 59 ON = 73 asserts / 0 falhas**. `tsc --noEmit` exit 0; `prisma generate` e `prisma migrate deploy` OK (15 migracoes).
+7. **Docs:** `findings.md` 4h atualizado e secao **4i** com fontes e conclusoes.
+
+**Bateria completa (executada, nao declarada):** `.tools/run-all-tests.ps1` 14/14 passos -> **`BATTERY_EXIT=0`**, **1104 OK / 0 FALHA**:
+Fase 1a 15 + 1b 8 + 1c 12 + Fase 2 112 + Fase 3 103 + Fase 4 202 + Fase 5 145 (=597); Etapa 1+2 92; Etapa 3 99; Etapa 3.2 jobs 45; chat 80; avaliacao 48; notificacoes 70; subconta 14 OFF + 59 ON = 73. Contagem anterior 1098; +6 desta etapa.
+
+**Correcao de harness:** o wrapper da bateria usava `*>` (pipe); o dev server iniciado nos passos herdava o handle e a bateria travava no passo 10 mesmo com os testes ja concluidos. Passou a usar redirecionamento direto em arquivo (`cmd /c "... > log 2>&1"`) com exit gravado imediatamente em arquivo-marcador.
+
+**Arquivos criados (7.3c.1):** `prisma/migrations/20261023130000_etapa73c1_company_type/migration.sql`.
+**Arquivos alterados (7.3c.1):** `prisma/schema.prisma` (+`User.companyType`); `src/services/subaccountService.ts`; `src/services/chargeService.ts`; `src/services/payoutService.ts`; `.tools/mock-asaas.mjs`; `.tools/test-subaccount.mjs`; `.env.example`; `.protocol/{findings.md,progress.md}`.
+**Nao alterados:** migracoes 1-14, `asaasEventService.ts`, rotas de jobs, qualquer fluxo que mova dinheiro, `.env` real (chave esvaziada so para a bateria e restaurada depois; valor nunca logado).
+
+**Bloqueios/pendencias (inalterados):** Sandbox da conta principal e CPF (subconta exige conta-pai CNPJ) -> criacao real so no mock; chargeback real pendente de solicitacao ao Asaas; agendador real (`JOBS_URL`/deploy) nao apontado; paginacao multi-pagina (>100) nao exercitada (fail-closed 503); frontend bloqueado pelo prototipo; 27 decisoes de produto pendentes em `findings.md`.

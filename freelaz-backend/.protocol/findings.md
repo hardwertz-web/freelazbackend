@@ -688,25 +688,80 @@ Usar o `walletId` da subconta na cobrança (`chargeService`) para dividir entre 
 |---|---|---|
 | incomeValue no payload | confirmado: `incomeValueCents / 100` (reais), linha 118 | `src/services/subaccountService.ts` |
 | PF (CPF) | envia name, email, cpfCnpj, mobilePhone, incomeValue, address, addressNumber, province, postalCode e birthDate | `src/services/subaccountService.ts` |
-| PJ (CNPJ) | mesmos campos, SEM birthDate; `tradeName` e validado mas NAO e enviado; `companyType` nao existe no User | `src/services/subaccountService.ts` / pendencias abaixo |
+| PJ (CNPJ) | mesmos campos, SEM birthDate; `companyType` (opcional, enum Asaas) enviado quando preenchido; `tradeName` NAO e campo de POST /v3/accounts (ver 4i) | `src/services/subaccountService.ts` |
+| `User.companyType` | feito (nullable; `MEI`/`LIMITED`/`INDIVIDUAL`/`ASSOCIATION`) | `prisma/schema.prisma` |
 | `User.asaasSubaccountWalletId` | feito (nullable) | `prisma/schema.prisma` |
 | `Hiring.asaasSplitId` | feito (nullable) | `prisma/schema.prisma` |
 | `Payout.origin` | feito (`@default("MAIN")`, MAIN ou SUBACCOUNT) | `prisma/schema.prisma` |
 | Migracao aditiva (14a) | feita e aplicada (`20261023120000_etapa73c_split`) | `prisma/migrations/20261023120000_etapa73c_split/migration.sql` |
+| Migracao aditiva (15a) | feita e aplicada (`20261023130000_etapa73c1_company_type`) | `prisma/migrations/20261023130000_etapa73c1_company_type/migration.sql` |
 | Persistencia do walletId na criacao | feito | `src/services/subaccountService.ts` |
-| Split no `ensureCharge` | feito (somente HIRING; flag ON + subconta + walletId) | `src/services/chargeService.ts` |
-| Fallback | flag OFF ou sem subconta -> payload sem split, `asaasSplitId=null` | `src/services/chargeService.ts` |
-| Mock `POST /v3/payments` | aceita e ecoa `split`; valida walletId existente e percentual 0 < x <= 100 | `.tools/mock-asaas.mjs` |
+| Split no `ensureCharge` | feito (somente HIRING; flag ON + subconta + walletId; 1 entrada) | `src/services/chargeService.ts` |
+| Fallback | flag OFF, sem subconta ou valores invalidos -> payload sem split, `asaasSplitId=null` | `src/services/chargeService.ts` |
+| Mock `POST /v3/payments` | aceita e ecoa `split`; valida wallet existente, 0 < percentual <= 100 e soma <= 100% | `.tools/mock-asaas.mjs` |
 | Webhook | log `[webhook] split recebido hiring=<id>`; NAO move dinheiro | `src/app/api/webhooks/asaas/route.ts` |
-| Testes | 14 OFF + 53 ON = 67 asserts, 0 falhas; ?7 split ON, ?8 fallback | `.tools/test-subaccount.mjs` |
-| Bateria | 1098 OK / 0 FALHA / BATTERY_EXIT=0 (antes 1085; +13) | `.tools/run-all-tests.ps1` |
+| Testes | 14 OFF + 59 ON = 73 asserts, 0 falhas; ?7 split ON, ?7b guard, ?8 fallback, ?9 payout origin | `.tools/test-subaccount.mjs` |
+| Bateria | 1104 OK / 0 FALHA, `BATTERY_EXIT=0` (ver 4i) | `.tools/run-all-tests.ps1` |
 
 ### Notas da 7.3c
 
 - **walletId != subaccountId**: o split usa o `wallet_...` devolvido por POST /v3/accounts; `acc_...` identifica a subconta. Os dois sao persistidos.
 - **Webhook so loga**: a divisao acontece na liquidacao do POST /payments; o webhook nao transfere dinheiro nem cria lancamento.
 - **Taxa de saque da subconta**: quem paga? Pendencia de produto para a 7.3d.
-- **Pendencias PF/PJ**: `User` nao tem `companyType`; `tradeName` e exigido para CNPJ mas nao vai no payload atual. Validar com conta Sandbox PJ antes de producao.
-- **Payout**: `Payout.origin` e apenas rastreamento; `payoutService` NAO foi alterado (fica para 7.3d).
+- **Payout**: `Payout.origin` e apenas rastreamento; `payoutService` NAO foi alterado no fluxo (scaffold puro em 4i).
 
 Proximo passo 7.3d: payout via subconta (decidir taxa de saque e origem do saldo).
+
+## 4i. Etapa 7.3c.1 - semantica do split + PJ + scaffold 7.3d
+
+### Semantica do split (fonte oficial)
+
+Fonte: https://docs.asaas.com/docs/split-de-pagamentos (consultado em 2026-10-21).
+
+> "Nao informe o `walletId` da conta que cria a cobranca. O valor liquido que nao for direcionado aos recebedores permanece automaticamente nessa conta."
+>
+> "Para Splits exclusivamente percentuais, a soma nao pode ultrapassar 100%."
+
+**Conclusao:** uma unica entrada (`[{walletId: subconta, percentualValue: 90}]`) e VALIDA. Os 10% restantes permanecem na conta principal; enviar o wallet da principal seria proibido pela doc e nao e feito. O mock passou a rejeitar soma **> 100%** (nao `!= 100`), reproduzindo a doc.
+
+### incomeValue
+
+Fonte: https://docs.asaas.com/reference/criar-subconta (AccountSaveRequestDTO).
+
+> `"incomeValue": { "type": "number", "description": "Faturamento/Renda mensal", "example": 25000 }`
+
+**Conclusao:** o provedor espera **reais** (number), nao centavos. Mantido `incomeValue = incomeValueCents / 100`; o valor continua sem log.
+
+### PJ (CNPJ)
+
+Fonte: mesma reference (AccountSaveRequestDTO / AccountSaveRequestCompanyType).
+
+- `companyType`: enum `MEI | LIMITED | INDIVIDUAL | ASSOCIATION`, opcional (somente PJ).
+- `tradeName` **nao existe no request** de POST /v3/accounts; a resposta traz `tradingName` como "preenchido automaticamente". O guia de criacao tambem nao envia tradeName.
+
+**Implementado:** `User.companyType String?` + migracao 15; `companyType` vai no payload somente para CNPJ e se preenchido (validado contra o enum). A exigencia local de `tradeName` foi REMOVIDA (ela bloqueava PJ e nao era enviada); `name` continua sendo a razao social. O mock valida/ecoa `companyType`.
+
+### Guard de valores
+
+`resolveHiringSplit` agora devolve `reason=invalid_values` (split OFF) quando `grossValueCents <= 0`, `netValueCents <= 0` ou `netValueCents > grossValueCents` - antes esse caso era rotulado como `no_subaccount`.
+
+### Scaffold 7.3d
+
+`payoutService.resolvePayoutOrigin(hiring)` e puro e **nao e chamado por nenhum fluxo**:
+
+- flag `PAYOUT_FROM_SUBACCOUNT_ENABLED=false` (default) -> `MAIN`;
+- flag ON + sem `hiring.professional.asaasSubaccountApiKey` -> `MAIN`;
+- flag ON + apiKey existente -> `SUBACCOUNT`.
+
+Nao move dinheiro nem grava `Payout.origin`.
+
+### Limitacao conhecida (cosmetica, fora do escopo)
+
+Se a criacao da cobranca com split tiver a resposta perdida, a adocao pela reconciliacao grava `providerPaymentId` mas **nao** `asaasSplitId` (o campo fica `null`). E rastreamento/auditoria; o split ja foi liquidado na origem e nada muda no dinheiro. TODO para a 7.3d.
+
+### Testes
+
+- `test-subaccount.mjs`: **14 OFF + 59 ON = 73 asserts / 0 falhas**; §7 split ON (1 entrada, 90%), §7b guard `net>gross`, §8 fallback, §9 `resolvePayoutOrigin` (3 casos).
+- `mock-asaas.mjs`: valida wallet existente, `0 < percentual <= 100`, soma `<= 100`, e `companyType` no enum.
+- Bateria completa: **1104 OK / 0 FALHA**, `BATTERY_EXIT=0` (Fases 1-5 = 597; Etapa 1+2 = 92; Etapa 3 = 99; Etapa 3.2 jobs = 45; chat = 80; avaliacao = 48; notificacoes = 70; subconta 14 OFF + 59 ON = 73). Contagem anterior (7.3c): 1098; +6 desta etapa. Sessao 26 em `progress.md`.
+- **Harness**: o wrapper da bateria passou a redirecionar a saida direto para arquivo (`cmd /c "... > log 2>&1"`) em vez de `*>` (pipe). Com `*>`, o dev server iniciado pelos passos herda o handle e o pipe nunca recebe EOF, travando a bateria no passo 10 mesmo com os testes ja concluidos. O exit e gravado em arquivo imediatamente apos o `cmd /c`.
