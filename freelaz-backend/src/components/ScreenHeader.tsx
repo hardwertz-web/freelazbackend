@@ -14,9 +14,9 @@ export function ScreenHeader({ userName }: { userName: string }) {
   return (
     <header className={styles.header}>
       <div className={styles.brand}>
-        {/* Ícone oficial (public/logo_f.png): círculo azul com "F" branco.
+        {/* Ícone oficial (public/logo_f-96.png, 96px com alfa para retina).
             Sem wordmark/tagline — o símbolo já identifica a marca. */}
-        <img src="/logo_f.png" alt="Freelaz" className={styles.logoImage} />
+        <img src="/logo_f-96.png" alt="Freelaz" className={styles.logoImage} />
       </div>
 
       <span className={styles.spacer} />

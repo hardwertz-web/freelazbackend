@@ -816,3 +816,29 @@ recortar/refazer com alfa real.
 
 **Nao alterados:** outras telas, backend, endpoints, schema, logica.
 **Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0.
+
+---
+
+## Sessao 32 - Fase 1.4: logo otimizado (1,2 MB -> 9 KB)
+
+**Motivo:** `logo_f.png` tinha 1254x1254 (1,2 MB) para um icone de 40px e veio
+sem canal alfa (fundo branco solido).
+
+**Feito:**
+1. `public/logo_f-96.png` gerado localmente, sem dependencia nova: System.Drawing
+   (PowerShell + helper C#) recorta a elipse medida no original
+   (centro 626,630; raios 544x552) com borda suavizada, aplica alfa real e reduz
+   para 96x96 (bicubic). Reencode final em Node (`zlib` level 9 + filtros PNG
+   adaptativos) para caber no alvo.
+2. Resultado: 96x96, 32bpp ARGB, **9.245 bytes (9,03 KB)**, cantos com A=0 e
+   320 pixels de borda semitransparente.
+3. `ScreenHeader` e `AuthShell` passam a usar `/logo_f-96.png`
+   (40x40 e 48x48, `object-fit: contain`, `border-radius: 50%`).
+4. `public/logo_f.png` original mantido como fonte, sem uso nas telas.
+5. `.protocol/frontend-spec.md` atualizado.
+
+**Ferramentas:** sem sharp/ImageMagick no ambiente; o cortador ficou em
+`.tools/tmp/make-logo-96.ps1` + `.tools/tmp/encode-logo96.js` (nao versionados).
+
+**Nao alterados:** outras telas, backend, endpoints, schema, logica.
+**Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0.

@@ -16,7 +16,7 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.brand}>
-          <img src="/logo_f.png" alt="Freelaz" className={styles.logoImage} />
+          <img src="/logo_f-96.png" alt="Freelaz" className={styles.logoImage} />
         </div>
 
         <h1 className={styles.title}>{title}</h1>

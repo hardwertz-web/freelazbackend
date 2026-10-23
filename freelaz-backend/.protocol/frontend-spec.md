@@ -59,7 +59,7 @@ saque/depósito/transferência, edição de perfil.
 | `Chip` | `children`, `active`, `onClick`, `count`, `title` — pill, ativo azul sólido |
 | `Button` | `variant` (`primary`/`secondary`/`outline`/`danger`), `block`, `size` (`md`/`sm`), atributos nativos |
 | `Badge` | `children`, `tone` (`primary`/`success`/`tag`/`neutral`/`danger`/`solid`), `icon` |
-| `ScreenHeader` | header persistente: ícone oficial (`/logo_f.png`, 40px, alinhado à esquerda), sino (Fase 2, desabilitado) e avatar → `/perfil` |
+| `ScreenHeader` | header persistente: ícone oficial (`/logo_f-96.png`, 40px, alinhado à esquerda), sino (Fase 2, desabilitado) e avatar → `/perfil` |
 | `BottomTabBar` | 5 itens: Início `/`, Buscar `/buscar`, Mensagens `/mensagens`, Carteira `/carteira`, Perfil `/perfil`; ativo em azul, inativo cinza |
 | `Icons` | SVG inline (traço, `currentColor`) — sem biblioteca externa |
 | `AuthShell` | casca de login/cadastro: cartão centrado, ícone oficial (48px), título, subtítulo |
@@ -69,11 +69,13 @@ Badge "Verificado": fundo `--selected`, texto azul, ícone de escudo
 
 ### Imagens (Fase 1.2)
 
-- **Logo:** `public/logo_f.png` (círculo azul com "F" branco, 1254×1254).
-  No header tem 40×40px; no login/cadastro, 48×48px (`object-fit: contain`,
-  `border-radius: 50%`). Sem wordmark nem tagline ao lado — só o ícone, alinhado
-  à esquerda. O antigo `public/logo.jpg` (símbolo quadrado com fundo azul) fica
-  no repositório como asset reserva, sem uso.
+- **Logo:** `public/logo_f-96.png` (96×96, 9 KB, círculo azul com "F" branco e
+  **alfa real**; retina 2x dos 48px do login). No header tem 40×40px; no
+  login/cadastro, 48×48px (`object-fit: contain`, `border-radius: 50%`).
+  Sem wordmark nem tagline ao lado — só o ícone, alinhado à esquerda.
+  O `public/logo_f.png` original (1254×1254, 1,2 MB, sem alfa) fica no repo
+  como fonte para outros contextos, sem uso nas telas. O antigo
+  `public/logo.jpg` também é preservado como asset reserva.
 - **Capas de vaga:** `public/categories/<categoria>.jpg` (Unsplash, 1200×800),
   resolvidas por `src/lib/categoryImages.ts` → `getCategoryImage(category)`.
   O lookup normaliza (trim, minúsculas, sem acento) e cai em
