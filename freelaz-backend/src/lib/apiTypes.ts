@@ -204,3 +204,38 @@ export type HiringSummary = {
 };
 
 export type HiringsResponse = { hirings: HiringSummary[] };
+
+export type ApplicationStatus =
+  | "PENDENTE"
+  | "CONTRAPROPOSTA"
+  | "SELECIONADO"
+  | "SUPLENTE"
+  | "DESISTIU";
+
+/** GET /api/jobs/:id/applications — só o contratante dono da vaga (Fase 2.1.1). */
+export type JobApplication = {
+  id: string;
+  status: ApplicationStatus;
+  message: string | null;
+  counterOfferValueCents: number | null;
+  counterOfferBy: string | null;
+  agreedValueCents: number | null;
+  createdAt: string;
+  professional: PublicUser & {
+    professionalProfile: {
+      headline: string | null;
+      bio: string | null;
+      categories: string[];
+      region: string | null;
+      availability: string[];
+      referencePriceCents: number | null;
+      verificationStatus: string;
+      ratingAverage: number | null;
+      reliabilityScore: number | null;
+    } | null;
+    portfolioItemsCount: number;
+    workExperiencesCount: number;
+  };
+};
+
+export type JobApplicationsResponse = { applications: JobApplication[] };

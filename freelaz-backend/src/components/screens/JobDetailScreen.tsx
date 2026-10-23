@@ -4,9 +4,22 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost } from "@/lib/apiClient";
-import type { JobDetail, JobDetailResponse } from "@/lib/apiTypes";
+import type {
+  JobApplication,
+  JobApplicationsResponse,
+  JobDetail,
+  JobDetailResponse,
+  MeResponse,
+} from "@/lib/apiTypes";
 import { getCategoryImage } from "@/lib/categoryImages";
-import { formatBRL, formatBRLShort, formatShift, humanizeCategory, initials } from "@/lib/format";
+import {
+  formatBRL,
+  formatBRLShort,
+  formatDay,
+  formatShift,
+  humanizeCategory,
+  initials,
+} from "@/lib/format";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -47,13 +60,28 @@ function locationOf(job: JobDetail): string {
   return "Local a combinar";
 }
 
+const APPLICATION_STATUS: Record<
+  string,
+  { label: string; tone: "primary" | "success" | "tag" | "neutral" | "danger" }
+> = {
+  PENDENTE: { label: "Pendente", tone: "primary" },
+  CONTRAPROPOSTA: { label: "Contraproposta", tone: "tag" },
+  SELECIONADO: { label: "Selecionado", tone: "success" },
+  SUPLENTE: { label: "Suplente", tone: "neutral" },
+  DESISTIU: { label: "Desistiu", tone: "danger" },
+};
+
+const MAX_MESSAGE = 500;
+
 /**
  * Detalhe público de uma vaga (GET /api/jobs/:id). Só mostra o que a API
  * expõe — sem inventar requisitos/benefícios que não existem no modelo.
  *
- * Candidatura (Fase 2.1): POST /api/jobs/:id/apply. O endpoint NÃO aceita
- * corpo/mensagem — o modelo `Application` não tem campo de texto. Por isso o
- * campo "Mensagem (opcional)" aparece desabilitado e o POST vai com `{}`.
+ * Candidatura (Fase 2.1.1): POST /api/jobs/:id/apply aceita `{ message? }`
+ * (1-500 chars; vazio = sem mensagem).
+ *
+ * Dono da vaga: além do CTA de candidatura, vê "Propostas recebidas" a partir
+ * de GET /api/jobs/:id/applications (rota já existente, só para o contratante).
  */
 export function JobDetailScreen({ jobId }: { jobId: string }) {
   const router = useRouter();
@@ -62,9 +90,15 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
+  const [isOwner, setIsOwner] = useState(false);
+  const [applications, setApplications] = useState<JobApplication[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [appsError, setAppsError] = useState<string | null>(null);
+
   const [applyOpen, setApplyOpen] = useState(false);
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [applyMessage, setApplyMessage] = useState("");
   const [applyError, setApplyError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -72,31 +106,65 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
     setLoading(true);
     setError(null);
     setNotFound(false);
-    const result = await apiGet<JobDetailResponse>(`/api/jobs/${encodeURIComponent(jobId)}`);
-    if (result.ok) setJob(result.data.jobPosting);
-    else if (result.status === 404) setNotFound(true);
-    else setError(result.error);
+    setIsOwner(false);
+    setApplications([]);
+    setAppsError(null);
+
+    const [result, meResult] = await Promise.all([
+      apiGet<JobDetailResponse>(`/api/jobs/${encodeURIComponent(jobId)}`),
+      apiGet<MeResponse>("/api/auth/me"),
+    ]);
+
+    if (!result.ok) {
+      if (result.status === 404) setNotFound(true);
+      else setError(result.error);
+      setLoading(false);
+      return;
+    }
+
+    setJob(result.data.jobPosting);
     setLoading(false);
+
+    // Só o contratante dono enxerga as candidaturas (a rota devolve 403 para
+    // os demais). Comparamos com a sessão antes de chamar para não gerar 403.
+    const owner = meResult.ok && meResult.data.user.id === result.data.jobPosting.contractor.id;
+    setIsOwner(owner);
+    if (!owner) return;
+
+    setAppsLoading(true);
+    const appsResult = await apiGet<JobApplicationsResponse>(
+      `/api/jobs/${encodeURIComponent(jobId)}/applications`
+    );
+    if (appsResult.ok) setApplications(appsResult.data.applications);
+    else setAppsError(appsResult.error);
+    setAppsLoading(false);
   }, [jobId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const closeApply = useCallback(() => {
+    setApplyOpen(false);
+    setApplyError(null);
+    setApplyMessage("");
+  }, []);
+
   const submitApplication = useCallback(async () => {
     setApplying(true);
     setApplyError(null);
 
-    // Contrato real: sem body (a rota ignora qualquer campo). Mandamos `{}`.
+    const text = applyMessage.trim();
     const result = await apiPost<{ application: { id: string } }>(
       `/api/jobs/${encodeURIComponent(jobId)}/apply`,
-      {}
+      text ? { message: text } : {}
     );
     setApplying(false);
 
     if (result.ok) {
       setApplied(true);
       setApplyOpen(false);
+      setApplyMessage("");
       setToast("Proposta enviada");
       window.setTimeout(() => router.push("/"), 1400);
       return;
@@ -105,12 +173,13 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
     if (result.status === 409 && /já se candidatou/i.test(result.error)) {
       setApplied(true);
       setApplyOpen(false);
+      setApplyMessage("");
       setToast("Você já enviou uma proposta");
       return;
     }
 
     setApplyError(result.error);
-  }, [jobId, router]);
+  }, [applyMessage, jobId, router]);
 
   useEffect(() => {
     if (!toast) return;
@@ -286,33 +355,111 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
         </Card>
       </section>
 
-      <section className={styles.cta}>
-        <Button
-          block
-          disabled={!isOpen || applied || applying}
-          onClick={() => {
-            setApplyError(null);
-            setApplyOpen(true);
-          }}
-          title={!isOpen ? "Esta vaga não está mais aberta" : undefined}
-        >
-          <SendIcon size={16} /> {applied ? "Proposta enviada" : "Enviar proposta"}
-        </Button>
-        <span className={styles.ctaNote}>
-          {applied
-            ? "Você já enviou uma proposta para esta vaga."
-            : isOpen
-              ? "O pagamento fica retido na plataforma até a conclusão do serviço."
-              : "Esta vaga não está mais aberta para candidaturas."}
-        </span>
-      </section>
+      {isOwner && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>
+              Propostas recebidas ({applications.length})
+            </h2>
+          </div>
+
+          {appsLoading && <div className={styles.appsSkeleton} />}
+
+          {!appsLoading && appsError && (
+            <Card>
+              <div className={styles.body}>{appsError}</div>
+            </Card>
+          )}
+
+          {!appsLoading && !appsError && applications.length === 0 && (
+            <Card>
+              <div className={styles.body}>Nenhuma proposta recebida ainda.</div>
+            </Card>
+          )}
+
+          {!appsLoading && !appsError && applications.length > 0 && (
+            <div className={styles.applications}>
+              {applications.map((application) => {
+                const meta = APPLICATION_STATUS[application.status] ?? {
+                  label: application.status,
+                  tone: "neutral" as const,
+                };
+                const person = application.professional;
+                const name = person.tradeName || person.name;
+                const profile = person.professionalProfile;
+                const place = person.city
+                  ? person.state
+                    ? `${person.city} - ${person.state}`
+                    : person.city
+                  : null;
+
+                return (
+                  <Card key={application.id}>
+                    <div className={styles.applicantRow}>
+                      <span className={styles.applicantAvatar}>{initials(name)}</span>
+                      <span className={styles.applicantBody}>
+                        <span className={styles.applicantTop}>
+                          <span className={styles.applicantName}>{name}</span>
+                          <Badge tone={meta.tone}>{meta.label}</Badge>
+                        </span>
+                        {profile?.headline && (
+                          <span className={styles.applicantMeta}>{profile.headline}</span>
+                        )}
+                        <span className={styles.applicantMeta}>
+                          {[place, `Enviada em ${formatDay(application.createdAt)}`]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                        {application.message && (
+                          <span className={styles.applicantMessage}>{application.message}</span>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled
+                          title="O perfil público do profissional ainda não tem rota nesta fase"
+                        >
+                          Ver perfil
+                        </Button>
+                      </span>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {!isOwner && (
+        <section className={styles.cta}>
+          <Button
+            block
+            disabled={!isOpen || applied || applying}
+            onClick={() => {
+              setApplyError(null);
+              setApplyOpen(true);
+            }}
+            title={!isOpen ? "Esta vaga não está mais aberta" : undefined}
+          >
+            <SendIcon size={16} /> {applied ? "Proposta enviada" : "Enviar proposta"}
+          </Button>
+          <span className={styles.ctaNote}>
+            {applied
+              ? "Você já enviou uma proposta para esta vaga."
+              : isOpen
+                ? "O pagamento fica retido na plataforma até a conclusão do serviço."
+                : "Esta vaga não está mais aberta para candidaturas."}
+          </span>
+        </section>
+      )}
 
       {applyOpen && (
         <div
           className={styles.overlay}
           role="presentation"
           onClick={(event) => {
-            if (event.target === event.currentTarget && !applying) setApplyOpen(false);
+            if (event.target === event.currentTarget && !applying) closeApply();
           }}
         >
           <div
@@ -328,7 +475,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
               <button
                 type="button"
                 className={styles.modalClose}
-                onClick={() => setApplyOpen(false)}
+                onClick={closeApply}
                 disabled={applying}
                 aria-label="Fechar"
               >
@@ -344,13 +491,14 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
             <textarea
               id="apply-message"
               className={styles.textarea}
-              rows={3}
-              disabled
-              placeholder="Apresente-se para a empresa"
+              rows={4}
+              maxLength={MAX_MESSAGE}
+              value={applyMessage}
+              onChange={(event) => setApplyMessage(event.target.value)}
+              placeholder="Conte por que você é a pessoa certa para esta vaga"
             />
-            <span className={styles.fieldHint}>
-              A API de candidatura ainda não aceita mensagem — o campo será habilitado
-              quando o backend suportar.
+            <span className={styles.counter}>
+              {applyMessage.length}/{MAX_MESSAGE}
             </span>
 
             {applyError && (
@@ -362,7 +510,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
             <div className={styles.modalActions}>
               <Button
                 variant="secondary"
-                onClick={() => setApplyOpen(false)}
+                onClick={closeApply}
                 disabled={applying}
               >
                 Cancelar

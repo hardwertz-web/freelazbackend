@@ -83,6 +83,7 @@ export async function GET(
     applications: applications.map((application) => ({
       id: application.id,
       status: application.status,
+      message: application.message,
       counterOfferValueCents: application.counterOfferValueCents,
       counterOfferBy: application.counterOfferBy,
       agreedValueCents: application.agreedValueCents,

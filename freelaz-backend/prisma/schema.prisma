@@ -328,6 +328,9 @@ model Application {
   professionalId        String
   professional          User              @relation("ApplicationProfessional", fields: [professionalId], references: [id])
   status                ApplicationStatus @default(PENDENTE)
+  // Recado opcional do profissional para a empresa (1-500 chars, validado na
+  // rota /api/jobs/:id/apply). Null = candidatura sem mensagem.
+  message               String?
   // Contraproposta (ida e volta até alguém aceitar ou desistir):
   counterOfferValueCents Int?
   counterOfferBy        String? // "CONTRACTOR" ou "PROFESSIONAL" — quem fez a última oferta

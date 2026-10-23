@@ -12,18 +12,54 @@ import { hasActiveHiring } from "@/services/hiringService";
  *  - a vaga precisa estar ABERTA, PÚBLICA e ainda no prazo;
  *  - o próprio contratante dono não pode se candidatar à própria vaga;
  *  - uma vaga com contratação em andamento está reservada (409);
- *  - uma candidatura por profissional/vaga (garantido pelo @@unique do banco).
+ *  - uma candidatura por profissional/vaga (garantido pelo @@unique do banco);
+ *  - a mensagem é opcional (1-500 chars): ausente/null/vazia grava NULL.
  *
  * Vaga PRIVADA ("Me contrate") não passa por aqui: a candidatura dela já
  * nasce junto do convite, em /api/jobs/invite.
  */
+const MAX_MESSAGE_LENGTH = 500;
+
+/**
+ * Valida `message` sem nunca logar o conteúdo (só o tamanho importa).
+ * `undefined`/`null`/string vazia = candidatura sem recado.
+ */
+function parseMessage(raw: unknown): { value: string | null; error?: string } {
+  if (raw === undefined || raw === null) return { value: null };
+  if (typeof raw !== "string") {
+    return { value: null, error: "Mensagem deve ser um texto" };
+  }
+  const text = raw.trim();
+  if (!text) return { value: null };
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    return { value: null, error: `Mensagem deve ter no máximo ${MAX_MESSAGE_LENGTH} caracteres` };
+  }
+  return { value: text };
+}
+
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const auth = await requireUser();
   if (auth.error) return NextResponse.json(auth.error.body, { status: auth.error.status });
   const user = auth.user;
+
+  let payload: Record<string, unknown> = {};
+  const rawBody = await req.text();
+  if (rawBody.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(rawBody);
+      if (parsed && typeof parsed === "object") payload = parsed as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+    }
+  }
+
+  const message = parseMessage(payload.message);
+  if (message.error) {
+    return NextResponse.json({ error: message.error }, { status: 422 });
+  }
 
   if (!hasActiveRole(user, "PROFISSIONAL")) {
     return NextResponse.json(
@@ -63,6 +99,7 @@ export async function POST(
         jobPostingId: job.id,
         professionalId: user.id,
         status: "PENDENTE",
+        message: message.value,
       },
     });
     return NextResponse.json({ application }, { status: 201 });
