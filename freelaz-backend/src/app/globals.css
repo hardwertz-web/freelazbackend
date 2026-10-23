@@ -1,11 +1,18 @@
-/* Tokens de design do app (Fase 1). Paleta fechada na spec:
-   azul primário, títulos em azul-marinho, fundo cinza-azulado claro. */
+/* Tokens de design do app (Fase 1.1). Identidade visual final:
+   Montserrat + azul #0066FF, azul-escuro #0B1F44, cinza-claro #E8EEF7. */
 :root {
-  --primary: #0066ff;
+  /* Cores de marca */
+  --azul-principal: #0066ff;
+  --azul-escuro: #0b1f44;
+  --cinza-claro: #e8eef7;
+  --font-family: 'Montserrat', sans-serif;
+
+  /* Aliases usados pelos componentes (mantidos para não reescrever as telas) */
+  --primary: var(--azul-principal);
   --primary-dark: #0052cc;
-  --title: #0b1f3b;
+  --title: var(--azul-escuro);
   --muted: #6b7280;
-  --bg: #f2f4f7;
+  --bg: var(--cinza-claro);
   --surface: #ffffff;
   --selected: #eaf1ff;
   --positive: #16a34a;
@@ -45,7 +52,7 @@ html {
 body {
   background: var(--bg);
   color: var(--title);
-  font-family: var(--font-poppins), "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-montserrat), var(--font-family);
   font-size: 14px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;

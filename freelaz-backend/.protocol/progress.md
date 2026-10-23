@@ -739,3 +739,25 @@ mobile-first (max 430px), consumindo apenas endpoints existentes.
 **Pendencias (Fase 2):** candidatura, checkout, codigo de turno, avaliacao,
 publicar vaga, notificacoes, abrir/enviar conversa, saque/deposito/transferencia,
 edicao de perfil, paginacao real (>50) e contador de nao lidas.
+
+---
+
+## Sessao 29 - Fase 1.1: identidade visual final (Montserrat + cores)
+
+**Motivo:** a Fase 1 usou a spec antiga (Poppins, `#0B1F3B`, `#F2F4F7`); a
+identidade final e Montserrat, `#0B1F44` e `#E8EEF7`.
+
+**Feito (somente CSS/fonte):**
+1. `src/app/layout.tsx`: `Poppins` -> `Montserrat` (400/500/600/700/800), variavel
+   `--font-montserrat`.
+2. `src/app/globals.css`: tokens de marca `--azul-principal` (#0066FF),
+   `--azul-escuro` (#0B1F44), `--cinza-claro` (#E8EEF7) e
+   `--font-family: 'Montserrat', sans-serif`. Os nomes antigos (`--primary`,
+   `--title`, `--bg`) viraram aliases para nao reescrever as telas.
+3. `.protocol/frontend-spec.md`: paleta e tipografia atualizadas.
+
+**Nao alterados:** logica, endpoints, componentes/telas, schema, migracoes.
+
+**Observacao:** os gradientes decorativos de `HomeScreen`/`JobDetailScreen`
+ainda usam o hex antigo `#0B1F3B` dentro do TSX; como a tarefa proibia mexer em
+componentes, foi mantido (diferenca visual imperceptivel).

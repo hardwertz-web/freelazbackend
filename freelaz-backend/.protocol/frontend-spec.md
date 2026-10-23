@@ -19,11 +19,14 @@ saque/depósito/transferência, edição de perfil.
 
 | Token | Hex | Uso |
 |---|---|---|
-| `--primary` | `#0066FF` | botões, links, tab ativa, badges |
+| `--azul-principal` | `#0066FF` | botões, links, tab ativa, badges |
+| `--azul-escuro` | `#0B1F44` | títulos, logo, valores |
+| `--cinza-claro` | `#E8EEF7` | fundo de página e campos |
+| `--primary` | `= --azul-principal` | alias usado pelos componentes |
+| `--title` | `= --azul-escuro` | alias usado pelos componentes |
+| `--bg` | `= --cinza-claro` | alias usado pelos componentes |
 | `--primary-dark` | `#0052CC` | hover do primário |
-| `--title` | `#0B1F3B` | títulos, logo, valores |
 | `--muted` | `#6B7280` | texto secundário, metadados |
-| `--bg` | `#F2F4F7` | fundo de página e campos |
 | `--selected` | `#EAF1FF` | chip ativo, avatar, realce |
 | `--positive` | `#16A34A` | crédito, status positivo |
 | `--tag` | `#F97316` | tags de destaque/atenção |
@@ -34,8 +37,9 @@ saque/depósito/transferência, edição de perfil.
 
 ### Tipografia
 
-- Fonte: **Poppins** via `next/font/google` (self-host no build, sem `<link>`).
-- Pesos: 400, 500, 600, 700. Variável CSS `--font-poppins` aplicada no `<html>`.
+- Fonte: **Montserrat** via `next/font/google` (self-host no build, sem `<link>`).
+- Pesos: 400, 500, 600, 700, 800. Variável CSS `--font-montserrat` aplicada no
+  `<html>`; `--font-family: 'Montserrat', sans-serif` como fallback declarado.
 - Escala: título de tela 20–22px/700; seção 14,5–15px/600; corpo 12,5–13px/400;
   metadado 10,3–11,5px/500. `letter-spacing` negativo (−0,02em) nos títulos.
 
@@ -154,7 +158,7 @@ outras 4 — padronizamos em 5.
 
 ```
 src/app/
-  layout.tsx                  raiz (Poppins, globals.css, metadata/viewport)
+  layout.tsx                  raiz (Montserrat, globals.css, metadata/viewport)
   globals.css                 tokens, reset, utilitários
   login/page.tsx              fora do route group (sem tab bar)
   cadastro/page.tsx           fora do route group (sem tab bar)
