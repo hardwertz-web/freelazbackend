@@ -131,6 +131,56 @@ export type ChatSummary = {
   lastMessageAt: string | null;
 };
 
+export type ChatStatus = ChatSummary["status"];
+
+export type ChatMessage = {
+  id: string;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+  sender: { id: string; name: string; tradeName: string | null };
+  mine: boolean;
+};
+
+export type ChatInfo = {
+  id: string;
+  status: ChatStatus;
+  openedAt: string | null;
+  closedAt: string | null;
+  closeReason?: string | null;
+};
+
+/** GET /api/hirings/:id/chat — histórico em ordem cronológica (mais novas no fim). */
+export type ChatResponse = {
+  chat: ChatInfo;
+  messages: ChatMessage[];
+  hasMore: boolean;
+  nextBefore: string | null;
+};
+
+/** GET /api/hirings/:id — usado só para o cabeçalho da conversa. */
+export type HiringDetailResponse = {
+  hiring: {
+    id: string;
+    status: string;
+    jobTitle: string;
+    side: "CONTRACTOR" | "PROFESSIONAL";
+    counterpart: {
+      id: string;
+      name: string;
+      tradeName: string | null;
+      city: string | null;
+      state: string | null;
+    };
+    chat: {
+      id: string;
+      status: ChatStatus;
+      openedAt: string | null;
+      closedAt: string | null;
+    } | null;
+  };
+};
+
 export type HiringSummary = {
   id: string;
   status: string;

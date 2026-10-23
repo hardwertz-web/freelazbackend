@@ -842,3 +842,65 @@ sem canal alfa (fundo branco solido).
 
 **Nao alterados:** outras telas, backend, endpoints, schema, logica.
 **Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0.
+
+---
+
+## Sessao 33 - Fase 2.1: candidatura + chat basico
+
+**Motivo:** conectar as duas acoes que faltavam nas telas herdadas da Fase 1 aos
+endpoints que o backend ja expunha (sem tocar em backend/schema).
+
+**Contratos reais verificados (nada inventado):**
+- `POST /api/jobs/[id]/apply` **nao aceita body** (o modelo `Application` nao tem
+  campo de mensagem): body `{}`, 201 `{application}`, 409 duplicata/reservada,
+  403 papel inativo/privada. Mensagem de duplicata: "Voce ja se candidatou a
+  esta vaga".
+- `GET /api/hirings/[id]/chat` -> `{ chat, messages, hasMore, nextBefore }`;
+  mensagens com `sender`, `mine`, `readAt`, `body`, `createdAt` (ordem
+  cronologica). 404 quando oculto/sem acesso.
+- `POST /api/hirings/[id]/chat/messages` body `{body}`, 201 `{message}`; 409 se
+  o chat nao esta ABERTO.
+- `PATCH /api/hirings/[id]/chat/messages/read` marca as recebidas como lidas.
+- `GET /api/hirings/[id]` usado so para nome da contraparte/vaga no cabecalho.
+- Nao existe contador de nao lidas nem texto da ultima mensagem: a lista mostra
+  `chat.lastMessageAt` e nao tem badge na tab bar.
+
+**Feito:**
+1. **Candidatura (JobDetailScreen):** modal com confirmacao; campo "Mensagem
+   (opcional)" **desabilitado** com nota (API nao persiste) e POST com `{}`.
+   Estados: enviando, sucesso (toast "Proposta enviada" + volta para a Home em
+   1,4s), erro `role="alert"` com a mensagem da API, duplicata (409) -> botao
+   "Proposta enviada" desabilitado + nota. Vaga fechada mantem o CTA desabilitado.
+2. **Lista (MessagesScreen):** linhas viram `Link` para `/mensagens/[hiringId]`;
+   chats `ENCERRADO` passam a aparecer com badge "Encerrado"
+   (`AGUARDANDO_PAGAMENTO` continua fora, sem conversa); nota de "Fase 2"
+   removida; hover/active nas linhas.
+3. **Conversa (`src/app/(web)/mensagens/[hiringId]/page.tsx` +
+   `ChatScreen.tsx`):** cabecalho (contraparte, vaga, status), bolhas
+   minhas/direita azul e contraparte/esquerda branca com hora e "✓" de lida,
+   composer fixo acima da tab bar, Enter envia, scroll automatico para a ultima,
+   polling de 5s (sem WebSocket), 404 -> "Conversa nao disponivel", chat
+   ENCERRADO/AGUARDANDO -> input desabilitado + aviso, `PATCH read` ao abrir e
+   quando chega mensagem nova.
+4. `apiPatch` no `apiClient`; tipos `ChatMessage`, `ChatResponse`,
+   `HiringDetailResponse` no `apiTypes`.
+5. Spec/progresso/findings atualizados.
+
+**Testado no browser (dev):**
+- Candidatura real criada no banco (Ana -> "Vaga Taxa 1460977-1",
+  `PENDENTE`, `applications` de 1 -> 2); segunda tentativa na mesma vaga caiu no
+  409 de duplicata e a UI desabilitou o botao.
+- Vaga ja reservada (409 "reservada por outra contratacao") mostrou o erro da
+  API no `role="alert"` sem quebrar o modal.
+- Conversa ENCERRADA: badge, "Nenhuma mensagem ainda. Diga ola.", aviso
+  "Conversa encerrada." e input desabilitado.
+- Conversa ABERTA: historico, envio real (mensagem nova no banco e na tela) e
+  polling: mensagem inserida pela contraparte apareceu em <5s e foi marcada como
+  lida (`readAt` preenchido).
+- `/mensagens/inexistente123` -> "Conversa nao disponivel".
+- Composer medido acima da tab bar (bottom 506 vs top 524) e ultima bolha sem
+  sobreposicao.
+
+**Nao alterados:** backend, schema, endpoints, Home, Carteira, favoritar.
+**Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0 (rota
+`/mensagens/[hiringId]` gerada).

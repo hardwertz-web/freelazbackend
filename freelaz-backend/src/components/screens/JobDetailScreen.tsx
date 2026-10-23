@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiGet } from "@/lib/apiClient";
+import { useRouter } from "next/navigation";
+import { apiGet, apiPost } from "@/lib/apiClient";
 import type { JobDetail, JobDetailResponse } from "@/lib/apiTypes";
 import { getCategoryImage } from "@/lib/categoryImages";
 import { formatBRL, formatBRLShort, formatShift, humanizeCategory, initials } from "@/lib/format";
@@ -11,6 +12,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import {
   CalendarIcon,
+  CheckIcon,
   ChevronLeftIcon,
   HeartIcon,
   InfoIcon,
@@ -18,6 +20,7 @@ import {
   SendIcon,
   ShieldCheckIcon,
   UserIcon,
+  XIcon,
 } from "@/components/Icons";
 import styles from "./JobDetailScreen.module.css";
 
@@ -48,14 +51,22 @@ function locationOf(job: JobDetail): string {
  * Detalhe público de uma vaga (GET /api/jobs/:id). Só mostra o que a API
  * expõe — sem inventar requisitos/benefícios que não existem no modelo.
  *
- * "Enviar proposta" é Fase 2: fica desabilitado para não prometer um fluxo
- * que ainda não existe.
+ * Candidatura (Fase 2.1): POST /api/jobs/:id/apply. O endpoint NÃO aceita
+ * corpo/mensagem — o modelo `Application` não tem campo de texto. Por isso o
+ * campo "Mensagem (opcional)" aparece desabilitado e o POST vai com `{}`.
  */
 export function JobDetailScreen({ jobId }: { jobId: string }) {
+  const router = useRouter();
   const [job, setJob] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,6 +82,41 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const submitApplication = useCallback(async () => {
+    setApplying(true);
+    setApplyError(null);
+
+    // Contrato real: sem body (a rota ignora qualquer campo). Mandamos `{}`.
+    const result = await apiPost<{ application: { id: string } }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/apply`,
+      {}
+    );
+    setApplying(false);
+
+    if (result.ok) {
+      setApplied(true);
+      setApplyOpen(false);
+      setToast("Proposta enviada");
+      window.setTimeout(() => router.push("/"), 1400);
+      return;
+    }
+
+    if (result.status === 409 && /já se candidatou/i.test(result.error)) {
+      setApplied(true);
+      setApplyOpen(false);
+      setToast("Você já enviou uma proposta");
+      return;
+    }
+
+    setApplyError(result.error);
+  }, [jobId, router]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   if (loading) {
     return (
@@ -241,13 +287,99 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
       </section>
 
       <section className={styles.cta}>
-        <Button block disabled title="Candidatura — Fase 2">
-          <SendIcon size={16} /> Enviar proposta
+        <Button
+          block
+          disabled={!isOpen || applied || applying}
+          onClick={() => {
+            setApplyError(null);
+            setApplyOpen(true);
+          }}
+          title={!isOpen ? "Esta vaga não está mais aberta" : undefined}
+        >
+          <SendIcon size={16} /> {applied ? "Proposta enviada" : "Enviar proposta"}
         </Button>
         <span className={styles.ctaNote}>
-          Candidatura e negociação chegam na Fase 2.
+          {applied
+            ? "Você já enviou uma proposta para esta vaga."
+            : isOpen
+              ? "O pagamento fica retido na plataforma até a conclusão do serviço."
+              : "Esta vaga não está mais aberta para candidaturas."}
         </span>
       </section>
+
+      {applyOpen && (
+        <div
+          className={styles.overlay}
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !applying) setApplyOpen(false);
+          }}
+        >
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="apply-title"
+          >
+            <div className={styles.modalHead}>
+              <h2 id="apply-title" className={styles.modalTitle}>
+                Enviar proposta
+              </h2>
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() => setApplyOpen(false)}
+                disabled={applying}
+                aria-label="Fechar"
+              >
+                <XIcon size={16} />
+              </button>
+            </div>
+
+            <p className={styles.modalJob}>{job.title}</p>
+
+            <label className={styles.fieldLabel} htmlFor="apply-message">
+              Mensagem (opcional)
+            </label>
+            <textarea
+              id="apply-message"
+              className={styles.textarea}
+              rows={3}
+              disabled
+              placeholder="Apresente-se para a empresa"
+            />
+            <span className={styles.fieldHint}>
+              A API de candidatura ainda não aceita mensagem — o campo será habilitado
+              quando o backend suportar.
+            </span>
+
+            {applyError && (
+              <div className={styles.alert} role="alert">
+                {applyError}
+              </div>
+            )}
+
+            <div className={styles.modalActions}>
+              <Button
+                variant="secondary"
+                onClick={() => setApplyOpen(false)}
+                disabled={applying}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={() => void submitApplication()} disabled={applying}>
+                {applying ? "Enviando..." : "Confirmar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={styles.toast} role="status">
+          <CheckIcon size={15} /> {toast}
+        </div>
+      )}
     </div>
   );
 }

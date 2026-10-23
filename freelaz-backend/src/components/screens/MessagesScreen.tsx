@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { apiGet } from "@/lib/apiClient";
 import type { HiringSummary, HiringsResponse } from "@/lib/apiTypes";
 import { formatBRLShort, formatListTime, initials } from "@/lib/format";
@@ -14,12 +15,14 @@ import styles from "./MessagesScreen.module.css";
 type Filter = "TODAS" | "CONTRATANTES" | "PROFISSIONAIS";
 
 /**
- * Lista de conversas = contratações com chat ABERTO (o backend só libera o
- * chat depois do pagamento confirmado). Não existe endpoint de "lista de
+ * Lista de conversas = contratações com chat criado (o backend só libera a
+ * conversa depois do pagamento confirmado). Não existe endpoint de "lista de
  * chats": usamos GET /api/hirings e filtramos aqui.
  *
- * A tela de conversa em si (mensagens) é Fase 2 — por isso as linhas não
- * navegam; mostramos o estado real em vez de um link quebrado.
+ * Fase 2.1: cada linha abre `/mensagens/[hiringId]`. Chats ABERTOS e ENCERRADOS
+ * aparecem (os encerrados com selo próprio); `AGUARDANDO_PAGAMENTO` fica de
+ * fora porque ainda não existe conversa. O backend não expõe contagem de não
+ * lidas nem o texto da última mensagem — a lista mostra `lastMessageAt`.
  */
 export function MessagesScreen() {
   const [hirings, setHirings] = useState<HiringSummary[]>([]);
@@ -41,23 +44,26 @@ export function MessagesScreen() {
     void load();
   }, [load]);
 
-  const openChats = useMemo(
-    () => hirings.filter((hiring) => hiring.chat?.status === "ABERTO"),
+  const chats = useMemo(
+    () =>
+      hirings.filter(
+        (hiring) => hiring.chat && hiring.chat.status !== "AGUARDANDO_PAGAMENTO"
+      ),
     [hirings]
   );
 
   const counts = useMemo(
     () => ({
-      todas: openChats.length,
-      contratantes: openChats.filter((h) => h.side === "CONTRACTOR").length,
-      profissionais: openChats.filter((h) => h.side === "PROFESSIONAL").length,
+      todas: chats.length,
+      contratantes: chats.filter((h) => h.side === "CONTRACTOR").length,
+      profissionais: chats.filter((h) => h.side === "PROFESSIONAL").length,
     }),
-    [openChats]
+    [chats]
   );
 
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return openChats
+    return chats
       .filter((hiring) => {
         if (filter === "CONTRATANTES" && hiring.side !== "CONTRACTOR") return false;
         if (filter === "PROFISSIONAIS" && hiring.side !== "PROFESSIONAL") return false;
@@ -70,7 +76,7 @@ export function MessagesScreen() {
         const bTime = new Date(b.chat?.lastMessageAt ?? b.createdAt).getTime();
         return bTime - aTime;
       });
-  }, [openChats, filter, query]);
+  }, [chats, filter, query]);
 
   return (
     <div className={styles.screen}>
@@ -135,10 +141,10 @@ export function MessagesScreen() {
         <Card>
           <div className={styles.empty}>
             <span className={styles.emptyTitle}>
-              {openChats.length === 0 ? "Nenhuma conversa aberta" : "Nada com esse filtro"}
+              {chats.length === 0 ? "Nenhuma conversa" : "Nada com esse filtro"}
             </span>
             <span className={styles.emptyText}>
-              {openChats.length === 0
+              {chats.length === 0
                 ? "O chat abre quando o pagamento de uma contratação é confirmado. Assim que isso acontecer, a conversa aparece aqui."
                 : "Tente outro filtro ou limpe a busca."}
             </span>
@@ -161,14 +167,22 @@ export function MessagesScreen() {
       {!loading && !error && visible.length > 0 && (
         <div className={styles.list}>
           {visible.map((hiring) => (
-            <div key={hiring.id} className={styles.row}>
+            <Link
+              key={hiring.id}
+              href={`/mensagens/${hiring.id}`}
+              className={styles.row}
+            >
               <span className={styles.avatar}>{initials(hiring.counterpart.tradeName || hiring.counterpart.name)}</span>
               <span className={styles.body}>
                 <span className={styles.nameRow}>
                   <span className={styles.name}>
                     {hiring.counterpart.tradeName || hiring.counterpart.name}
                   </span>
-                  <Badge tone="success">Chat aberto</Badge>
+                  {hiring.chat?.status === "ABERTO" ? (
+                    <Badge tone="success">Chat aberto</Badge>
+                  ) : (
+                    <Badge tone="neutral">Encerrado</Badge>
+                  )}
                 </span>
                 <span className={styles.meta}>{hiring.jobTitle}</span>
                 <span className={styles.meta}>
@@ -179,12 +193,8 @@ export function MessagesScreen() {
               <span className={styles.right}>
                 <span className={styles.time}>{formatListTime(hiring.chat?.lastMessageAt ?? hiring.createdAt)}</span>
               </span>
-            </div>
+            </Link>
           ))}
-          <span className={styles.note}>
-            Abrir a conversa e enviar mensagens chega na Fase 2. Estas são as conversas
-            liberadas hoje.
-          </span>
         </div>
       )}
     </div>

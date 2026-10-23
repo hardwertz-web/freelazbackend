@@ -830,7 +830,9 @@ para ligar a flag.
 | Vaga | `GET /api/jobs/[id]` | 404 -> "Vaga nao encontrada" |
 | Perfil | `GET /api/auth/me` + `GET /api/profile/professional` | 409 = papel nao ativado |
 | Carteira | `GET /api/wallet?limit=50` | 403 = papel Profissional inativo |
-| Mensagens | `GET /api/hirings` | filtra `chat.status === "ABERTO"` no cliente |
+| Mensagens | `GET /api/hirings` | chats `ABERTO` + `ENCERRADO` no cliente |
+| Candidatura | `POST /api/jobs/[id]/apply` | `{}` (sem body util); 201/409 |
+| Conversa | `GET /api/hirings/[id]/chat` + `POST .../chat/messages` + `PATCH .../messages/read` | Fase 2.1 |
 
 ### Decisoes de produto tomadas para destravar a Fase 1
 
@@ -845,23 +847,74 @@ para ligar a flag.
    gradiente derivado da categoria (decorativo, nao representa dado).
 5. **"Oportunidades em destaque"** so aparece com `urgentBoost = true` real; as
    demais vagas vao para "mais recentes".
-6. **Controles de Fase 2 desabilitados** com `title`/nota: sino, favoritar,
-   enviar proposta, editar perfil, depositar/sacar/transferir/historico.
+6. **Controles fora de escopo desabilitados** com `title`/nota: sino, favoritar,
+   editar perfil, depositar/sacar/transferir/historico. Desde a Fase 2.1,
+   "Enviar proposta" funciona (ver 4l).
 7. **Sem grafico de ganhos** na Carteira: nao ha serie historica na API.
-8. **Sem contador de nao lidas** em Mensagens: `Chat` nao expoe `unreadCount`
-   (existe `readAt` por mensagem, mas nao ha endpoint de lista de mensagens).
-9. **Sem lista de conversas propria:** `/api/hirings` e a unica fonte; so chats
-   com status `ABERTO` aparecem.
+8. **Sem contador de nao lidas** em Mensagens/tab bar: `Chat` nao expoe
+   `unreadCount` e nao ha endpoint agregado. A tela de conversa marca como lida
+   via `PATCH .../chat/messages/read`.
+9. **Sem lista de conversas propria:** `/api/hirings` e a unica fonte; mostramos
+   `ABERTO` e `ENCERRADO` (Fase 2.1). `AGUARDANDO_PAGAMENTO` fica fora porque
+   ainda nao existe conversa.
 
 ### Gaps/limitacoes conhecidos da Fase 1
 
 - **Paginacao:** a Home carrega 50 vagas e informa "Mostrando as 50 primeiras de
   N". Com 51 abertas hoje, 1 vaga nao aparece e nao entra na busca client-side.
 - **Busca client-side:** filtra apenas o que foi carregado (sem `?q=` no backend).
-- **Chat:** abrir conversa e enviar mensagem nao existem; as linhas nao navegam.
+- **Chat:** implementado na Fase 2.1 (lista + conversa + envio + polling + lidas).
+  Ainda sem anexos/emoji/voz (decisoes 5-7) e sem badge de nao lidas.
 - **Perfil:** sem edicao; `profileStrength` e somente leitura.
 - **Carteira:** sem grafico/serie; acoes financeiras desabilitadas.
 - **Documento mascarado:** `GET /api/auth/me` ja devolve o documento mascarado.
 - **Performance:** a Home renderiza ate 50 linhas (sem virtualizacao); aceitavel
   no MVP, revisar se o volume de vagas crescer.
+
+## 4l. Frontend Fase 2.1 — candidatura e chat
+
+### Contratos consumidos (backend intocado)
+
+| Acao | Chamada | Contrato real |
+|---|---|---|
+| Candidatar | `POST /api/jobs/[id]/apply` | sem body util; 201 `{application}`; 409 duplicata/reservada/fechada; 403 papel inativo/privada |
+| Conversa | `GET /api/hirings/[id]/chat` | `{ chat, messages, hasMore, nextBefore }`; 404 oculto/sem acesso |
+| Enviar | `POST /api/hirings/[id]/chat/messages` | `{ body }`; 201 `{message}`; 409 chat nao ABERTO |
+| Lidas | `PATCH /api/hirings/[id]/chat/messages/read` | marca as recebidas; resposta sem corpo util para a UI |
+| Cabecalho | `GET /api/hirings/[id]` | `hiring.counterpart` e `hiring.jobTitle` |
+
+### Decisoes
+
+1. **Sem campo de mensagem na candidatura.** `Application` nao tem coluna de
+   texto e a rota nao le body. O campo "Mensagem (opcional)" existe no modal,
+   mas **desabilitado** e com nota: melhor do que descartar o texto do usuario em
+   silencio (ou fingir que enviou). Quando o backend ganhar `message`, basta
+   habilitar o campo e mandar `{ message }`.
+2. **"Ja candidatado" so e detectavel pelo 409.** `GET /api/jobs/[id]` nao
+   devolve candidatura do usuario logado. Na primeira tentativa o 409
+   ("Voce ja se candidatou a esta vaga") vira botao "Proposta enviada"
+   desabilitado + toast; nao ha estado previo ao clicar.
+3. **Lista inclui ENCERRADO.** A Fase 1 mostrava so `ABERTO`, o que tornava a
+   tela de conversa encerrada inalcancavel. Chats ocultos (`hiddenAt`) ainda
+   aparecem em `/api/hirings` e abrem o estado 404 "Conversa nao disponivel".
+4. **"Ultima mensagem" = horario.** `/api/hirings` so devolve
+   `chat.lastMessageAt`; o texto exigiria N chamadas a `/chat`. A linha mostra o
+   horario relativo do `lastMessageAt`.
+5. **Sem badge na tab bar / chips de nao lidas.** Nao existe contador agregado;
+   inventar exigiria varrer todas as conversas no cliente.
+6. **Polling puro (5s), sem WebSocket**, conforme decisao de produto; envio e
+   otimista (a mensagem do 201 entra na lista sem esperar o proximo poll).
+7. **`PATCH read` tambem no polling**, quando chega mensagem nova com a conversa
+   aberta — evita que a conversa "pisque" como nao lida em outra aba.
+
+### Gaps/limitacoes
+
+- Sem anexos, emoji picker ou audio (decisoes 5-7 seguem pendentes).
+- Sem paginacao "carregar anteriores" na conversa: o backend devolve
+  `hasMore/nextBefore`, mas a tela carrega o historico inicial inteiro que a API
+  manda. Revisar quando houver conversas longas.
+- Candidatura nao tem "cancelar proposta" nem acompanhamento de status.
+- Sem estado previo de "ja candidatado" ao abrir a vaga (depende de mudanca no
+  contrato de `GET /api/jobs/[id]`).
+
 

@@ -134,7 +134,10 @@ calendário ("Sábado, 18:00 – 02:00") e localização com pino. Três métric
 cards: candidaturas, empresa verificada, visibilidade. Cards "Sobre a vaga"
 (descrição real), "Pagamento" (valor + aviso de retenção até a conclusão) e
 "Sobre a empresa" (avatar com iniciais, nome/razão social, selo e local).
-Botão primário "Enviar proposta" desabilitado com nota "Fase 2".
+Botão primário "Enviar proposta" abre um modal de confirmação (campo "Mensagem
+(opcional)" desabilitado — a API de candidatura não aceita texto) e chama
+`POST /api/jobs/[id]/apply`. Em caso de sucesso: toast "Proposta enviada" e
+retorno para a Home; duplicata (409) desabilita o botão como "Proposta enviada".
 
 ### 4.5 Perfil
 
@@ -164,9 +167,21 @@ Título "Mensagens" + subtítulo. Campo de busca de conversa. Chips com contagem
 "Todas 8", "Contratantes 3", "Profissionais 5", "Não lidas 2" na referência —
 na Fase 1 usamos Todas/Contratantes/Profissionais com contagem real (não há
 contador de não lidas no backend). Lista de linhas: avatar com iniciais, nome da
-contraparte, badge "Chat aberto", título da vaga, lado ("Você contrata" /
-"Você trabalha"), valor e horário relativo. Estado vazio explica que o chat só
-abre após o pagamento confirmado.
+contraparte, badge "Chat aberto"/"Encerrado", título da vaga, lado ("Você
+contrata" / "Você trabalha"), valor e horário relativo. Cada linha abre
+`/mensagens/[hiringId]`. Estado vazio explica que o chat só abre após o
+pagamento confirmado.
+
+### 4.7.1 Conversa (`/mensagens/[hiringId]`)
+
+Cabeçalho com voltar, avatar, nome da contraparte, vaga e badge de status
+("Chat aberto"/"Encerrado"). Corpo com bolhas: minhas à direita em azul, da
+contraparte à esquerda em branco; hora da mensagem e "✓" quando lida. Rodapé
+fixo acima da tab bar com input e botão enviar (desabilitados quando o chat não
+está ABERTO, com aviso "Conversa encerrada"). Histórico via
+`GET /api/hirings/[id]/chat`, envio via `POST .../chat/messages`, polling de 5s
+(sem WebSocket) e `PATCH .../chat/messages/read` ao abrir/ao chegar mensagem
+nova. Chat oculto/inexistente (404) → "Conversa não disponível".
 
 ### 4.8 Tab bar
 
@@ -188,13 +203,14 @@ src/app/
     page.tsx                  Home (v1)
     buscar/page.tsx           redirect → /?focus=search
     mensagens/page.tsx
+    mensagens/[hiringId]/page.tsx   conversa (Fase 2.1)
     carteira/page.tsx
     perfil/page.tsx
     vaga/[id]/page.tsx
 src/components/
   Card.tsx / Chip.tsx / Button.tsx / Badge.tsx
   ScreenHeader.tsx / BottomTabBar.tsx / Icons.tsx / AuthShell.tsx
-  screens/{Home,JobDetail,Messages,Wallet,Profile}Screen.tsx
+  screens/{Home,JobDetail,Messages,Chat,Wallet,Profile}Screen.tsx
 src/lib/
   apiClient.ts                fetch same-origin com erro tipado
   apiTypes.ts                 contratos das respostas
@@ -215,7 +231,12 @@ usa Tailwind).
 | Vaga | `GET /api/jobs/[id]` | 404 → estado "Vaga não encontrada" |
 | Perfil | `GET /api/auth/me` + `GET /api/profile/professional` | 409 = papel não ativado (estado próprio) |
 | Carteira | `GET /api/wallet?limit=50` | 403 = papel Profissional inativo (estado próprio) |
-| Mensagens | `GET /api/hirings` | filtra `chat.status === "ABERTO"` no cliente |
+| Mensagens | `GET /api/hirings` | chats `ABERTO` e `ENCERRADO`; `AGUARDANDO_PAGAMENTO` fica fora |
+| Vaga — candidatura | `POST /api/jobs/[id]/apply` | **sem body** (o modelo `Application` não tem mensagem); 201/409 |
+| Conversa | `GET /api/hirings/[id]/chat` | histórico cronológico + status; 404 = oculto/sem acesso |
+| Conversa — cabeçalho | `GET /api/hirings/[id]` | nome da contraparte e vaga |
+| Conversa — enviar | `POST /api/hirings/[id]/chat/messages` | `{ body }`; 409 = chat encerrado |
+| Conversa — lidas | `PATCH /api/hirings/[id]/chat/messages/read` | ao abrir e ao chegar mensagem nova |
 
 Nenhum endpoint foi criado ou alterado. Nenhum dado mock: tudo vem do backend.
 
@@ -230,15 +251,20 @@ real da API + "Tentar de novo"), **vazio** (texto explicando o porquê) e
   categoria derivados das vagas carregadas.
 - Buscar: `/?focus=search` foca o campo e destaca a tab Buscar.
 - Mensagens: filtro por lado (`side`) e busca por nome/vaga; contagens reais.
+- Conversa: polling de 5s, scroll automático para a última mensagem, envio
+  otimista (a resposta 201 já entra na lista), sem WebSocket e sem anexos.
 - Carteira: valores calculados pelo backend; nunca somados no front.
 - Perfil: mostra `profileStrength` e dados do papel; se o papel estiver
   PENDENTE, explica o que falta em vez de esconder a tela.
 
 ## 8. Regras de honestidade de UI
 
-- Controles de Fase 2 aparecem **desabilitados** com `title`/nota explícita
-  ("Fase 2") — nunca fingem funcionar e nunca inventam números.
+- Controles ainda fora de escopo aparecem **desabilitados** com `title`/nota
+  explícita ("Fase 2") — nunca fingem funcionar e nunca inventam números.
 - Sem badge de notificações não lidas (o backend não expõe contador).
+- Candidatura sem texto: o campo "Mensagem (opcional)" aparece **desabilitado**
+  porque `POST /api/jobs/[id]/apply` não aceita body — nunca descartamos texto
+  digitado em silêncio.
 - Sem gráfico de ganhos (não há série histórica na API).
 - Sem requisitos/benefícios de vaga inventados (não existem no modelo).
 - Sem foto de empresa vaga (não há imagem no modelo de `JobPosting`); usamos
