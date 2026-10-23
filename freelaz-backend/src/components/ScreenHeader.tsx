@@ -14,13 +14,9 @@ export function ScreenHeader({ userName }: { userName: string }) {
   return (
     <header className={styles.header}>
       <div className={styles.brand}>
-        {/* Logo oficial (public/logo.jpg). O JPEG é quadrado (símbolo), então o
-            wordmark "Freelaz" + tagline continuam ao lado. */}
-        <img src="/logo.jpg" alt="Freelaz" className={styles.logoImage} />
-        <span className={styles.brandText}>
-          <span className={styles.logo}>Freelaz</span>
-          <span className={styles.tagline}>Trabalho que conecta.</span>
-        </span>
+        {/* Ícone oficial (public/logo_f.png): círculo azul com "F" branco.
+            Sem wordmark/tagline — o símbolo já identifica a marca. */}
+        <img src="/logo_f.png" alt="Freelaz" className={styles.logoImage} />
       </div>
 
       <span className={styles.spacer} />

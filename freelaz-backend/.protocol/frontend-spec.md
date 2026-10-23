@@ -59,19 +59,21 @@ saque/depósito/transferência, edição de perfil.
 | `Chip` | `children`, `active`, `onClick`, `count`, `title` — pill, ativo azul sólido |
 | `Button` | `variant` (`primary`/`secondary`/`outline`/`danger`), `block`, `size` (`md`/`sm`), atributos nativos |
 | `Badge` | `children`, `tone` (`primary`/`success`/`tag`/`neutral`/`danger`/`solid`), `icon` |
-| `ScreenHeader` | header persistente: logo oficial (`/logo.jpg`) + wordmark "Freelaz" + tagline "Trabalho que conecta.", sino (Fase 2, desabilitado) e avatar → `/perfil` |
+| `ScreenHeader` | header persistente: ícone oficial (`/logo_f.png`, 40px, alinhado à esquerda), sino (Fase 2, desabilitado) e avatar → `/perfil` |
 | `BottomTabBar` | 5 itens: Início `/`, Buscar `/buscar`, Mensagens `/mensagens`, Carteira `/carteira`, Perfil `/perfil`; ativo em azul, inativo cinza |
 | `Icons` | SVG inline (traço, `currentColor`) — sem biblioteca externa |
-| `AuthShell` | casca de login/cadastro: cartão centrado, logo oficial + marca, título, subtítulo |
+| `AuthShell` | casca de login/cadastro: cartão centrado, ícone oficial (48px), título, subtítulo |
 
 Badge "Verificado": fundo `--selected`, texto azul, ícone de escudo
 (`ShieldCheckIcon`).
 
 ### Imagens (Fase 1.2)
 
-- **Logo:** `public/logo.jpg` (símbolo quadrado, 1254×1254, fundo azul-escuro).
-  No header tem 32px de altura; no login/cadastro, 40px. O wordmark "Freelaz"
-  e a tagline continuam ao lado (o arquivo não traz o nome escrito).
+- **Logo:** `public/logo_f.png` (círculo azul com "F" branco, 1254×1254).
+  No header tem 40×40px; no login/cadastro, 48×48px (`object-fit: contain`,
+  `border-radius: 50%`). Sem wordmark nem tagline ao lado — só o ícone, alinhado
+  à esquerda. O antigo `public/logo.jpg` (símbolo quadrado com fundo azul) fica
+  no repositório como asset reserva, sem uso.
 - **Capas de vaga:** `public/categories/<categoria>.jpg` (Unsplash, 1200×800),
   resolvidas por `src/lib/categoryImages.ts` → `getCategoryImage(category)`.
   O lookup normaliza (trim, minúsculas, sem acento) e cai em

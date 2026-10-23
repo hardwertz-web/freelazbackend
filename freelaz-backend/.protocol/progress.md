@@ -791,3 +791,28 @@ fotos reais por categoria.
 
 **Nao alterados:** logica de busca/filtros, endpoints, schema, migracoes.
 **Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0.
+
+---
+
+## Sessao 31 - Fase 1.3: icone circular no header (logo_f.png)
+
+**Motivo:** o logo quadrado com fundo azul-escuro (Fase 1.2) nao combinava com
+o header; o usuario criou `logo_f.png` (circulo azul com "F" branco) e pediu
+apenas o icone, sem wordmark nem tagline.
+
+**Feito:**
+1. `logo_f.png` (raiz do repo, 1254x1254) copiado para `public/logo_f.png`.
+2. `ScreenHeader`: `<img src="/logo_f.png">` 40x40, `object-fit: contain`,
+   `border-radius: 50%`; removidos o `<span className={styles.brandText}>` e os
+   estilos `.brandText` / `.logo` / `.tagline`. Icone segue a esquerda.
+3. `AuthShell`: mesmo ajuste com 48x48.
+4. `public/logo.jpg` mantido (asset reserva, sem uso).
+5. `.protocol/frontend-spec.md`: tabela de componentes e secao de imagens.
+
+**Observacao:** o PNG e 24bpp (sem canal alfa): o "fundo transparente" veio
+branco solido (~254,254,255). Como header/card sao claros e o circulo ocupa
+~87% do canvas, nao ha diferenca visivel; se o fundo mudar de cor, sera preciso
+recortar/refazer com alfa real.
+
+**Nao alterados:** outras telas, backend, endpoints, schema, logica.
+**Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0.
