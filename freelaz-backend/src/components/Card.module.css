@@ -1,0 +1,16 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 14px;
+}
+
+.flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.plain {
+  box-shadow: none;
+}

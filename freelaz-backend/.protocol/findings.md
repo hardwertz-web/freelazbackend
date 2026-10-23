@@ -814,3 +814,54 @@ para ligar a flag.
   ?1 LEGACY, ?2 NEW + estimativa (10000/25000/25001/100000), ?3 webhook com 2
   lancamentos, ?4 release liquido vs bruto, ?5 carteira liquido vs bruto.
 - Integrado como passo 15/15 da bateria; nenhum teste existente alterado.
+
+---
+
+## 4k. Frontend Fase 1 — contratos usados, decisoes e gaps
+
+### Contratos consumidos (sem alterar nada no backend)
+
+| Tela | Chamada | Observacao |
+|---|---|---|
+| Guard de sessao | `GET /api/auth/me` | layout `(web)` redireciona para `/login` se 401 |
+| Login | `POST /api/auth/login` | cookie `freelaz_session` httpOnly |
+| Cadastro | `POST /api/auth/register` | papel Profissional nasce PENDENTE |
+| Home | `GET /api/jobs?limit=50` | busca/filtros **no cliente** sobre a pagina 1 |
+| Vaga | `GET /api/jobs/[id]` | 404 -> "Vaga nao encontrada" |
+| Perfil | `GET /api/auth/me` + `GET /api/profile/professional` | 409 = papel nao ativado |
+| Carteira | `GET /api/wallet?limit=50` | 403 = papel Profissional inativo |
+| Mensagens | `GET /api/hirings` | filtra `chat.status === "ABERTO"` no cliente |
+
+### Decisoes de produto tomadas para destravar a Fase 1
+
+1. **Tab bar com 5 itens fixos** (Inicio, Buscar, Mensagens, Carteira, Perfil).
+   As referencias mostravam 4 itens em 5 telas e 5 na Carteira (com "Extrato").
+   Padronizado em 5; "Extrato" virou a secao de movimentacoes da Carteira.
+2. **Buscar fundido na Home.** Nao havia imagem da tela de busca. A tab Buscar
+   aponta para `/?focus=search`, foca o campo e mantem a tab ativa.
+3. **Home v1 (funcional) e a canonica.** Havia duas variantes; a com banner
+   hero foi descartada no MVP.
+4. **Sem imagem de vaga.** `JobPosting` nao tem foto; o bloco colorido e um
+   gradiente derivado da categoria (decorativo, nao representa dado).
+5. **"Oportunidades em destaque"** so aparece com `urgentBoost = true` real; as
+   demais vagas vao para "mais recentes".
+6. **Controles de Fase 2 desabilitados** com `title`/nota: sino, favoritar,
+   enviar proposta, editar perfil, depositar/sacar/transferir/historico.
+7. **Sem grafico de ganhos** na Carteira: nao ha serie historica na API.
+8. **Sem contador de nao lidas** em Mensagens: `Chat` nao expoe `unreadCount`
+   (existe `readAt` por mensagem, mas nao ha endpoint de lista de mensagens).
+9. **Sem lista de conversas propria:** `/api/hirings` e a unica fonte; so chats
+   com status `ABERTO` aparecem.
+
+### Gaps/limitacoes conhecidos da Fase 1
+
+- **Paginacao:** a Home carrega 50 vagas e informa "Mostrando as 50 primeiras de
+  N". Com 51 abertas hoje, 1 vaga nao aparece e nao entra na busca client-side.
+- **Busca client-side:** filtra apenas o que foi carregado (sem `?q=` no backend).
+- **Chat:** abrir conversa e enviar mensagem nao existem; as linhas nao navegam.
+- **Perfil:** sem edicao; `profileStrength` e somente leitura.
+- **Carteira:** sem grafico/serie; acoes financeiras desabilitadas.
+- **Documento mascarado:** `GET /api/auth/me` ja devolve o documento mascarado.
+- **Performance:** a Home renderiza ate 50 linhas (sem virtualizacao); aceitavel
+  no MVP, revisar se o volume de vagas crescer.
+

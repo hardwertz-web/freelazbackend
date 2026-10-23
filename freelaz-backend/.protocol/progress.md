@@ -692,3 +692,50 @@ Fase 1a 15 + 1b 8 + 1c 12 + Fase 2 112 + Fase 3 103 + Fase 4 202 + Fase 5 145 (=
 
 **Arquivos criados:** `prisma/migrations/20261023140000_etapa73d_tax_model/migration.sql`, `.tools/test-taxmodel.mjs`, `.tools/test-taxmodel.ps1`.
 **Arquivos alterados:** `prisma/schema.prisma`; `src/lib/commission.ts`; `src/services/hiringService.ts`; `src/services/chargeService.ts`; `src/services/ledgerService.ts`; `src/services/payoutService.ts`; `src/services/walletService.ts`; `src/app/api/webhooks/asaas/route.ts`; `.env.example`; `.tools/run-all-tests.ps1`; `.protocol/{findings.md,progress.md}`.
+
+---
+
+## Sessao 28 - Frontend Fase 1: 7 telas + tab bar (integracao real)
+
+**Objetivo:** entregar o MVP navegavel no mesmo app Next.js 14 (App Router),
+mobile-first (max 430px), consumindo apenas endpoints existentes.
+
+**Feito:**
+1. **Spec:** `.protocol/frontend-spec.md` (paleta, tipografia, componentes,
+   descricao textual das imagens de referencia, rotas, contratos, estados).
+2. **Design system minimo:** `globals.css` (tokens), Poppins via
+   `next/font/google`, `Card`, `Chip`, `Button`, `Badge`, `ScreenHeader`,
+   `BottomTabBar`, `AuthShell` + `Icons` (SVG inline). CSS Modules (sem Tailwind).
+3. **Rotas:** `(web)` com guard de sessao (`/api/auth/me` -> `/login`) + header
+   + tab bar; `login` e `cadastro` fora do grupo (sem tab bar). O `page.tsx`
+   raiz antigo foi removido (conflitava com `(web)/page.tsx`).
+4. **Telas:** Home (busca + chips + filtros + destaques + recentes), Vaga
+   (`/vaga/[id]`), Perfil, Carteira, Mensagens, Login, Cadastro.
+5. **Buscar:** `/buscar` -> `redirect('/?focus=search')`; a Home foca o campo e
+   a tab Buscar fica ativa (`useSearchParams` no tab bar, dentro de Suspense).
+6. **Integracao real:** `/api/jobs`, `/api/jobs/[id]`, `/api/profile/professional`,
+   `/api/wallet`, `/api/hirings`, `/api/auth/{me,login,register,logout}`.
+   Nenhum endpoint alterado; nenhum dado mock.
+7. **Honestidade de UI:** controles de Fase 2 desabilitados com nota (sino,
+   favoritar, enviar proposta, editar perfil, depositar/sacar/transferir/
+   historico, abrir conversa); sem grafico de ganhos; sem requisitos inventados.
+8. **Verificacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0 (58 rotas
+   geradas). Teste manual no browser com o dev server: login/cadastro (sucesso,
+   validacao client e erro 409), guard sem sessao, Home com 50 de 51 vagas,
+   filtro por chip (Seguranca = 1), busca textual (2 de 51), vaga por ID com
+   dados reais, perfil (maria, 65% de forca), carteira (ana, 2 lancamentos),
+   mensagens (ana, 1 chat ABERTO), tab bar com 5 itens e Buscar focando o campo.
+9. **Limitacao tratada:** a lista da Home cortava em 20 itens mas o contador
+   dizia "50 de 51"; o corte de 20 foi removido para o contador refletir a lista.
+
+**Arquivos criados:** `src/app/globals.css`; `src/app/(web)/**`;
+`src/app/login/page.tsx`; `src/app/cadastro/page.tsx`; `src/components/**`
+(inclui `screens/**`); `src/lib/{apiClient,apiTypes,format}.ts`;
+`.protocol/frontend-spec.md`.
+**Alterados:** `src/app/layout.tsx`; `.protocol/{progress,findings}.md`.
+**Removido:** `src/app/page.tsx` (substituido por `(web)/page.tsx`).
+**Nao alterados:** endpoints, schema, migracoes, `src/app/admin/page.tsx`.
+
+**Pendencias (Fase 2):** candidatura, checkout, codigo de turno, avaliacao,
+publicar vaga, notificacoes, abrir/enviar conversa, saque/deposito/transferencia,
+edicao de perfil, paginacao real (>50) e contador de nao lidas.

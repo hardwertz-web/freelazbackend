@@ -1,0 +1,116 @@
+/* Tokens de design do app (Fase 1). Paleta fechada na spec:
+   azul primário, títulos em azul-marinho, fundo cinza-azulado claro. */
+:root {
+  --primary: #0066ff;
+  --primary-dark: #0052cc;
+  --title: #0b1f3b;
+  --muted: #6b7280;
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --selected: #eaf1ff;
+  --positive: #16a34a;
+  --tag: #f97316;
+  --danger: #dc2626;
+  --border: #e5e7eb;
+  --border-strong: #d6dbe3;
+
+  --radius-card: 14px;
+  --radius-btn: 12px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgba(11, 31, 59, 0.04), 0 4px 16px rgba(11, 31, 59, 0.06);
+  --shadow-raised: 0 8px 24px rgba(11, 31, 59, 0.12);
+
+  --maxw: 430px;
+  --tabbar-h: 66px;
+  --header-h: 58px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--title);
+  font-family: var(--font-poppins), "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Scroll horizontal sem barra (fileiras de chips/cards). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
