@@ -101,6 +101,8 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
   const [applyMessage, setApplyMessage] = useState("");
   const [applyError, setApplyError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [selectingId, setSelectingId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -181,11 +183,32 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
     setApplyError(result.error);
   }, [applyMessage, jobId, router]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 2600);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
+  const handleSelect = useCallback(
+    async (applicationId: string) => {
+      setSelectingId(applicationId);
+      setSelectionError(null);
+
+      const result = await apiPost<{
+        selected: boolean;
+        application: { hiring?: { id: string } | null };
+      }>(`/api/jobs/${encodeURIComponent(jobId)}/select`, { applicationId });
+      setSelectingId(null);
+
+      if (result.ok) {
+        const hiringId = result.data.application?.hiring?.id;
+        if (hiringId) {
+          router.push(`/checkout/${encodeURIComponent(hiringId)}`);
+          return;
+        }
+        void load();
+        setToast("Candidato selecionado");
+        return;
+      }
+
+      setSelectionError(result.error);
+    },
+    [jobId, load, router]
+  );
 
   if (loading) {
     return (
@@ -365,9 +388,17 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
 
           {appsLoading && <div className={styles.appsSkeleton} />}
 
-          {!appsLoading && appsError && (
+          {appsError && (
             <Card>
               <div className={styles.body}>{appsError}</div>
+            </Card>
+          )}
+
+          {selectionError && (
+            <Card>
+              <div className={styles.alert} role="alert">
+                {selectionError}
+              </div>
             </Card>
           )}
 
@@ -393,6 +424,10 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
                     : person.city
                   : null;
 
+                const isPending = application.status === "PENDENTE";
+                const isSelected = application.status === "SELECIONADO";
+                const busy = selectingId !== null;
+
                 return (
                   <Card key={application.id}>
                     <div className={styles.applicantRow}>
@@ -413,14 +448,24 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
                         {application.message && (
                           <span className={styles.applicantMessage}>{application.message}</span>
                         )}
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled
-                          title="O perfil público do profissional ainda não tem rota nesta fase"
-                        >
-                          Ver perfil
-                        </Button>
+
+                        {isSelected ? (
+                          <span className={styles.applicantMeta}>
+                            Contratação em andamento — prossiga para o pagamento.
+                          </span>
+                        ) : isPending ? (
+                          <Button
+                            size="sm"
+                            onClick={() => void handleSelect(application.id)}
+                            disabled={busy}
+                          >
+                            {selectingId === application.id ? "Selecionando..." : "Selecionar candidato"}
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="secondary" disabled>
+                            Suplente
+                          </Button>
+                        )}
                       </span>
                     </div>
                   </Card>
