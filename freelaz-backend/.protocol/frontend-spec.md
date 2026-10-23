@@ -59,13 +59,30 @@ saque/depósito/transferência, edição de perfil.
 | `Chip` | `children`, `active`, `onClick`, `count`, `title` — pill, ativo azul sólido |
 | `Button` | `variant` (`primary`/`secondary`/`outline`/`danger`), `block`, `size` (`md`/`sm`), atributos nativos |
 | `Badge` | `children`, `tone` (`primary`/`success`/`tag`/`neutral`/`danger`/`solid`), `icon` |
-| `ScreenHeader` | header persistente: logo "Freelaz" + tagline "Trabalho que conecta.", sino (Fase 2, desabilitado) e avatar → `/perfil` |
+| `ScreenHeader` | header persistente: logo oficial (`/logo.jpg`) + wordmark "Freelaz" + tagline "Trabalho que conecta.", sino (Fase 2, desabilitado) e avatar → `/perfil` |
 | `BottomTabBar` | 5 itens: Início `/`, Buscar `/buscar`, Mensagens `/mensagens`, Carteira `/carteira`, Perfil `/perfil`; ativo em azul, inativo cinza |
 | `Icons` | SVG inline (traço, `currentColor`) — sem biblioteca externa |
-| `AuthShell` | casca de login/cadastro: cartão centrado, marca, título, subtítulo |
+| `AuthShell` | casca de login/cadastro: cartão centrado, logo oficial + marca, título, subtítulo |
 
 Badge "Verificado": fundo `--selected`, texto azul, ícone de escudo
 (`ShieldCheckIcon`).
+
+### Imagens (Fase 1.2)
+
+- **Logo:** `public/logo.jpg` (símbolo quadrado, 1254×1254, fundo azul-escuro).
+  No header tem 32px de altura; no login/cadastro, 40px. O wordmark "Freelaz"
+  e a tagline continuam ao lado (o arquivo não traz o nome escrito).
+- **Capas de vaga:** `public/categories/<categoria>.jpg` (Unsplash, 1200×800),
+  resolvidas por `src/lib/categoryImages.ts` → `getCategoryImage(category)`.
+  O lookup normaliza (trim, minúsculas, sem acento) e cai em
+  `/categories/default.jpg` quando a categoria não tem foto.
+- Categorias com foto: bartender, garcom, diarista, pedreiro, eletricista,
+  encanador, seguranca, eventos, limpeza, construcao, administracao, default.
+- No card de destaque: `object-fit: cover`, 120px de altura; no detalhe: 200px.
+  Overlay `::after` com `rgba(0, 102, 255, 0.1)`. O gradiente antigo fica
+  apenas como fundo de fallback atrás da foto.
+- Sempre `<img>` (não `next/image`), porque as imagens são estáticas locais e
+  não precisam de otimização em runtime.
 
 ## 4. Descrição textual das telas de referência
 

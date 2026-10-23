@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet } from "@/lib/apiClient";
 import type { JobDetail, JobDetailResponse } from "@/lib/apiTypes";
+import { getCategoryImage } from "@/lib/categoryImages";
 import { formatBRL, formatBRLShort, formatShift, humanizeCategory, initials } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -22,7 +23,7 @@ import styles from "./JobDetailScreen.module.css";
 
 const TONES: [string, string][] = [
   ["#0066ff", "#4d94ff"],
-  ["#0b1f3b", "#2c5387"],
+  ["#0b1f44", "#2c5387"],
   ["#16a34a", "#4ade80"],
   ["#f97316", "#fdba74"],
   ["#7c3aed", "#a78bfa"],
@@ -132,6 +133,11 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
       </Link>
 
       <section className={styles.hero} style={{ background: gradientFor(job.category) }}>
+        <img
+          className={styles.heroImage}
+          src={getCategoryImage(job.category)}
+          alt=""
+        />
         <div className={styles.heroTop}>
           <Badge tone="solid">{isOpen ? "Vaga aberta" : job.status}</Badge>
           <button
@@ -144,7 +150,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
             <HeartIcon size={17} />
           </button>
         </div>
-        <div>
+        <div className={styles.heroBody}>
           <span className={styles.heroLabel}>{humanizeCategory(job.category)}</span>
           <h1 className={styles.heroTitle}>{job.title}</h1>
         </div>

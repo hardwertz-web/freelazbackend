@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { apiGet } from "@/lib/apiClient";
 import type { JobCard, JobsResponse } from "@/lib/apiTypes";
+import { getCategoryImage } from "@/lib/categoryImages";
 import { formatBRLShort, formatDay, formatShift, humanizeCategory } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -23,7 +24,7 @@ type SortKey = "RELEVANCIA" | "DATA" | "VALOR";
 
 const TONES: [string, string][] = [
   ["#0066ff", "#4d94ff"],
-  ["#0b1f3b", "#2c5387"],
+  ["#0b1f44", "#2c5387"],
   ["#16a34a", "#4ade80"],
   ["#f97316", "#fdba74"],
   ["#7c3aed", "#a78bfa"],
@@ -344,8 +345,16 @@ export function HomeScreen({ userName }: { userName: string }) {
                 {featured.map((job) => (
                   <Link key={job.id} href={`/vaga/${job.id}`} className={styles.jobCard}>
                     <div className={styles.thumb} style={{ background: gradientFor(job.category) }}>
+                      <img
+                        className={styles.thumbImage}
+                        src={getCategoryImage(job.category)}
+                        alt=""
+                        loading="lazy"
+                      />
                       <span className={styles.thumbLabel}>{humanizeCategory(job.category)}</span>
-                      <Badge tone="solid">Destaque</Badge>
+                      <span className={styles.thumbBadge}>
+                        <Badge tone="solid">Destaque</Badge>
+                      </span>
                     </div>
                     <div className={styles.jobBody}>
                       <span className={styles.jobTitle}>{job.title}</span>
@@ -397,7 +406,12 @@ export function HomeScreen({ userName }: { userName: string }) {
                       style={{ background: gradientFor(job.category) }}
                       aria-hidden="true"
                     >
-                      {humanizeCategory(job.category).slice(0, 1)}
+                      <img
+                        className={styles.rowThumbImage}
+                        src={getCategoryImage(job.category)}
+                        alt=""
+                        loading="lazy"
+                      />
                     </span>
                     <span className={styles.rowBody}>
                       <span className={styles.rowTitle}>{job.title}</span>

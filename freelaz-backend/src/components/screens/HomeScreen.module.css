@@ -199,16 +199,38 @@
 
 .thumb {
   position: relative;
-  height: 76px;
+  height: 120px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 6px;
   padding: 8px 9px;
   color: #fff;
+  overflow: hidden;
+}
+
+/* Camada azul sutil sobre a foto (identidade da marca). */
+.thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgba(0, 102, 255, 0.1);
+  pointer-events: none;
+}
+
+.thumbImage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .thumbLabel {
+  position: relative;
+  z-index: 2;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -217,6 +239,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(11, 31, 68, 0.55);
+}
+
+.thumbBadge {
+  position: relative;
+  z-index: 2;
 }
 
 .jobBody {
@@ -293,15 +321,25 @@
 }
 
 .rowThumb {
+  position: relative;
   width: 52px;
   height: 52px;
   border-radius: 11px;
   flex: none;
+  overflow: hidden;
   display: grid;
   place-items: center;
   color: #fff;
   font-size: 15px;
   font-weight: 700;
+}
+
+.rowThumbImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .rowBody {

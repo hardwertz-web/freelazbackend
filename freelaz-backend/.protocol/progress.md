@@ -761,3 +761,33 @@ identidade final e Montserrat, `#0B1F44` e `#E8EEF7`.
 **Observacao:** os gradientes decorativos de `HomeScreen`/`JobDetailScreen`
 ainda usam o hex antigo `#0B1F3B` dentro do TSX; como a tarefa proibia mexer em
 componentes, foi mantido (diferenca visual imperceptivel).
+
+---
+
+## Sessao 30 - Fase 1.2: imagens por categoria + logo + fix gradiente
+
+**Motivo:** as vagas nao tem imagem no backend; o card/detalhe usava um
+gradiente por categoria. O usuario forneceu o logo oficial em JPEG e pediu
+fotos reais por categoria.
+
+**Feito:**
+1. `public/` criada (nao existia) e `logo.jpeg` (raiz do backend, 1254x1254,
+   fundo azul-escuro, so o simbolo) copiado para `public/logo.jpg`.
+2. `src/lib/categoryImages.ts`: `getCategoryImage(category)` normaliza
+   (trim, minusculas, sem acento) e mapeia 11 categorias; fallback
+   `/categories/default.jpg`.
+3. `public/categories/`: 12 JPEGs 1200x800 baixados do Unsplash (11 categorias
+   + default). Nenhuma falha.
+4. `HomeScreen`: card de destaque e thumbnail da lista passam a usar `<img>`
+   com `object-fit: cover` (120px no destaque); overlay `::after`
+   `rgba(0,102,255,.1)`. Gradiente virou apenas fallback atras da foto.
+5. `JobDetailScreen`: hero com `<img>` (200px) + overlay; conteudo em
+   `z-index: 2` (nova classe `heroBody`).
+6. `ScreenHeader` e `AuthShell`: placeholder circular "f" substituido por
+   `<img src="/logo.jpg">` (32px no header, 40px no login); wordmark e tagline
+   mantidos, pois o arquivo e quadrado e nao traz o nome escrito.
+7. Hex antigo `#0B1F3B` -> `#0B1F44` nos dois gradientes de fallback.
+8. `.protocol/frontend-spec.md`: secao "Imagens (Fase 1.2)".
+
+**Nao alterados:** logica de busca/filtros, endpoints, schema, migracoes.
+**Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0.

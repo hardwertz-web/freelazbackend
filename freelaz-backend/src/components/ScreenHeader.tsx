@@ -14,9 +14,9 @@ export function ScreenHeader({ userName }: { userName: string }) {
   return (
     <header className={styles.header}>
       <div className={styles.brand}>
-        <span className={styles.mark} aria-hidden="true">
-          f
-        </span>
+        {/* Logo oficial (public/logo.jpg). O JPEG é quadrado (símbolo), então o
+            wordmark "Freelaz" + tagline continuam ao lado. */}
+        <img src="/logo.jpg" alt="Freelaz" className={styles.logoImage} />
         <span className={styles.brandText}>
           <span className={styles.logo}>Freelaz</span>
           <span className={styles.tagline}>Trabalho que conecta.</span>

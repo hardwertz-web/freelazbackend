@@ -28,18 +28,12 @@
   margin-bottom: 16px;
 }
 
-.mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--primary), #3d8bff);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 21px;
-  font-weight: 700;
-  line-height: 1;
-  box-shadow: 0 8px 18px rgba(0, 102, 255, 0.28);
+.logoImage {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 10px;
+  flex: none;
 }
 
 .brandText {
