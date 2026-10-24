@@ -201,6 +201,24 @@ tentativas/2,5 min); então redireciona para `/mensagens/[hiringId]`. Ao estoura
 o prazo: "Pagamento não confirmado. Verifique seu banco." + "Já paguei". 503 =
 "Asaas não configurado" → "Pagamento indisponível no momento" + retry.
 
+### 4.7.3 Código de turno (na conversa)
+
+Card fixo (`position: sticky`) logo abaixo do cabeçalho da conversa, visível em
+`RETIDO` e `EM_ANDAMENTO`:
+
+- **Profissional:** código de 6 dígitos em destaque (23px, espaçado) + "Copiar"
+  e a instrução "Mostre este código à empresa no início/fim do turno".
+- **Empresa:** campo numérico de 6 dígitos + "Confirmar código" (só habilita com
+  6 dígitos) e a instrução "Peça o código ao profissional...".
+- **Código ainda não gerado:** "Disponível a partir de {1h antes de
+  início/fim}" e a explicação de que a geração é automática 1h antes.
+- **Estados finais:** "Serviço concluído em {data}", "Contratação cancelada",
+  e avisos neutros para `EM_DISPUTA`/`LIBERADO`.
+- Erros da API aparecem inline (`role="alert"`): "Código incorreto" e o aviso
+  de bloqueio após 5 tentativas (input e botão desabilitados).
+- O polling de 5s da conversa busca também `GET /api/hirings/[id]`, então a
+  transição de turno aparece sem reload.
+
 ### 4.8 Tab bar
 
 Barra fixa inferior com 5 itens (Início, Buscar, Mensagens, Carteira, Perfil),
@@ -250,11 +268,14 @@ usa Tailwind).
 | Perfil | `GET /api/auth/me` + `GET /api/profile/professional` | 409 = papel não ativado (estado próprio) |
 | Carteira | `GET /api/wallet?limit=50` | 403 = papel Profissional inativo (estado próprio) |
 | Mensagens | `GET /api/hirings` | chats `ABERTO` e `ENCERRADO`; `AGUARDANDO_PAGAMENTO` fica fora |
-| Vaga — candidatura | `POST /api/jobs/[id]/apply` | **sem body** (o modelo `Application` não tem mensagem); 201/409 |
+| Vaga — candidatura | `POST /api/jobs/[id]/apply` | `{ message? }` (1–500 chars; vazio = sem mensagem); 201/409 |
 | Conversa | `GET /api/hirings/[id]/chat` | histórico cronológico + status; 404 = oculto/sem acesso |
-| Conversa — cabeçalho | `GET /api/hirings/[id]` | nome da contraparte e vaga |
+| Conversa — cabeçalho | `GET /api/hirings/[id]` | contraparte, vaga, status, códigos e datas do turno |
 | Conversa — enviar | `POST /api/hirings/[id]/chat/messages` | `{ body }`; 409 = chat encerrado |
 | Conversa — lidas | `PATCH /api/hirings/[id]/chat/messages/read` | ao abrir e ao chegar mensagem nova |
+| Seleção | `POST /api/jobs/[id]/select` | `{ applicationId }` → cria Hiring `AGUARDANDO_PAGAMENTO` |
+| Pagamento | `POST /api/payments/create` | `{ hiringId }` → QR/copia-e-cola; 503 sem Asaas; 409 fora de `AGUARDANDO_PAGAMENTO` |
+| Turno — confirmar | `POST /api/hirings/[id]/codes` | `{ kind: "OPENING"\|"CLOSING", code }`; só a empresa (403); 422 regra/limite |
 
 Nenhum endpoint foi criado ou alterado. Nenhum dado mock: tudo vem do backend.
 

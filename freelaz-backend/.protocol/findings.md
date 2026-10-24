@@ -969,4 +969,42 @@ gitignored — ajuste local, nenhum codigo/commit envolvido.
 - Sem estado previo de "ja candidatado" ao abrir a vaga (depende de mudanca no
   contrato de `GET /api/jobs/[id]`).
 
+## 4n. Frontend Fase 2.3a — codigo de turno
+
+### Contratos consumidos
+
+| Acao | Chamada | Contrato real |
+|---|---|---|
+| Consultar | `GET /api/hirings/[id]` | `openingCode`, `closingCode`, `closingCodeUsedAt`, `completedAt`, `side`, `jobPosting.startsAt/endsAt` — para as duas partes |
+| Confirmar | `POST /api/hirings/[id]/codes` | body `{ kind: "OPENING" \| "CLOSING", code }`; 200 `{ hiring: {...} }`; 403 se nao for CONTRACTOR; 400 body; 422 regra/limite |
+
+### Decisoes
+
+1. **Card dentro da conversa** (`ShiftCodeCard`, `position: sticky`), porque o
+   chat ja tem o polling de 5s e e onde as duas partes estao.
+2. **Quem mostra x quem confirma** pela `hiring.side` que a API devolve:
+   profissional recebe o codigo em destaque + Copiar; empresa recebe o input.
+   A autorizacao real continua no backend (403); a tela nao cria regra propria.
+3. **"Janela aberta" = o codigo existir**, nao um intervalo calculado no
+   cliente. O backend nao valida horario na confirmacao; o horario so decide a
+   geracao (55-65 min antes). Mostrar "janela encerrada" seria inventar regra.
+4. **Fora da janela**: "Disponivel a partir de {startsAt|endsAt - 1h}"; se essa
+   hora ja passou e o codigo ainda e null, "O codigo ainda nao foi liberado".
+5. **Polling** reaproveitado: cada tick busca chat + hiring em paralelo;
+   transicoes de status trocam o card sem reload.
+6. **Bloqueio**: a mensagem 422 com "bloqueado apos N tentativas" desabilita
+   input/botao na hora; nao ha contador local (o servidor e a fonte).
+7. O codigo nunca vai para console/log.
+
+### Gaps/limitacoes
+
+- **Carteira nao reflete o hiring de teste**: o fluxo 2.2 simulou o pagamento
+  direto no status, sem ledger/retencao (`recordRetention`); o repasse e job
+  semanal (`weekly-payout`), fora desta fase. Nada de dinheiro foi movido.
+- Nao ha contagem regressiva nem "expirou": ver decisao 3.
+- O reverso (`CONCLUIDO -> EM_ANDAMENTO`) nao existe no backend (so via
+  disputa); o teste do bloqueio exigiu reset manual e foi restaurado.
+- Avaliacao (2.3b) e publicar vaga (2.3c) seguem pendentes; a avaliacao libera
+  2h depois de `closingCodeUsedAt` (`isEvaluationUnlocked`).
+
 

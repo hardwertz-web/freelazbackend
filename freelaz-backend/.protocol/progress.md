@@ -968,3 +968,68 @@ ao fluxo da empresa sem alterar backend/schema.
 **Env (nao versionado):** `.env` precisava de `ASAAS_API_KEY="\$aact_..."`;
 sem o escape, o `@next/env` tratava `$aact_...` como referencia de variavel e
 apagava a chave — o create respondia 503 mesmo com a chave "preenchida".
+
+---
+
+## Sessao 35 - Fase 2.3a: codigo de turno (abertura + fechamento)
+
+**Motivo:** consumir `POST /api/hirings/[id]/codes` na conversa, sem tocar em
+backend/schema.
+
+**Contratos reais verificados:**
+- `POST /api/hirings/[id]/codes` body `{ kind: "OPENING" | "CLOSING", code }`.
+  200 `{ hiring: { id, status, openingCode, closingCode, closingCodeUsedAt } }`.
+  `403` se `side !== CONTRACTOR`; `400` body invalido; `422` para codigo
+  errado/codigo nao gerado/limite/bloqueio.
+- `GET /api/hirings/[id]` devolve `openingCode`, `closingCode`,
+  `closingCodeUsedAt`, `completedAt`, `side` e `jobPosting.startsAt/endsAt`
+  para AS DUAS partes.
+- So a empresa confirma (backend valida; profissional recebe 403). O
+  profissional mostra o codigo.
+- Geracao por job periodico 55-65 min antes de `startsAt`/`endsAt` (1h). **Nao
+  existe janela de expiracao na confirmacao**: se o codigo existe, vale.
+- `MAX_CODE_ATTEMPTS = 5` falhas por tipo bloqueiam o canal.
+
+**Feito:**
+1. `ShiftCodeCard` (novo) no topo da conversa (`position: sticky`), exibido a
+   partir de `hiring`:
+   - `RETIDO` + codigo gerado: profissional ve o codigo em destaque + Copiar;
+     empresa ve input de 6 digitos + "Confirmar codigo" (usa `hiring.side`).
+   - `RETIDO` sem codigo: "Disponivel a partir de {startsAt - 1h}".
+   - `EM_ANDAMENTO`: idem com `closingCode`/`endsAt`.
+   - `CONCLUIDO`: "Servico concluido em {completedAt}"; `CANCELADO`:
+     "Contratacao cancelada"; `EM_DISPUTA`/`LIBERADO`: aviso neutro.
+2. `ChatScreen` passou a guardar o `hiring` completo e o polling de 5s busca
+   `GET /api/hirings/[id]` junto com o chat (transicoes sem reload).
+3. Erros: mensagem da API em `role="alert"`; "bloqueado apos 5 tentativas"
+   desabilita input/botao.
+4. `apiTypes.ts`: `HiringDetailResponse` completado (codes, datas, valores) e
+   novo `HiringCodeResponse`.
+
+**Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0
+(`/mensagens/[hiringId]` 6,71 kB).
+
+**E2E manual (dev, dados preparados no banco):**
+- Hiring `cmvlssfes0004pw0b7ncgkccm` (Ana x CB), `startsAt=+1h`,
+  `openingCode=482913`, chat ABERTO.
+- Profissional: card sticky "Codigo de abertura / 482913 / Copiar", 0 inputs;
+  copia validada (clipboard capturou 482913).
+- Empresa confirmou abertura em sessao separada -> `EM_ANDAMENTO`; a aba do
+  profissional trocou para "Codigo de fechamento" no polling seguinte, sem
+  reload.
+- `closingCode=731564`, `endsAt=+1h`: codigo apareceu na aba do profissional
+  automaticamente.
+- Empresa (input): codigo errado -> "Codigo incorreto" inline; codigo certo ->
+  `CONCLUIDO` em ~1s, card "Servico concluido em 24 de out, 00:17", sem codigo
+  no DOM.
+- Limite: 5 falhas semeadas -> mensagem de bloqueio exibida, input e botao
+  desabilitados. Estado restaurado depois.
+- `CANCELADO` (mock) -> card "Contratacao cancelada"; restaurado para
+  `CONCLUIDO`.
+- Carteira da Ana (`GET /api/wallet`) responde 200 (`aReceberCents`,
+  `disponivelCents`); o hiring de teste nao entra no extrato porque o
+  "pagamento" da 2.2 foi mock e nao gerou ledger/retencao (ver findings 4n).
+
+**Nao alterados:** backend, schema, endpoints, Home, Carteira, avaliacao,
+publicar vaga. Mensagens mudou so na conversa (card pedido nesta fase).
+

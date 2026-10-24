@@ -9,6 +9,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ChevronLeftIcon, SendIcon } from "@/components/Icons";
+import { ShiftCodeCard } from "@/components/ShiftCodeCard";
 import styles from "./ChatScreen.module.css";
 
 /** Polling (decisão do produto): sem WebSocket, busca a cada 5s. */
@@ -39,6 +40,7 @@ function statusLabel(status: string | null): string {
 export function ChatScreen({ hiringId }: { hiringId: string }) {
   const [counterpart, setCounterpart] = useState<{ name: string; tradeName: string | null } | null>(null);
   const [jobTitle, setJobTitle] = useState("");
+  const [hiring, setHiring] = useState<HiringDetailResponse["hiring"] | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +80,7 @@ export function ChatScreen({ hiringId }: { hiringId: string }) {
     if (hiringResult.ok) {
       setCounterpart(hiringResult.data.hiring.counterpart);
       setJobTitle(hiringResult.data.hiring.jobTitle);
+      setHiring(hiringResult.data.hiring);
     }
 
     setStatus(chatResult.data.chat.status);
@@ -93,28 +96,35 @@ export function ChatScreen({ hiringId }: { hiringId: string }) {
     void load();
   }, [load, reloadKey]);
 
-  // Polling silencioso: não mexe no alfa/loading da tela.
+  // Polling silencioso: não mexe no alfa/loading da tela. Busca também o
+  // hiring para refletir transições de turno (RETIDO → EM_ANDAMENTO →
+  // CONCLUIDO) no card de código sem reload.
   const refresh = useCallback(async () => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
 
-    const result = await apiGet<ChatResponse>(`${base}/chat`);
+    const [chatResult, hiringResult] = await Promise.all([
+      apiGet<ChatResponse>(`${base}/chat`),
+      apiGet<HiringDetailResponse>(base),
+    ]);
     inFlightRef.current = false;
 
-    if (!result.ok) {
-      if (result.status === 404) setNotAvailable(true);
+    if (hiringResult.ok) setHiring(hiringResult.data.hiring);
+
+    if (!chatResult.ok) {
+      if (chatResult.status === 404) setNotAvailable(true);
       return;
     }
 
-    setStatus(result.data.chat.status);
+    setStatus(chatResult.data.chat.status);
     setMessages((previous) => {
-      const next = result.data.messages;
+      const next = chatResult.data.messages;
       const same =
         next.length === previous.length && next.every((message, index) => message.id === previous[index].id);
       return same ? previous : next;
     });
 
-    if (result.data.messages.some((message) => !message.mine && !message.readAt)) {
+    if (chatResult.data.messages.some((message) => !message.mine && !message.readAt)) {
       void markRead();
     }
   }, [base, markRead]);
@@ -230,6 +240,16 @@ export function ChatScreen({ hiringId }: { hiringId: string }) {
           </Badge>
         </div>
       </div>
+
+      {hiring && (
+        <ShiftCodeCard
+          hiring={hiring}
+          onUpdated={(patch) => {
+            setHiring((previous) => (previous ? { ...previous, ...patch } : previous));
+            void refresh();
+          }}
+        />
+      )}
 
       <div className={styles.messages} aria-live="polite">
         {messages.length === 0 ? (

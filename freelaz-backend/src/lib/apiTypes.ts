@@ -158,13 +158,23 @@ export type ChatResponse = {
   nextBefore: string | null;
 };
 
-/** GET /api/hirings/:id — usado só para o cabeçalho da conversa. */
+/**
+ * GET /api/hirings/:id — cabeçalho da conversa + dados do turno.
+ *
+ * Os códigos de turno saem para AMBAS as partes ("não são segredo entre as
+ * partes" — ver a rota). Quem digita é sempre a empresa: o POST devolve 403
+ * para o profissional (codeService/route).
+ */
 export type HiringDetailResponse = {
   hiring: {
     id: string;
     status: string;
     jobTitle: string;
     side: "CONTRACTOR" | "PROFESSIONAL";
+    grossValueCents: number;
+    netValueCents: number;
+    createdAt: string;
+    completedAt: string | null;
     counterpart: {
       id: string;
       name: string;
@@ -172,12 +182,34 @@ export type HiringDetailResponse = {
       city: string | null;
       state: string | null;
     };
+    jobPosting: {
+      id: string;
+      title: string;
+      category: string;
+      startsAt: string;
+      endsAt: string;
+      status: string;
+    };
+    openingCode: string | null;
+    closingCode: string | null;
+    closingCodeUsedAt: string | null;
     chat: {
       id: string;
       status: ChatStatus;
       openedAt: string | null;
       closedAt: string | null;
     } | null;
+  };
+};
+
+/** Resposta de POST /api/hirings/:id/codes (só a empresa confirma). */
+export type HiringCodeResponse = {
+  hiring: {
+    id: string;
+    status: string;
+    openingCode: string | null;
+    closingCode: string | null;
+    closingCodeUsedAt: string | null;
   };
 };
 
