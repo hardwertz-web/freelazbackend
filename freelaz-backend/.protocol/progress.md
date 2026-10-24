@@ -904,3 +904,67 @@ endpoints que o backend ja expunha (sem tocar em backend/schema).
 **Nao alterados:** backend, schema, endpoints, Home, Carteira, favoritar.
 **Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0 (rota
 `/mensagens/[hiringId]` gerada).
+
+---
+
+## Sessao 34 - Fase 2.2: selecao de candidato + checkout Pix
+
+**Motivo:** conectar `POST /api/jobs/[id]/select` e `POST /api/payments/create`
+ao fluxo da empresa sem alterar backend/schema.
+
+**Contratos reais verificados:**
+- `POST /api/jobs/[id]/select` body `{ applicationId }`. Response
+  `{ selected: true, application: { ..., hiring: { id } } }`. Ao selecionar,
+  o service marca o escolhido como SELECIONADO, os demais PENDENTES viram
+  SUPLENTE e cria um Hiring em AGUARDANDO_PAGAMENTO (idempotente).
+- `POST /api/payments/create` body `{ hiringId }`. Response
+  `{ paymentId, status, pix: { qrCodeBase64, payload, expirationDate } | null, alreadyCreated? }`.
+  Reutiliza cobrança vigente; 503 = Asaas sem API key ou indisponivel; 409 se
+  ja nao esta AGUARDANDO_PAGAMENTO; 403 so dono; 400/404/422 conforme regras.
+- `GET /api/hirings/[id]` devolve `hiring.status`. Pagamento confirmado -> status
+  sai de AGUARDANDO_PAGAMENTO (ex.: RETIDO/EM_ANDAMENTO) e o chat e liberado.
+
+**Feito:**
+1. **Selecao (JobDetailScreen):** em "Propostas recebidas", botao "Selecionar
+   candidato" para PENDENTES (loading por card), sucesso redireciona para
+   `/checkout/[hiringId]` via `hiring.id` da resposta, 409/erros em `role="alert"`,
+   selecionado mostra "Contratacao em andamento — prossiga para o pagamento",
+   demais PENDENTES/NAO escolhidos viram "Suplente" desabilitado.
+2. **Checkout:** nova rota `src/app/(web)/checkout/[hiringId]/page.tsx` +
+   `CheckoutScreen.tsx`. POST `/api/payments/create` ao montar, QR Code base64
+   + "Pix copia e cola" com "Copiar codigo Pix", polling de 5s a `GET /api/hirings/[id]`
+   (ate status != AGUARDANDO_PAGAMENTO, max 30 tentativas = 2,5 min), redirect
+   para `/mensagens/[hiringId]` ao sair de AGUARDANDO_PAGAMENTO, 503 mostra
+   "Pagamento indisponivel no momento" + "Tentar novamente", ja pago ao montar
+   pula direto ao chat, timeout com "Pagamento nao confirmado. Verifique seu banco."
+   + "Ja paguei" (GET unico).
+3. `CopyIcon` adicionado.
+
+**Validacao:** `npx tsc --noEmit` exit 0; `npm run build` exit 0 (rota
+`/checkout/[hiringId]` gerada: 5,04 kB).
+
+**E2E manual (dev, Asaas Sandbox):**
+- Empresa `cb-empresa-1215368@exemplo.com` abriu `/vaga/cmvjo4l9q005npvstrtmc9fh4`
+  e clicou "Selecionar candidato" em Ana Souza -> Hiring
+  `cmvlssfes0004pw0b7ncgkccm` (AGUARDANDO_PAGAMENTO) + redirect imediato para
+  `/checkout/...`.
+- `POST /api/payments/create` 200: `paymentId=pay_u9qvm2kevx6rwz0x`,
+  `status=PENDING`, `pix.qrCodeBase64` (1124 chars), `payload` (190 chars),
+  `expirationDate`. QR renderizou em `<img src="data:image/png;base64,...">`
+  450x450 natural (220x220 exibido); "Copiar codigo Pix" copiou 190 chars.
+- Polling real: GET `/api/hirings/<id>` a cada ~5s (log do dev server).
+- Pagamento simulado (efeito do webhook replicado no banco: hiring -> RETIDO com
+  `providerPaymentId` do sandbox, vaga -> PREENCHIDA, chat -> ABERTO): a tela
+  redirecionou para `/mensagens/<id>` em 3,6s; chat abriu com "Chat aberto",
+  input habilitado e estado vazio.
+- Reentrada no `/checkout` de hiring ja pago: `create` devolve 409 -> a tela
+  carrega o status e redireciona ao chat (12s, incluindo compilacao).
+- Erro de regra na selecao: candidatura PENDENTE em vaga com hiring ativo ->
+  API 422 "Esta vaga ja tem uma contratacao em andamento"; a UI exibiu a
+  mensagem em `role="alert"` e permaneceu na vaga (dado de teste removido).
+- 503: a tela mostrou "Pagamento indisponivel no momento" + "Tentar novamente"
+  (ver findings 4m.1).
+
+**Env (nao versionado):** `.env` precisava de `ASAAS_API_KEY="\$aact_..."`;
+sem o escape, o `@next/env` tratava `$aact_...` como referencia de variavel e
+apagava a chave — o create respondia 503 mesmo com a chave "preenchida".

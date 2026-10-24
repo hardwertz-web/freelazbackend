@@ -833,6 +833,8 @@ para ligar a flag.
 | Mensagens | `GET /api/hirings` | chats `ABERTO` + `ENCERRADO` no cliente |
 | Candidatura | `POST /api/jobs/[id]/apply` | `{}` (sem body util); 201/409 |
 | Conversa | `GET /api/hirings/[id]/chat` + `POST .../chat/messages` + `PATCH .../messages/read` | Fase 2.1 |
+| Selecao | `POST /api/jobs/[id]/select` | `{ applicationId }` -> cria Hiring AGUARDANDO_PAGAMENTO |
+| Pagamento | `POST /api/payments/create` + `GET /api/hirings/[id]` | Pix QR/copia-e-cola, polling 5s, redirect ao chat |
 
 ### Decisoes de produto tomadas para destravar a Fase 1
 
@@ -870,6 +872,56 @@ para ligar a flag.
 - **Documento mascarado:** `GET /api/auth/me` ja devolve o documento mascarado.
 - **Performance:** a Home renderiza ate 50 linhas (sem virtualizacao); aceitavel
   no MVP, revisar se o volume de vagas crescer.
+
+## 4m. Frontend Fase 2.2 — selecao de candidato e checkout Pix
+
+### Contratos consumidos
+
+| Acao | Chamada | Contrato real |
+|---|---|---|
+| Selecionar | `POST /api/jobs/[id]/select` | body `{ applicationId }`; 200 `{ selected, application }` com `application.hiring.id`; 403/404; regras de negocio (vaga fechada, hiring ativo) -> 422 |
+| Cobranca | `POST /api/payments/create` | body `{ hiringId }`; `{ paymentId, status, pix: { qrCodeBase64, payload, expirationDate } \| null, alreadyCreated? }`; 503 sem Asaas; 409 status != AGUARDANDO_PAGAMENTO |
+| Status | `GET /api/hirings/[id]` | `hiring.status`; sai de AGUARDANDO_PAGAMENTO quando o webhook confirma |
+
+### Decisoes
+
+1. **`hiringId` vem da propria resposta da selecao** (`application.hiring.id`),
+   sem endpoint extra. Se faltar, a tela recarrega a vaga e mostra toast.
+2. **QR Code e base64 puro** (`qrCodeBase64`), renderizado como
+   `data:image/png;base64,...` em `<img>` (sem `next/image`, como na Fase 1.2).
+   O texto `payload` alimenta o "Pix copia e cola". Nada e logado.
+3. **"Pago" = status diferente de AGUARDANDO_PAGAMENTO.** O checkout nao depende
+   de `providerPaymentId`; quem muda o status e o webhook do Asaas.
+4. **Polling maximo de 30 tentativas** (5s = 2,5 min). Ao estourar, para e mostra
+   "Pagamento nao confirmado. Verifique seu banco." + "Ja paguei" (GET unico).
+5. **409 do create** e tratado como "ja saiu de AGUARDANDO_PAGAMENTO": a tela
+   recarrega o status e entra no polling, em vez de mostrar erro.
+6. **503/erro do provedor** tem estado proprio ("Pagamento indisponivel no
+   momento") com retry; nenhuma cobranca e inventada no cliente.
+7. **Dono da vaga nao ve CTA de candidatura** (desde a 2.1.1) e agora ve
+   "Selecionar candidato" apenas em candidaturas PENDENTES; as demais mostram
+   "Suplente" desabilitado (o backend tambem converte PENDENTES em SUPLENTE).
+
+### Gaps/limitacoes
+
+- Sem tela de "pagamento aprovado" intermediaria: o redirect e direto ao chat.
+- Sem contagem regressiva do QR (a API devolve `expirationDate`, exibido como
+  texto apenas nao; fica para uma proxima fase).
+- Selecao nao tem confirmacao em modal: um clique ja cria o Hiring
+  (AGUARDANDO_PAGAMENTO). Cancelar depois exige o fluxo de cancelamento, que
+  ainda nao esta no frontend.
+
+### 4m.1 Pitfall de ambiente: `$` em `ASAAS_API_KEY`
+
+`@next/env` expande `$VAR` nos valores do `.env`. Com
+`ASAAS_API_KEY="$aact_hmlg_..."` (sem escape) a chave vira string vazia em
+runtime: `POST /api/payments/create` responde 503 ("nao configurado") mesmo
+com a credencial visivelmente preenchida. Correto: `ASAAS_API_KEY="\$aact_..."`.
+O proprio `.env` documenta o procedimento; o sintoma engana porque
+`GET`/`Content` da linha parecem normais. Confirmado com
+`loadEnvConfig()` (chave presente=false antes, len=166 depois). `.env` e
+gitignored — ajuste local, nenhum codigo/commit envolvido.
+
 
 ## 4l. Frontend Fase 2.1 — candidatura e chat
 

@@ -134,10 +134,16 @@ calendário ("Sábado, 18:00 – 02:00") e localização com pino. Três métric
 cards: candidaturas, empresa verificada, visibilidade. Cards "Sobre a vaga"
 (descrição real), "Pagamento" (valor + aviso de retenção até a conclusão) e
 "Sobre a empresa" (avatar com iniciais, nome/razão social, selo e local).
-Botão primário "Enviar proposta" abre um modal de confirmação (campo "Mensagem
-(opcional)" desabilitado — a API de candidatura não aceita texto) e chama
-`POST /api/jobs/[id]/apply`. Em caso de sucesso: toast "Proposta enviada" e
-retorno para a Home; duplicata (409) desabilita o botão como "Proposta enviada".
+Botão primário "Enviar proposta" abre um modal de confirmação com o campo
+"Mensagem (opcional)" (até 500 caracteres, com contador; vazio = sem mensagem)
+e chama `POST /api/jobs/[id]/apply` com `{ message }`. Em caso de sucesso:
+toast "Proposta enviada" e retorno para a Home; duplicata (409) desabilita o
+botão como "Proposta enviada".
+
+Dono da vaga: a seção "Propostas recebidas (N)" lista as candidaturas com nome,
+status, mensagem e data. Candidaturas PENDENTES têm "Selecionar candidato"
+(`POST /api/jobs/[id]/select`); o sucesso leva a `/checkout/[hiringId]`. As
+demais aparecem como "Suplente" (o backend converte as PENDENTES restantes).
 
 ### 4.5 Perfil
 
@@ -182,6 +188,18 @@ está ABERTO, com aviso "Conversa encerrada"). Histórico via
 `GET /api/hirings/[id]/chat`, envio via `POST .../chat/messages`, polling de 5s
 (sem WebSocket) e `PATCH .../chat/messages/read` ao abrir/ao chegar mensagem
 nova. Chat oculto/inexistente (404) → "Conversa não disponível".
+
+### 4.7.2 Checkout Pix (`/checkout/[hiringId]`)
+
+Cabeçalho "Checkout Pix" + vaga. Card com valor total, card do QR Code
+(`data:image/png;base64,` de `pix.qrCodeBase64`) com instrução "Abra o app do
+seu banco e escaneie o QR Code", campo "Pix copia e cola" (monoespaçado, com
+"Copiar código Pix") e card de status "Aguardando confirmação do pagamento...".
+Chama `POST /api/payments/create` ao montar e faz polling de 5s em
+`GET /api/hirings/[id]` até o status sair de `AGUARDANDO_PAGAMENTO` (máx. 30
+tentativas/2,5 min); então redireciona para `/mensagens/[hiringId]`. Ao estourar
+o prazo: "Pagamento não confirmado. Verifique seu banco." + "Já paguei". 503 =
+"Asaas não configurado" → "Pagamento indisponível no momento" + retry.
 
 ### 4.8 Tab bar
 
