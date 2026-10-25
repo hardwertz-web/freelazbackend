@@ -5,10 +5,27 @@
  * rotas rejeitarem exatamente as mesmas entradas.
  */
 
+/**
+ * Modalidades aceitas (Fase 2.3c). No banco é `String` de propósito: migrar
+ * para enum depois é uma mudança aditiva, sem reescrever o histórico.
+ * PRESTADORA é aceita pela API, mas ainda não tem aba visível no MVP.
+ */
+export const JOB_MODALITIES = ["FREELANCE", "CLT", "PRESTADORA"] as const;
+
+export type JobModality = (typeof JOB_MODALITIES)[number];
+
+/** Modalidade usada quando o cliente não envia nada (schema tem o mesmo default). */
+export const DEFAULT_JOB_MODALITY: JobModality = "FREELANCE";
+
+export function isJobModality(value: string): value is JobModality {
+  return (JOB_MODALITIES as readonly string[]).includes(value);
+}
+
 export type JobFields = {
   title: string;
   description: string;
   category: string;
+  modality: JobModality;
   valueCents: number;
   startsAt: Date;
   endsAt: Date;
@@ -80,6 +97,22 @@ export function parseJobFields(
       return { ok: false, error: "Categoria é obrigatória" };
     }
     data.category = category;
+  }
+
+  if (!partial || has("modality")) {
+    const raw = text(body.modality).toUpperCase();
+    if (!raw) {
+      // Ausente na criação → FREELANCE. No PATCH, campo enviado vazio é erro.
+      if (partial) return { ok: false, error: "Modalidade inválida" };
+      data.modality = DEFAULT_JOB_MODALITY;
+    } else if (isJobModality(raw)) {
+      data.modality = raw;
+    } else {
+      return {
+        ok: false,
+        error: `Modalidade deve ser uma de: ${JOB_MODALITIES.join(", ")}`,
+      };
+    }
   }
 
   if (!partial || has("valueCents")) {

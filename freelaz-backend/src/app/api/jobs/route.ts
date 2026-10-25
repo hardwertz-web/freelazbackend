@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, hasActiveRole } from "@/lib/auth";
-import { parseJobFields } from "@/lib/jobInput";
+import { isJobModality, JOB_MODALITIES, parseJobFields } from "@/lib/jobInput";
 import { jobCard, jobCardSelect } from "@/lib/jobPublic";
 
 const MAX_PAGE_SIZE = 50;
@@ -15,14 +15,25 @@ const MAX_PAGE_SIZE = 50;
  * webhook, não aqui) — por isso este filtro é a fonte da verdade do que o
  * profissional vê.
  *
- * Filtros: q, category, city, state, date (YYYY-MM-DD, fuso de Brasília),
- * minValueCents, maxValueCents, sort, page, limit.
+ * Filtros: q, category, modality, city, state, date (YYYY-MM-DD, fuso de
+ * Brasília), minValueCents, maxValueCents, sort, page, limit.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const q = (searchParams.get("q") ?? "").trim();
   const category = (searchParams.get("category") ?? "").trim().toLowerCase();
+  const modality = (searchParams.get("modality") ?? "").trim().toUpperCase();
+
+  // Modalidade inválida é erro de cliente, não "sem filtro": devolver tudo
+  // esconderia um bug de integração atrás de uma lista plausível.
+  if (modality && !isJobModality(modality)) {
+    return NextResponse.json(
+      { error: `Modalidade deve ser uma de: ${JOB_MODALITIES.join(", ")}` },
+      { status: 422 }
+    );
+  }
+
   const city = (searchParams.get("city") ?? "").trim();
   const state = (searchParams.get("state") ?? "").trim().toUpperCase();
   const date = (searchParams.get("date") ?? "").trim();
@@ -51,6 +62,7 @@ export async function GET(req: NextRequest) {
     ];
   }
   if (category) where.category = category;
+  if (modality) where.modality = modality;
   if (city || state) {
     where.contractor = {
       ...(city ? { city: { equals: city, mode: "insensitive" } } : {}),

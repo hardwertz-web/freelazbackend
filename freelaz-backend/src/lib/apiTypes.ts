@@ -1,11 +1,16 @@
 // Contratos das respostas das APIs que o front consome. Espelham exatamente o
 // que as rotas já devolvem hoje — nenhum endpoint foi alterado (Fase 1).
 
+// Modalidade da vaga (Fase 2.3c). PRESTADORA é aceita pela API, mas ainda sem
+// aba no MVP.
+export type JobModality = "FREELANCE" | "CLT" | "PRESTADORA";
+
 export type JobCard = {
   id: string;
   title: string;
   description: string;
   category: string;
+  modality: JobModality;
   valueCents: number;
   status: string;
   visibility: string;

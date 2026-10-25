@@ -134,6 +134,18 @@ Header persistente (logo + sino + avatar) no layout. Abaixo, na ordem:
 O painel de filtros (cidade, faixa de valor e ordenação por data/valor) fica
 atrás do botão de filtros, preservando a funcionalidade da v1.
 
+Entre as categorias e o carrossel ficam as **abas de modalidade** (Fase 2.3c):
+"Freelance" (ativa por padrão, azul `#0066FF`) e "CLT" (branca/inativa), cada
+uma com o contador real da modalidade ("3 vagas"). Trocar de aba reseta a
+categoria selecionada (os chips vêm da modalidade ativa) e a escolha é lembrada
+em `sessionStorage`. A modalidade PRESTADORA existe na API e no banco, mas não
+tem aba no MVP. Quando a modalidade ativa não tem vagas, o estado vazio diz
+"Nenhuma vaga CLT disponível ainda.".
+
+Para quem tem o papel Contratante ativo, um **FAB circular azul** de 56px fica
+fixo no canto inferior direito, 14px acima da tab bar, com o ícone "+" e
+`aria-label="Publicar vaga"`, levando a `/publicar`.
+
 ### 4.3 Buscar
 
 A rota `/buscar` e a 5ª aba foram removidas na Fase 2.4a. A busca vive na Home,
@@ -241,6 +253,30 @@ Barra fixa inferior com 4 itens (Início, Mensagens, Carteira, Perfil) em
 de 10px. Item ativo em azul com fundo `--selected`; inativos em cinza. A aba
 "Buscar" foi removida na Fase 2.4a (a busca vive na Home).
 
+### 4.9 Publicar vaga (`/publicar`)
+
+Tela nova da Fase 2.3c, fora da navegação principal (só pelo FAB da Home).
+Guard no servidor: sem sessão vai para `/login`; sem o papel Contratante ATIVO
+volta para `/`.
+
+Link "Voltar para as vagas" + título "Publicar vaga" + subtítulo. Um único card
+com: título (3–120), descrição (10–4000, textarea), categoria (select com 18
+categorias conhecidas), valor por dia em reais (só dígitos, convertido para
+centavos), início e fim (`datetime-local`), cidade + UF (select das 27 UFs,
+pré-preenchidos pelo perfil), modalidade (Freelance padrão / CLT) e visibilidade.
+
+A visibilidade mostra "Pública" e "Privada — convite direto (em breve)"
+desabilitada: `POST /api/jobs` grava sempre `PUBLICA` (vaga privada nasce pelo
+fluxo "Me contrate"). A cidade **não** está em `JobPosting`: o formulário faz
+`PUT /api/profile/contractor` com `{ city, state }` antes do POST e a
+localização do anúncio vem do usuário contratante.
+
+Validação no cliente espelha a do backend (obrigatórios, título/descrição com
+tamanho mínimo, valor > 0, fim depois do início) com mensagem por campo e
+`aria-invalid`. Erro da API aparece num bloco `role="alert"`. Sucesso mostra o
+toast "Vaga publicada" e, após ~0,9s, redireciona para `/vaga/[id]` da vaga
+recém-criada.
+
 ## 5. Rotas e arquivos
 
 ```
@@ -252,6 +288,7 @@ src/app/
   (web)/
     layout.tsx                guarda de sessão + ScreenHeader + BottomTabBar
     page.tsx                  Home (Fase 2.4a)
+    publicar/page.tsx         publicar vaga (Fase 2.3c, guard Contratante)
     mensagens/page.tsx
     mensagens/[hiringId]/page.tsx   conversa (Fase 2.1)
     carteira/page.tsx
@@ -260,7 +297,7 @@ src/app/
 src/components/
   Card.tsx / Chip.tsx / Button.tsx / Badge.tsx
   ScreenHeader.tsx / BottomTabBar.tsx / Icons.tsx / AuthShell.tsx
-  screens/{Home,JobDetail,Messages,Chat,Wallet,Profile}Screen.tsx
+  screens/{Home,JobDetail,Messages,Chat,Wallet,Profile,Publish}Screen.tsx
 src/lib/
   apiClient.ts                fetch same-origin com erro tipado
   apiTypes.ts                 contratos das respostas
@@ -277,7 +314,9 @@ usa Tailwind).
 | Sessão/guard | `GET /api/auth/me` | layout `(web)` redireciona para `/login` sem sessão |
 | Login | `POST /api/auth/login` | cookie `freelaz_session` (httpOnly) |
 | Cadastro | `POST /api/auth/register` | papéis `PROFISSIONAL`/`CONTRATANTE` |
-| Home | `GET /api/jobs?limit=50` | busca e filtros **client-side**; `total`/`hasMore` da resposta |
+| Home | `GET /api/jobs?limit=50&modality=FREELANCE\|CLT` | duas chamadas em paralelo (uma por aba); busca e filtros **client-side**; `total`/`hasMore` da resposta |
+| Publicar vaga | `POST /api/jobs` | `{ title, description, category, modality, valueCents, startsAt, endsAt }`; 201/422/403 |
+| Publicar vaga (cidade) | `PUT /api/profile/contractor` | `{ city, state }` — a localização vem do usuário, não da vaga |
 | Vaga | `GET /api/jobs/[id]` | 404 → estado "Vaga não encontrada" |
 | Perfil | `GET /api/auth/me` + `GET /api/profile/professional` | 409 = papel não ativado (estado próprio) |
 | Carteira | `GET /api/wallet?limit=50` | 403 = papel Profissional inativo (estado próprio) |
@@ -291,7 +330,10 @@ usa Tailwind).
 | Pagamento | `POST /api/payments/create` | `{ hiringId }` → QR/copia-e-cola; 503 sem Asaas; 409 fora de `AGUARDANDO_PAGAMENTO` |
 | Turno — confirmar | `POST /api/hirings/[id]/codes` | `{ kind: "OPENING"\|"CLOSING", code }`; só a empresa (403); 422 regra/limite |
 
-Nenhum endpoint foi criado ou alterado. Nenhum dado mock: tudo vem do backend.
+Nenhuma rota de front foi criada ou alterada além de `/publicar` (Fase 2.3c).
+Nenhum dado mock: tudo vem do backend. A Fase 2.3c acrescentou o campo
+`modality` e o filtro `?modality=` em `GET/POST /api/jobs` — nenhum endpoint
+novo.
 
 ## 7. Estados e comportamento
 

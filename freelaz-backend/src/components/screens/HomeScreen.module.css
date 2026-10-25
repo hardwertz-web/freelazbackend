@@ -240,6 +240,52 @@
 }
 
 /* ---------------------------------------------------------------- *
+ * Abas de modalidade (Fase 2.3c)
+ * ---------------------------------------------------------------- */
+
+.modalityTabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.modalityTab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.modalityTab:hover {
+  border-color: var(--border-strong);
+  color: var(--title);
+}
+
+.modalityTabActive,
+.modalityTabActive:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(0, 102, 255, 0.24);
+}
+
+.modalityCount {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* ---------------------------------------------------------------- *
  * Filtros (painel opcional)
  * ---------------------------------------------------------------- */
 
@@ -639,4 +685,55 @@
   100% {
     background-position: -100% 0;
   }
+}
+
+/* ---------------------------------------------------------------- *
+ * FAB "Publicar vaga" (Fase 2.3c)
+ * ---------------------------------------------------------------- */
+
+/* Espaço extra para o FAB não cobrir o fim da lista. */
+.screenWithFab {
+  padding-bottom: 64px;
+}
+
+/* Alinhado ao shell (max-width) como a tab bar, e sempre acima dela. */
+.fabWrap {
+  position: fixed;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--maxw);
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px;
+  pointer-events: none;
+  z-index: 35;
+}
+
+.fab {
+  pointer-events: auto;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(0, 102, 255, 0.38);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.fab:hover {
+  background: #0057d9;
+  transform: translateY(-1px);
+}
+
+.fab:active {
+  transform: scale(0.97);
+}
+
+.fab:focus-visible {
+  outline: 3px solid rgba(0, 102, 255, 0.35);
+  outline-offset: 2px;
 }

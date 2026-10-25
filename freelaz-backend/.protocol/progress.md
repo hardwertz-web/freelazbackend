@@ -1092,3 +1092,67 @@ backend/schema/endpoints.
 **Adiado:** abas Freelance/CLT/Prestadoras, mapa/geo, profissionais em destaque
 e tags de card (ver findings 4o).
 
+---
+
+## Sessao 37 - Fase 2.3c: modality + abas Freelance/CLT + publicar vaga
+
+**Motivo:** modalidade na vaga (campo), duas abas na Home e o primeiro fluxo
+real de publicacao pelo app.
+
+**Feito:**
+1. Schema: `JobPosting.modality String @default("FREELANCE")` e migracao
+   aditiva `20261025025813_etapa23c_modality` (18ª). `prisma format` foi
+   revertido para o arquivo nao virar um diff de 377 linhas; o patch final tem
+   3 linhas. `prisma generate` rodado com o dev server parado.
+2. `src/lib/jobInput.ts`: `JOB_MODALITIES`, `JobModality`,
+   `DEFAULT_JOB_MODALITY`, `isJobModality`; campo `modality` validado no
+   `parseJobFields` (ausente = FREELANCE na criacao; vazio no PATCH = erro).
+3. `src/lib/jobPublic.ts`: `modality` no `jobCardSelect` e no `jobCard`.
+4. `src/lib/apiTypes.ts`: `JobModality` + `JobCard.modality`.
+5. `GET /api/jobs`: `?modality=` validado (422 se invalido) e aplicado no
+   `where`; sem o parametro nada muda. `POST` ja persistia via
+   `...parsed.data`.
+6. `src/lib/apiClient.ts`: `apiPut` (usado para atualizar cidade/UF do perfil).
+7. Home:
+   - abas Freelance/CLT entre categorias e o carrossel, com
+     `role="tablist"`/`tab`/`tabpanel`, contador real por modalidade e
+     `sessionStorage` (`freelaz.home.modality`);
+   - duas chamadas `GET /api/jobs?limit=50&modality=...` em paralelo, para a
+     troca ser instantanea;
+   - estado vazio "Nenhuma vaga CLT disponivel ainda." (e o equivalente
+     Freelance sem filtros);
+   - FAB circular de 56px (`aria-label="Publicar vaga"`), renderizado so com
+     `canPublish` vindo de `hasActiveRole(user, "CONTRATANTE")` em `page.tsx`;
+   - espaco extra no fim da tela quando o FAB existe.
+8. `/publicar`: `page.tsx` com guard de servidor (sem sessao -> `/login`, sem
+   papel -> `/`) e `PublishScreen` com titulo, descricao, categoria, valor,
+   inicio/fim, cidade/UF, modalidade e visibilidade; validacao por campo,
+   `PUT /api/profile/contractor` para cidade/UF, `POST /api/jobs`, toast e
+   redirect para `/vaga/[id]`.
+
+**Validacao no browser (dev, banco real):**
+- Abas: Freelance ativa (`rgb(0,102,255)`/branco) e CLT inativa (branco/cinza);
+  contadores "3 vagas"/"0 vagas" no momento do teste; ao clicar em CLT a
+  mensagem exata aparece e `aria-labelledby` do painel vira `tab-CLT`.
+- Reload e redirect preservam a aba via `sessionStorage`; sem storage o padrao
+  e Freelance.
+- FAB: 56x56, `border-radius: 50%`, `bottom: 80px` (tab bar 66 + 14), alinhado
+  a borda direita do shell; some para a profissional (Ana) e aparece para a
+  empresa.
+- `/publicar` como Ana -> `/`; como empresa abre o formulario com
+  "Itajuba"/"MG" pre-preenchidos.
+- Submit vazio -> 6 erros por campo, nenhuma requisicao.
+- Publicacao CLT -> toast verde "Vaga publicada" e redirect para
+  `/vaga/cmvn93h3q0005sxdfmelx2ylj`; detalhe mostra "Itajuba - MG", R$ 210 e
+  "Sexta-feira, 09:00 – 18:00"; a aba CLT passou a 1 vaga com a nova vaga.
+- API: `?modality=CLT` 0, `?modality=FREELANCE` 2, `?modality=PIX` 422,
+  `?modality=` = sem filtro (4 durante o teste), POST sem modalidade = 201
+  FREELANCE, POST como profissional = 403.
+- As vagas `[TESTE 2.3c]` foram removidas; a base voltou a 2 vagas abertas.
+
+**Build:** `npx tsc --noEmit` exit 0; `npm run build` exit 0, `/publicar` com
+3,14 kB (99,9 kB first load), sem warnings de lint.
+
+**Nao alterados:** checkout, chat, codigo de turno, carteira, mensagens,
+detalhe da vaga. Nenhum dado mock.
+

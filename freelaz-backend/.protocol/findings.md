@@ -1080,4 +1080,88 @@ ficou na tela ou no codigo.
 - A Home carrega no maximo 50 vagas por pagina (`hasMore`); nao ha "carregar
   mais" — o aviso de rodape informa quantas estao sendo mostradas.
 
+## 4p. Fase 2.3c — modalidade, abas Freelance/CLT e publicar vaga
+
+### Escopo entregue
+
+- `JobPosting.modality String @default("FREELANCE")` + 18ª migracao
+  (`20261025025813_etapa23c_modality`). Backfill automatico pelo default; as
+  vagas antigas ficaram FREELANCE.
+- `POST /api/jobs` aceita `modality` (FREELANCE/CLT/PRESTADORA, normalizado
+  para maiusculas); ausente = FREELANCE; invalida = 422. Resposta 201 igual.
+- `GET /api/jobs?modality=X` filtra; sem o parametro o comportamento e
+  identico ao anterior (`?modality=` vazio tambem = sem filtro); invalida =
+  422 em vez de ignorar o filtro.
+- `apiTypes.JobCard.modality` e `jobPublic.jobCard` expoem o campo.
+- Home com abas Freelance (padrao)/CLT, contador real por modalidade, estado
+  vazio "Nenhuma vaga CLT disponivel ainda." e `sessionStorage`.
+- FAB circular azul (56px) acima da tab bar, so para Contratante ativo.
+- `/publicar` com guard de servidor + formulario completo, POST real, toast e
+  redirect para `/vaga/[id]`.
+
+### Desvios do pedido (e por que)
+
+1. **FAB nao olha `/api/auth/me`.** A Home nao carrega esse endpoint; o papel
+   vem de `getCurrentUser()` + `hasActiveRole(user, "CONTRATANTE")` no server
+   component, a mesma fonte do guard de `/publicar`. O resultado visual e o
+   mesmo e nao ha requisicao extra.
+2. **`visibility` nao e enviada.** `POST /api/jobs` grava `PUBLICA` fixo
+   (PRIVADA exige `targetProfessionalId`, fluxo "Me contrate"). O select mostra
+   as duas opcoes, com "Privada" desabilitada e nota explicando.
+3. **Cidade/UF nao estao em `JobPosting`.** O formulario faz
+   `PUT /api/profile/contractor { city, state }` antes do POST; a localizacao
+   do card vem de `contractor.city/state`. UF entrou como select (27 UFs)
+   porque `User.state` ja existia e e exibido como "Cidade - UF".
+4. **Categoria e lista fixa de 18** (as que tem imagem + as que existem em
+   vagas). `/api/jobs` aberto pode estar vazio ou ter so 2 categorias, e um
+   select sem opcoes travaria a publicacao. O backend normaliza para
+   minusculas.
+5. **Datas usam `datetime-local`**, nao `date`: `startsAt`/`endsAt` sao
+   instantes ISO e o detalhe mostra dia + horario. O valor e convertido com
+   `toISOString()`.
+6. **Valor em reais inteiros** (input so aceita digitos, `valueCents =
+   reais * 100`). A API exige inteiro positivo em centavos; centavos nao sao
+   oferecidos no formulario para nao sugerir precisao que o produto nao usa.
+7. **Toast na propria tela** e redirect depois de ~0,9s para `/vaga/[id]`.
+   A alternativa (flash em `sessionStorage` lido pelo detalhe) exigiria
+   alterar `JobDetailScreen`, que esta fora do escopo da fase.
+
+### Testes (dev, banco real)
+
+- `GET /api/jobs` = 2 (inalterado); `?modality=FREELANCE` = 2; `?modality=CLT`
+  = 0; `?modality=PIX` = 422.
+- `POST` sem `modality` = 201 com `modality: "FREELANCE"`; com `"PIX"` = 422.
+- `POST` como profissional = 403.
+- `/publicar` como profissional = redirect para `/`; como contratante abre o
+  formulario com cidade/UF pre-preenchidos do perfil.
+- Publicacao CLT pelo formulario: toast "Vaga publicada", redirect para
+  `/vaga/cmvn93h3q0005sxdfmelx2ylj`, detalhe com "Itajuba - MG", R$ 210 e
+  "Sexta-feira, 09:00 – 18:00"; a aba CLT passou a "1 vaga" com a vaga na
+  lista. As 2 vagas `[TESTE 2.3c]` foram removidas depois; a base voltou a 2
+  vagas abertas.
+- `sessionStorage` restaura a aba depois do reload e do redirect; sem storage
+  o padrao e Freelance.
+
+### Adiado
+
+- **Aba Prestadoras**: `modality` aceita PRESTADORA, mas a Home so mostra 2
+  abas (MVP). TODO 2.4b.
+- **CLT como fluxo comercial** (plano, contrato, beneficios): so o campo.
+- **Boost/urgencia**: nao tocado (V2a).
+- **Edicao/exclusao de vaga**: `PATCH /api/jobs/[id]` ja aceita `modality`
+  parcialmente, mas nao ha UI.
+- **`modality` no detalhe da vaga**: o card/detalhe nao exibe a modalidade;
+  so a Home usa o campo para filtrar.
+
+### Gaps/limitacoes
+
+- Os contadores das abas usam `total` da modalidade inteira, nao o resultado da
+  busca/filtros aplicados (que sao client-side). Isso e proposital: o numero
+  responde "quantas vagas existem nesta modalidade".
+- Trocar de aba limpa a categoria selecionada (os chips sao derivados da
+  modalidade ativa), mas mantem busca e faixa de valor.
+- Nao ha preview, rascunho nem upload de imagem no formulario.
+- O backend nao exige verificacao para publicar (so o papel Contratante
+  ativo); a tela tambem nao bloqueia por isso.
+
 

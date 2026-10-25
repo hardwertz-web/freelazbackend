@@ -25,6 +25,7 @@ import {
   LeafIcon,
   MapPinIcon,
   MusicIcon,
+  PlusIcon,
   SearchIcon,
   ShieldCheckIcon,
   SlidersIcon,
@@ -39,6 +40,25 @@ import {
 import styles from "./HomeScreen.module.css";
 
 type SortKey = "RELEVANCIA" | "DATA" | "VALOR";
+
+/** Abas de modalidade visíveis no MVP. PRESTADORA existe na API, não aqui. */
+type ModalityTab = "FREELANCE" | "CLT";
+
+type ModalityData = { items: JobCard[]; total: number; hasMore: boolean };
+
+const EMPTY_MODALITY: ModalityData = { items: [], total: 0, hasMore: false };
+
+const MODALITY_TABS: { key: ModalityTab; label: string }[] = [
+  { key: "FREELANCE", label: "Freelance" },
+  { key: "CLT", label: "CLT" },
+];
+
+/** Lembra a aba escolhida apenas durante a sessão do navegador. */
+const TAB_STORAGE_KEY = "freelaz.home.modality";
+
+function isModalityTab(value: string | null): value is ModalityTab {
+  return value === "FREELANCE" || value === "CLT";
+}
 
 /** Normaliza categoria/cidade para comparar "eventos" com "EVENTOS". */
 function normalize(value: string): string {
@@ -115,10 +135,12 @@ function gradientFor(seed: string): string {
   return `linear-gradient(135deg, ${from}, ${to})`;
 }
 
-export function HomeScreen() {
-  const [jobs, setJobs] = useState<JobCard[]>([]);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
+  const [byModality, setByModality] = useState<Record<ModalityTab, ModalityData>>({
+    FREELANCE: EMPTY_MODALITY,
+    CLT: EMPTY_MODALITY,
+  });
+  const [tab, setTab] = useState<ModalityTab>("FREELANCE");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,14 +157,30 @@ export function HomeScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    // A API limita a 50 por página; `total` informa quantas existem.
-    const result = await apiGet<JobsResponse>("/api/jobs?limit=50");
-    if (result.ok) {
-      setJobs(result.data.items);
-      setTotal(result.data.total);
-      setHasMore(result.data.hasMore);
-    } else {
-      setError(result.error);
+    // As duas modalidades em paralelo: trocar de aba fica instantâneo e cada
+    // contador vem do `total` real da própria modalidade. A API limita a 50
+    // por página; `total` informa quantas existem.
+    const [freelance, clt] = await Promise.all([
+      apiGet<JobsResponse>("/api/jobs?limit=50&modality=FREELANCE"),
+      apiGet<JobsResponse>("/api/jobs?limit=50&modality=CLT"),
+    ]);
+    if (freelance.ok && clt.ok) {
+      setByModality({
+        FREELANCE: {
+          items: freelance.data.items,
+          total: freelance.data.total,
+          hasMore: freelance.data.hasMore,
+        },
+        CLT: {
+          items: clt.data.items,
+          total: clt.data.total,
+          hasMore: clt.data.hasMore,
+        },
+      });
+    } else if (!freelance.ok) {
+      setError(freelance.error);
+    } else if (!clt.ok) {
+      setError(clt.error);
     }
     setLoading(false);
   }, []);
@@ -150,6 +188,31 @@ export function HomeScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // sessionStorage só existe no cliente, então a aba é restaurada depois da
+  // montagem (SSR sempre começa em Freelance). Sem storage, fica no default.
+  useEffect(() => {
+    try {
+      const stored = window.sessionStorage.getItem(TAB_STORAGE_KEY);
+      if (isModalityTab(stored)) setTab(stored);
+    } catch {
+      /* navegação privada pode bloquear o storage */
+    }
+  }, []);
+
+  const selectTab = useCallback((next: ModalityTab) => {
+    setTab(next);
+    // As categorias são derivadas da modalidade ativa: manter a categoria
+    // anterior filtraria por algo que pode não existir na outra aba.
+    setCategory(null);
+    try {
+      window.sessionStorage.setItem(TAB_STORAGE_KEY, next);
+    } catch {
+      /* storage indisponível */
+    }
+  }, []);
+
+  const { items: jobs, total, hasMore } = byModality[tab];
 
   /**
    * Categorias derivadas de /api/jobs. A chave é normalizada porque o banco
@@ -274,7 +337,7 @@ export function HomeScreen() {
   }
 
   return (
-    <div className={styles.screen}>
+    <div className={[styles.screen, canPublish && styles.screenWithFab].filter(Boolean).join(" ")}>
       <section className={styles.hero} aria-labelledby="hero-title">
         <div className={styles.heroPhoto} aria-hidden="true" />
         <div className={styles.heroOverlay} aria-hidden="true" />
@@ -363,6 +426,34 @@ export function HomeScreen() {
         </div>
       )}
 
+      {/* Abas de modalidade (Fase 2.3c): Freelance é a padrão. Prestadora fica
+          de fora do MVP — o backend aceita, a Home não mostra. */}
+      <div className={styles.modalityTabs} role="tablist" aria-label="Modalidade das vagas">
+        {MODALITY_TABS.map(({ key, label }) => {
+          const active = tab === key;
+          const count = byModality[key].total;
+          return (
+            <button
+              key={key}
+              id={`tab-${key}`}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-controls="resultados-vagas"
+              className={[styles.modalityTab, active && styles.modalityTabActive]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => selectTab(key)}
+            >
+              {label}
+              <span className={styles.modalityCount}>
+                {loading ? "…" : `${count} ${count === 1 ? "vaga" : "vagas"}`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {filtersOpen && (
         <Card className={styles.filters}>
           <div className={styles.field}>
@@ -422,182 +513,207 @@ export function HomeScreen() {
         </Card>
       )}
 
-      {loading && (
-        <>
-          <div className={styles.section}>
-            <div className={styles.skeleton} style={{ height: 20, width: "55%" }} />
-            <div className={styles.nearRow}>
-              <div className={styles.skeletonCard} />
-              <div className={styles.skeletonCard} />
-            </div>
-          </div>
-          <div className={styles.section}>
-            <div className={styles.skeleton} style={{ height: 20, width: "45%" }} />
-            <div className={styles.skeleton} />
-            <div className={styles.skeleton} />
-          </div>
-        </>
-      )}
-
-      {!loading && error && (
-        <Card>
-          <div className={styles.empty}>
-            <span className={styles.emptyTitle}>Não foi possível carregar as vagas</span>
-            <span className={styles.emptyText}>{error}</span>
-            <Button size="sm" onClick={() => void load()}>
-              Tentar de novo
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {!loading && !error && filtered.length === 0 && (
-        <Card>
-          <div className={styles.empty}>
-            <span className={styles.emptyTitle}>Nenhuma vaga encontrada</span>
-            <span className={styles.emptyText}>
-              Ajuste a busca ou os filtros para ver outras oportunidades.
-            </span>
-            {hasActiveFilters && (
-              <Button size="sm" variant="secondary" onClick={clearFilters}>
-                Limpar filtros
-              </Button>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {!loading && !error && filtered.length > 0 && (
-        <>
-          <section className={styles.section} aria-labelledby="near-title">
-            <div className={styles.sectionHead}>
-              <h2 id="near-title" className={styles.sectionTitle}>
-                Vagas perto de você
-              </h2>
-              <button type="button" className={styles.sectionLink} onClick={scrollToList}>
-                Ver todas <ChevronRightIcon size={12} />
-              </button>
-            </div>
-
-            <div className={`${styles.nearRow} no-scrollbar`}>
-              {nearby.map((job) => {
-                const verified = job.contractor.verified;
-                const count = nearbyCount(job);
-                return (
-                  <article key={job.id} className={styles.nearCard}>
-                    <Link
-                      href={`/vaga/${job.id}`}
-                      className={styles.nearLink}
-                      aria-label={`Ver detalhes de ${job.title}`}
-                    />
-                    <div className={styles.nearMedia}>
-                      <img
-                        className={styles.nearPhoto}
-                        src={getCategoryImage(job.category)}
-                        alt=""
-                        loading="lazy"
-                      />
-                      {verified && (
-                        <span className={styles.nearBadge}>
-                          <ShieldCheckIcon size={11} /> Verificado
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className={styles.nearHeart}
-                        disabled
-                        aria-label="Favoritar vaga (Fase 2)"
-                        title="Favoritos chegam na Fase 2"
-                      >
-                        <HeartIcon size={16} />
-                      </button>
-                    </div>
-                    <div className={styles.nearBody}>
-                      <span className={styles.nearTitle}>{job.title}</span>
-                      <span className={styles.nearMeta}>
-                        <CalendarIcon size={13} /> {formatDay(job.startsAt)} · {timeOf(job)}
-                      </span>
-                      <span className={styles.nearMeta}>
-                        <MapPinIcon size={13} /> {locationOf(job)} · {count}{" "}
-                        {count === 1 ? "vaga" : "vagas"}
-                      </span>
-                      <span className={styles.nearPrice}>
-                        {formatBRLShort(job.valueCents)}
-                        <span className={styles.nearPriceUnit}> /dia</span>
-                      </span>
-                      <span className={styles.nearDetails}>Ver detalhes</span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
-          <section id="lista-vagas" className={styles.section}>
-            <div className={styles.sectionHead}>
-              <h2 className={styles.sectionTitle}>Oportunidades mais recentes</h2>
-              <span className={styles.sectionLink} aria-live="polite">
-                {filtered.length} de {total}
-              </span>
-            </div>
-
-            {recent.length > 0 && (
-              <div className={styles.list}>
-                {recent.map((job) => (
-                  <Link key={job.id} href={`/vaga/${job.id}`} className={styles.row}>
-                    <span
-                      className={styles.rowThumb}
-                      style={{ background: gradientFor(job.category) }}
-                      aria-hidden="true"
-                    >
-                      <img
-                        className={styles.rowThumbImage}
-                        src={getCategoryImage(job.category)}
-                        alt=""
-                        loading="lazy"
-                      />
-                    </span>
-                    <span className={styles.rowBody}>
-                      <span className={styles.rowTitle}>{job.title}</span>
-                      <span className={styles.rowMeta}>
-                        <span>{formatDay(job.startsAt)}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{timeOf(job)}</span>
-                      </span>
-                      <span className={styles.rowMeta}>
-                        <MapPinIcon size={12} /> {locationOf(job)}
-                        {job.contractor.verified && (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <ShieldCheckIcon size={12} /> verificada
-                          </>
-                        )}
-                      </span>
-                    </span>
-                    <span className={styles.rowRight}>
-                      <span className={styles.price}>{formatBRLShort(job.valueCents)}</span>
-                      <span className={styles.chevron}>
-                        <ChevronRightIcon size={16} />
-                      </span>
-                    </span>
-                  </Link>
-                ))}
+      <div id="resultados-vagas" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {loading && (
+          <>
+            <div className={styles.section}>
+              <div className={styles.skeleton} style={{ height: 20, width: "55%" }} />
+              <div className={styles.nearRow}>
+                <div className={styles.skeletonCard} />
+                <div className={styles.skeletonCard} />
               </div>
-            )}
+            </div>
+            <div className={styles.section}>
+              <div className={styles.skeleton} style={{ height: 20, width: "45%" }} />
+              <div className={styles.skeleton} />
+              <div className={styles.skeleton} />
+            </div>
+          </>
+        )}
 
-            {hasMore && (
-              <span className={styles.filterHint}>
-                Mostrando as {jobs.length} primeiras de {total} vagas abertas.
+        {!loading && error && (
+          <Card>
+            <div className={styles.empty}>
+              <span className={styles.emptyTitle}>Não foi possível carregar as vagas</span>
+              <span className={styles.emptyText}>{error}</span>
+              <Button size="sm" onClick={() => void load()}>
+                Tentar de novo
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {!loading && !error && filtered.length === 0 && (
+          <Card>
+            <div className={styles.empty}>
+              <span className={styles.emptyTitle}>
+                {hasActiveFilters
+                  ? "Nenhuma vaga encontrada"
+                  : `Nenhuma vaga ${tab === "CLT" ? "CLT" : "Freelance"} disponível ainda.`}
               </span>
-            )}
-          </section>
-        </>
-      )}
+              <span className={styles.emptyText}>
+                {hasActiveFilters
+                  ? "Ajuste a busca ou os filtros para ver outras oportunidades."
+                  : tab === "CLT"
+                    ? "A modalidade CLT chega em breve. Enquanto isso, veja as vagas freelance."
+                    : "Novas oportunidades aparecem aqui assim que forem publicadas."}
+              </span>
+              {hasActiveFilters && (
+                <Button size="sm" variant="secondary" onClick={clearFilters}>
+                  Limpar filtros
+                </Button>
+              )}
+            </div>
+          </Card>
+        )}
 
-      {!loading && !error && filtered.length > 0 && hasActiveFilters && (
-        <button type="button" className={styles.sectionLink} onClick={clearFilters}>
-          Limpar filtros aplicados
-        </button>
+        {!loading && !error && filtered.length > 0 && (
+          <>
+            <section className={styles.section} aria-labelledby="near-title">
+              <div className={styles.sectionHead}>
+                <h2 id="near-title" className={styles.sectionTitle}>
+                  Vagas perto de você
+                </h2>
+                <button type="button" className={styles.sectionLink} onClick={scrollToList}>
+                  Ver todas <ChevronRightIcon size={12} />
+                </button>
+              </div>
+
+              <div className={`${styles.nearRow} no-scrollbar`}>
+                {nearby.map((job) => {
+                  const verified = job.contractor.verified;
+                  const count = nearbyCount(job);
+                  return (
+                    <article key={job.id} className={styles.nearCard}>
+                      <Link
+                        href={`/vaga/${job.id}`}
+                        className={styles.nearLink}
+                        aria-label={`Ver detalhes de ${job.title}`}
+                      />
+                      <div className={styles.nearMedia}>
+                        <img
+                          className={styles.nearPhoto}
+                          src={getCategoryImage(job.category)}
+                          alt=""
+                          loading="lazy"
+                        />
+                        {verified && (
+                          <span className={styles.nearBadge}>
+                            <ShieldCheckIcon size={11} /> Verificado
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className={styles.nearHeart}
+                          disabled
+                          aria-label="Favoritar vaga (Fase 2)"
+                          title="Favoritos chegam na Fase 2"
+                        >
+                          <HeartIcon size={16} />
+                        </button>
+                      </div>
+                      <div className={styles.nearBody}>
+                        <span className={styles.nearTitle}>{job.title}</span>
+                        <span className={styles.nearMeta}>
+                          <CalendarIcon size={13} /> {formatDay(job.startsAt)} · {timeOf(job)}
+                        </span>
+                        <span className={styles.nearMeta}>
+                          <MapPinIcon size={13} /> {locationOf(job)} · {count}{" "}
+                          {count === 1 ? "vaga" : "vagas"}
+                        </span>
+                        <span className={styles.nearPrice}>
+                          {formatBRLShort(job.valueCents)}
+                          <span className={styles.nearPriceUnit}> /dia</span>
+                        </span>
+                        <span className={styles.nearDetails}>Ver detalhes</span>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section id="lista-vagas" className={styles.section}>
+              <div className={styles.sectionHead}>
+                <h2 className={styles.sectionTitle}>Oportunidades mais recentes</h2>
+                <span className={styles.sectionLink} aria-live="polite">
+                  {filtered.length} de {total}
+                </span>
+              </div>
+
+              {recent.length > 0 && (
+                <div className={styles.list}>
+                  {recent.map((job) => (
+                    <Link key={job.id} href={`/vaga/${job.id}`} className={styles.row}>
+                      <span
+                        className={styles.rowThumb}
+                        style={{ background: gradientFor(job.category) }}
+                        aria-hidden="true"
+                      >
+                        <img
+                          className={styles.rowThumbImage}
+                          src={getCategoryImage(job.category)}
+                          alt=""
+                          loading="lazy"
+                        />
+                      </span>
+                      <span className={styles.rowBody}>
+                        <span className={styles.rowTitle}>{job.title}</span>
+                        <span className={styles.rowMeta}>
+                          <span>{formatDay(job.startsAt)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{timeOf(job)}</span>
+                        </span>
+                        <span className={styles.rowMeta}>
+                          <MapPinIcon size={12} /> {locationOf(job)}
+                          {job.contractor.verified && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <ShieldCheckIcon size={12} /> verificada
+                            </>
+                          )}
+                        </span>
+                      </span>
+                      <span className={styles.rowRight}>
+                        <span className={styles.price}>{formatBRLShort(job.valueCents)}</span>
+                        <span className={styles.chevron}>
+                          <ChevronRightIcon size={16} />
+                        </span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              {hasMore && (
+                <span className={styles.filterHint}>
+                  Mostrando as {jobs.length} primeiras de {total} vagas abertas.
+                </span>
+              )}
+            </section>
+          </>
+        )}
+
+        {!loading && !error && filtered.length > 0 && hasActiveFilters && (
+          <button type="button" className={styles.sectionLink} onClick={clearFilters}>
+            Limpar filtros aplicados
+          </button>
+        )}
+      </div>
+
+      {/* FAB de publicar (Fase 2.3c): só para quem tem o papel Contratante
+          ativo. O guard real de /publicar é no servidor. */}
+      {canPublish && (
+        <div className={styles.fabWrap}>
+          <Link
+            href="/publicar"
+            className={styles.fab}
+            aria-label="Publicar vaga"
+            title="Publicar vaga"
+          >
+            <PlusIcon size={26} strokeWidth={2.4} />
+          </Link>
+        </div>
       )}
     </div>
   );

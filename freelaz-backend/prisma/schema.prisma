@@ -295,6 +295,9 @@ model JobPosting {
   title               String
   description         String
   category            String
+  // Modalidade da vaga (Fase 2.3c). String em vez de enum de propósito:
+  // FREELANCE | CLT | PRESTADORA — migrar para enum depois é aditivo.
+  modality            String               @default("FREELANCE")
   valueCents          Int
   status              JobPostingStatus     @default(ABERTA)
   visibility          JobPostingVisibility @default(PUBLICA)
