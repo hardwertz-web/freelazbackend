@@ -2,40 +2,87 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import type { ComponentType } from "react";
 import { apiGet } from "@/lib/apiClient";
 import type { JobCard, JobsResponse } from "@/lib/apiTypes";
 import { getCategoryImage } from "@/lib/categoryImages";
-import { formatBRLShort, formatDay, formatShift, humanizeCategory } from "@/lib/format";
-import { Badge } from "@/components/Badge";
+import { formatBRLShort, formatDay, formatShift } from "@/lib/format";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import {
+  BoltIcon,
+  BriefcaseIcon,
+  BroomIcon,
+  CalendarIcon,
+  CameraIcon,
+  ChefHatIcon,
   ChevronRightIcon,
+  GlassIcon,
+  GridIcon,
+  HammerIcon,
+  HeartIcon,
+  LeafIcon,
   MapPinIcon,
+  MusicIcon,
   SearchIcon,
   ShieldCheckIcon,
   SlidersIcon,
+  SparklesIcon,
+  TrayIcon,
+  TruckIcon,
+  UserIcon,
+  WrenchIcon,
   XIcon,
+  type IconProps,
 } from "@/components/Icons";
 import styles from "./HomeScreen.module.css";
 
 type SortKey = "RELEVANCIA" | "DATA" | "VALOR";
 
-const TONES: [string, string][] = [
-  ["#0066ff", "#4d94ff"],
-  ["#0b1f44", "#2c5387"],
-  ["#16a34a", "#4ade80"],
-  ["#f97316", "#fdba74"],
-  ["#7c3aed", "#a78bfa"],
-];
+/** Normaliza categoria/cidade para comparar "eventos" com "EVENTOS". */
+function normalize(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
-/** Cor decorativa estável por categoria (a vaga não tem imagem no backend). */
-function gradientFor(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-  const [from, to] = TONES[Math.abs(hash) % TONES.length];
-  return `linear-gradient(135deg, ${from}, ${to})`;
+/** "EVENTOS" / "eventos" → "Eventos" (o backend grava as duas formas). */
+function categoryLabel(raw: string): string {
+  const clean = raw.trim().replace(/[-_]/g, " ");
+  return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+}
+
+const CATEGORY_ICONS: Record<string, ComponentType<IconProps>> = {
+  eventos: SparklesIcon,
+  festa: SparklesIcon,
+  bartender: GlassIcon,
+  bar: GlassIcon,
+  garcom: TrayIcon,
+  garconete: TrayIcon,
+  diarista: BroomIcon,
+  faxina: BroomIcon,
+  limpeza: BroomIcon,
+  pedreiro: HammerIcon,
+  construcao: HammerIcon,
+  eletricista: BoltIcon,
+  encanador: WrenchIcon,
+  seguranca: ShieldCheckIcon,
+  fotografo: CameraIcon,
+  motorista: TruckIcon,
+  jardineiro: LeafIcon,
+  dj: MusicIcon,
+  musica: MusicIcon,
+  cozinheiro: ChefHatIcon,
+  cozinha: ChefHatIcon,
+  recepcionista: UserIcon,
+  administracao: BriefcaseIcon,
+};
+
+function iconForCategory(key: string) {
+  return CATEGORY_ICONS[key] ?? GridIcon;
 }
 
 function locationOf(job: JobCard): string {
@@ -46,11 +93,29 @@ function locationOf(job: JobCard): string {
   return "Local a combinar";
 }
 
-function companyOf(job: JobCard): string {
-  return job.contractor.tradeName || job.contractor.name;
+/** "18:00 – 02:00" (o dia já aparece em `formatDay`). */
+function timeOf(job: JobCard): string {
+  const shift = formatShift(job.startsAt, job.endsAt);
+  return shift.split(",").slice(1).join(",").trim() || "Horário a combinar";
 }
 
-export function HomeScreen({ userName }: { userName: string }) {
+/** Cor decorativa estável por categoria (a vaga não tem imagem no backend). */
+const TONES: [string, string][] = [
+  ["#0066ff", "#4d94ff"],
+  ["#0b1f44", "#2c5387"],
+  ["#16a34a", "#4ade80"],
+  ["#f97316", "#fdba74"],
+  ["#7c3aed", "#a78bfa"],
+];
+
+function gradientFor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  const [from, to] = TONES[Math.abs(hash) % TONES.length];
+  return `linear-gradient(135deg, ${from}, ${to})`;
+}
+
+export function HomeScreen() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -86,23 +151,26 @@ export function HomeScreen({ userName }: { userName: string }) {
     void load();
   }, [load]);
 
-  // ?focus=search (vindo da tab "Buscar") foca o campo da Home.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("focus") !== "search") return;
-    const timer = window.setTimeout(() => {
-      searchRef.current?.focus();
-      searchRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }, 120);
-    return () => window.clearTimeout(timer);
-  }, []);
-
+  /**
+   * Categorias derivadas de /api/jobs. A chave é normalizada porque o banco
+   * tem "eventos" e "EVENTOS" como categorias distintas — na tela elas são a
+   * mesma fileira. O rótulo vem da forma mais legível.
+   */
   const categories = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const job of jobs) counts.set(job.category, (counts.get(job.category) ?? 0) + 1);
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
+    const map = new Map<string, { key: string; label: string; count: number }>();
+    for (const job of jobs) {
+      const key = normalize(job.category);
+      if (!key) continue;
+      const current = map.get(key);
+      if (current) {
+        current.count += 1;
+      } else {
+        map.set(key, { key, label: categoryLabel(job.category), count: 1 });
+      }
+    }
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "pt-BR"))
+      .slice(0, 6);
   }, [jobs]);
 
   const filterCount =
@@ -110,12 +178,12 @@ export function HomeScreen({ userName }: { userName: string }) {
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    const city = cityFilter.trim().toLowerCase();
+    const city = normalize(cityFilter);
     const min = minValue.trim() ? Number(minValue) * 100 : null;
     const max = maxValue.trim() ? Number(maxValue) * 100 : null;
 
     const result = jobs.filter((job) => {
-      if (category && job.category !== category) return false;
+      if (category && normalize(job.category) !== category) return false;
 
       if (term) {
         const haystack = [
@@ -132,7 +200,7 @@ export function HomeScreen({ userName }: { userName: string }) {
       }
 
       if (city) {
-        const jobCity = `${job.contractor.city ?? ""} ${job.contractor.state ?? ""}`.toLowerCase();
+        const jobCity = normalize(`${job.contractor.city ?? ""} ${job.contractor.state ?? ""}`);
         if (!jobCity.includes(city)) return false;
       }
 
@@ -151,24 +219,44 @@ export function HomeScreen({ userName }: { userName: string }) {
     return result;
   }, [jobs, category, query, cityFilter, minValue, maxValue, sort]);
 
-  const featured = useMemo(
+  /** Horizontal: urgentes primeiro, depois as mais recentes (até 5 cards). */
+  const nearby = useMemo(
     () =>
-      filtered
-        .filter((job) => job.urgentBoost)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 4),
+      [...filtered]
+        .sort((a, b) => {
+          if (a.urgentBoost !== b.urgentBoost) return a.urgentBoost ? -1 : 1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(0, 5),
     [filtered]
   );
 
-  const featuredIds = useMemo(() => new Set(featured.map((job) => job.id)), [featured]);
-
+  /**
+   * Vertical: as mais recentes. Repete os itens do carrossel de propósito — o
+   * carrossel é um recorte de destaque e a lista é o acervo completo (com só 2
+   * vagas abertas hoje, excluir as do carrossel deixaria a seção vazia).
+   */
   const recent = useMemo(
     () =>
-      filtered
-        .filter((job) => !featuredIds.has(job.id))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [filtered, featuredIds]
+      [...filtered].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    [filtered]
   );
+
+  /**
+   * "N vagas" do card horizontal: contagem real dentro do que foi carregado
+   * (mesma cidade + mesma categoria). Nunca um número inventado.
+   */
+  const nearbyCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const candidate of jobs) {
+      const key = `${normalize(candidate.contractor.city ?? "")}|${normalize(candidate.category)}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return (job: JobCard) =>
+      counts.get(`${normalize(job.contractor.city ?? "")}|${normalize(job.category)}`) ?? 1;
+  }, [jobs]);
 
   const hasActiveFilters = Boolean(query.trim() || category || filterCount > 0);
 
@@ -181,82 +269,99 @@ export function HomeScreen({ userName }: { userName: string }) {
     setSort("RELEVANCIA");
   }
 
+  function scrollToList() {
+    document.getElementById("lista-vagas")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <div className={styles.screen}>
-      <section className={styles.hero}>
-        <h1 className={styles.title}>
-          Encontre o trabalho ideal para você.
-        </h1>
-        <p className={styles.subtitle}>
-          Olá, {userName.split(" ")[0]}. Vagas de hoje e amanhã, perto de você.
-        </p>
-
-        <div className={styles.searchRow}>
-          <div className={styles.searchBox}>
-            <SearchIcon size={18} />
-            <input
-              ref={searchRef}
-              className={styles.searchInput}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por profissão, categoria ou empresa..."
-              aria-label="Buscar vagas"
-              type="search"
-              enterKeyHint="search"
-            />
-            {query && (
-              <button
-                type="button"
-                className={styles.clearButton}
-                onClick={() => setQuery("")}
-                aria-label="Limpar busca"
-              >
-                <XIcon size={16} />
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            className={[styles.filterButton, filtersOpen && styles.filterButtonOpen]
-              .filter(Boolean)
-              .join(" ")}
-            onClick={() => setFiltersOpen((open) => !open)}
-            aria-expanded={filtersOpen}
-            aria-label="Abrir filtros"
-            title="Filtros"
+      <section className={styles.hero} aria-labelledby="hero-title">
+        <div className={styles.heroPhoto} aria-hidden="true" />
+        <div className={styles.heroOverlay} aria-hidden="true" />
+        <div className={styles.heroContent}>
+          <h1 id="hero-title" className={styles.heroTitle}>
+            Encontre seu próximo trabalho
+          </h1>
+          <p className={styles.heroSubtitle}>Vagas de hoje e amanhã, perto de você.</p>
+          <span className={styles.heroPill}>
+            <MapPinIcon size={14} /> Itajubá - MG
+          </span>
+          <a
+            href="#lista-vagas"
+            className={styles.heroButton}
+            onClick={(event) => {
+              event.preventDefault();
+              scrollToList();
+              window.history.replaceState(null, "", "#lista-vagas");
+            }}
           >
-            <SlidersIcon size={20} />
-          </button>
+            Ver vagas <span aria-hidden="true">→</span>
+          </a>
         </div>
+        <span className={styles.heroCredit}>Foto: Deni Williams · CC BY 2.0</span>
       </section>
 
-      <div className={`${styles.chipRow} no-scrollbar`}>
-        <Chip active={category === null} onClick={() => setCategory(null)}>
-          Todas
-        </Chip>
-        {categories.map(([name, count]) => (
-          <Chip
-            key={name}
-            active={category === name}
-            onClick={() => setCategory(category === name ? null : name)}
-            count={count}
-          >
-            {humanizeCategory(name)}
-          </Chip>
-        ))}
+      <div className={styles.searchRow}>
+        <div className={styles.searchBox}>
+          <SearchIcon size={18} />
+          <input
+            ref={searchRef}
+            className={styles.searchInput}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por profissão, categoria ou empresa"
+            aria-label="Buscar vagas"
+            type="search"
+            enterKeyHint="search"
+          />
+          {query && (
+            <button
+              type="button"
+              className={styles.clearButton}
+              onClick={() => setQuery("")}
+              aria-label="Limpar busca"
+            >
+              <XIcon size={16} />
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          className={[styles.filterButton, filtersOpen && styles.filterButtonOpen]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          aria-label="Abrir filtros"
+          title="Filtros"
+        >
+          <SlidersIcon size={20} />
+        </button>
       </div>
 
-      <div className={`${styles.pillRow} no-scrollbar`}>
-        <Chip active={sort === "DATA"} onClick={() => setSort(sort === "DATA" ? "RELEVANCIA" : "DATA")}>
-          Data
-        </Chip>
-        <Chip active={sort === "VALOR"} onClick={() => setSort(sort === "VALOR" ? "RELEVANCIA" : "VALOR")}>
-          Valor
-        </Chip>
-        <Chip active={filtersOpen} onClick={() => setFiltersOpen((open) => !open)}>
-          Mais filtros{filterCount > 0 ? ` (${filterCount})` : ""}
-        </Chip>
-      </div>
+      {categories.length > 0 && (
+        <div className={`${styles.categories} no-scrollbar`} role="group" aria-label="Categorias">
+          {categories.map(({ key, label, count }) => {
+            const Icon = iconForCategory(key);
+            const active = category === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={[styles.categoryChip, active && styles.categoryChipActive]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-pressed={active}
+                onClick={() => setCategory(active ? null : key)}
+                title={`${label} (${count})`}
+              >
+                <Icon size={24} strokeWidth={active ? 2 : 1.7} />
+                <span className={styles.categoryLabel}>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {filtersOpen && (
         <Card className={styles.filters}>
@@ -300,6 +405,14 @@ export function HomeScreen({ userName }: { userName: string }) {
               />
             </div>
           </div>
+          <div className={styles.pillRow}>
+            <Chip active={sort === "DATA"} onClick={() => setSort(sort === "DATA" ? "RELEVANCIA" : "DATA")}>
+              Data
+            </Chip>
+            <Chip active={sort === "VALOR"} onClick={() => setSort(sort === "VALOR" ? "RELEVANCIA" : "VALOR")}>
+              Valor
+            </Chip>
+          </div>
           <div className={styles.filterActions}>
             <span className={styles.filterHint}>Filtros aplicados em tempo real</span>
             <Button variant="secondary" size="sm" onClick={clearFilters}>
@@ -310,15 +423,20 @@ export function HomeScreen({ userName }: { userName: string }) {
       )}
 
       {loading && (
-        <div className={styles.section}>
-          <div className={styles.skeleton} style={{ height: 20, width: "55%" }} />
-          <div className={styles.grid}>
+        <>
+          <div className={styles.section}>
+            <div className={styles.skeleton} style={{ height: 20, width: "55%" }} />
+            <div className={styles.nearRow}>
+              <div className={styles.skeletonCard} />
+              <div className={styles.skeletonCard} />
+            </div>
+          </div>
+          <div className={styles.section}>
+            <div className={styles.skeleton} style={{ height: 20, width: "45%" }} />
             <div className={styles.skeleton} />
             <div className={styles.skeleton} />
           </div>
-          <div className={styles.skeleton} />
-          <div className={styles.skeleton} />
-        </div>
+        </>
       )}
 
       {!loading && error && (
@@ -333,49 +451,89 @@ export function HomeScreen({ userName }: { userName: string }) {
         </Card>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && filtered.length === 0 && (
+        <Card>
+          <div className={styles.empty}>
+            <span className={styles.emptyTitle}>Nenhuma vaga encontrada</span>
+            <span className={styles.emptyText}>
+              Ajuste a busca ou os filtros para ver outras oportunidades.
+            </span>
+            {hasActiveFilters && (
+              <Button size="sm" variant="secondary" onClick={clearFilters}>
+                Limpar filtros
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {!loading && !error && filtered.length > 0 && (
         <>
-          {featured.length > 0 && (
-            <section className={styles.section}>
-              <div className={styles.sectionHead}>
-                <h2 className={styles.sectionTitle}>Oportunidades em destaque</h2>
-                <span className={styles.sectionLink}>{featured.length} em destaque</span>
-              </div>
-              <div className={styles.grid}>
-                {featured.map((job) => (
-                  <Link key={job.id} href={`/vaga/${job.id}`} className={styles.jobCard}>
-                    <div className={styles.thumb} style={{ background: gradientFor(job.category) }}>
+          <section className={styles.section} aria-labelledby="near-title">
+            <div className={styles.sectionHead}>
+              <h2 id="near-title" className={styles.sectionTitle}>
+                Vagas perto de você
+              </h2>
+              <button type="button" className={styles.sectionLink} onClick={scrollToList}>
+                Ver todas <ChevronRightIcon size={12} />
+              </button>
+            </div>
+
+            <div className={`${styles.nearRow} no-scrollbar`}>
+              {nearby.map((job) => {
+                const verified = job.contractor.verified;
+                const count = nearbyCount(job);
+                return (
+                  <article key={job.id} className={styles.nearCard}>
+                    <Link
+                      href={`/vaga/${job.id}`}
+                      className={styles.nearLink}
+                      aria-label={`Ver detalhes de ${job.title}`}
+                    />
+                    <div className={styles.nearMedia}>
                       <img
-                        className={styles.thumbImage}
+                        className={styles.nearPhoto}
                         src={getCategoryImage(job.category)}
                         alt=""
                         loading="lazy"
                       />
-                      <span className={styles.thumbLabel}>{humanizeCategory(job.category)}</span>
-                      <span className={styles.thumbBadge}>
-                        <Badge tone="solid">Destaque</Badge>
-                      </span>
-                    </div>
-                    <div className={styles.jobBody}>
-                      <span className={styles.jobTitle}>{job.title}</span>
-                      <span className={styles.jobMeta}>
-                        <MapPinIcon size={12} /> {locationOf(job)}
-                      </span>
-                      <div className={styles.jobFooter}>
-                        <span className={styles.price}>
-                          {formatBRLShort(job.valueCents)}
-                          <span className={styles.priceUnit}> /dia</span>
+                      {verified && (
+                        <span className={styles.nearBadge}>
+                          <ShieldCheckIcon size={11} /> Verificado
                         </span>
-                        <span className={styles.details}>Ver detalhes</span>
-                      </div>
+                      )}
+                      <button
+                        type="button"
+                        className={styles.nearHeart}
+                        disabled
+                        aria-label="Favoritar vaga (Fase 2)"
+                        title="Favoritos chegam na Fase 2"
+                      >
+                        <HeartIcon size={16} />
+                      </button>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
+                    <div className={styles.nearBody}>
+                      <span className={styles.nearTitle}>{job.title}</span>
+                      <span className={styles.nearMeta}>
+                        <CalendarIcon size={13} /> {formatDay(job.startsAt)} · {timeOf(job)}
+                      </span>
+                      <span className={styles.nearMeta}>
+                        <MapPinIcon size={13} /> {locationOf(job)} · {count}{" "}
+                        {count === 1 ? "vaga" : "vagas"}
+                      </span>
+                      <span className={styles.nearPrice}>
+                        {formatBRLShort(job.valueCents)}
+                        <span className={styles.nearPriceUnit}> /dia</span>
+                      </span>
+                      <span className={styles.nearDetails}>Ver detalhes</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
 
-          <section className={styles.section}>
+          <section id="lista-vagas" className={styles.section}>
             <div className={styles.sectionHead}>
               <h2 className={styles.sectionTitle}>Oportunidades mais recentes</h2>
               <span className={styles.sectionLink} aria-live="polite">
@@ -383,21 +541,7 @@ export function HomeScreen({ userName }: { userName: string }) {
               </span>
             </div>
 
-            {recent.length === 0 ? (
-              <Card>
-                <div className={styles.empty}>
-                  <span className={styles.emptyTitle}>Nenhuma vaga encontrada</span>
-                  <span className={styles.emptyText}>
-                    Ajuste a busca ou os filtros para ver outras oportunidades.
-                  </span>
-                  {hasActiveFilters && (
-                    <Button size="sm" variant="secondary" onClick={clearFilters}>
-                      Limpar filtros
-                    </Button>
-                  )}
-                </div>
-              </Card>
-            ) : (
+            {recent.length > 0 && (
               <div className={styles.list}>
                 {recent.map((job) => (
                   <Link key={job.id} href={`/vaga/${job.id}`} className={styles.row}>
@@ -418,7 +562,7 @@ export function HomeScreen({ userName }: { userName: string }) {
                       <span className={styles.rowMeta}>
                         <span>{formatDay(job.startsAt)}</span>
                         <span aria-hidden="true">·</span>
-                        <span>{formatShift(job.startsAt, job.endsAt).split(",")[1] ?? ""}</span>
+                        <span>{timeOf(job)}</span>
                       </span>
                       <span className={styles.rowMeta}>
                         <MapPinIcon size={12} /> {locationOf(job)}
@@ -450,7 +594,7 @@ export function HomeScreen({ userName }: { userName: string }) {
         </>
       )}
 
-      {!loading && !error && recent.length > 0 && hasActiveFilters && (
+      {!loading && !error && filtered.length > 0 && hasActiveFilters && (
         <button type="button" className={styles.sectionLink} onClick={clearFilters}>
           Limpar filtros aplicados
         </button>

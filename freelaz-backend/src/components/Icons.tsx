@@ -1,7 +1,7 @@
 // Ícones em SVG inline (traço, 24x24, currentColor). Sem dependência externa:
 // o app não usa biblioteca de ícones (Fase 1).
 
-type IconProps = {
+export type IconProps = {
   size?: number;
   className?: string;
   strokeWidth?: number;
@@ -306,6 +306,137 @@ export function XIcon(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M6 6l12 12M18 6 6 18" />
+    </Svg>
+  );
+}
+
+/* ---------------------------------------------------------------- *
+ * Ícones de categoria (Fase 2.4a). O JobPosting não tem ícone no
+ * backend: cada categoria conhecida ganha um desenho e o resto cai
+ * em GridIcon, então nenhum chip fica vazio.
+ * ---------------------------------------------------------------- */
+
+export function SparklesIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m12 3 1.7 4.6L18.3 9.3l-4.6 1.7L12 15.6l-1.7-4.6L5.7 9.3l4.6-1.7L12 3Z" />
+      <path d="M18.5 14.5 19.4 17l2.5.9-2.5.9-.9 2.5-.9-2.5-2.5-.9 2.5-.9.9-2.5Z" />
+    </Svg>
+  );
+}
+
+export function GlassIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 4h16l-8 8-8-8Z" />
+      <path d="M12 12v7M8.5 21h7" />
+    </Svg>
+  );
+}
+
+export function TrayIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 14h18" />
+      <path d="M4.8 14a7.2 7.2 0 0 1 14.4 0" />
+      <path d="M12 4.8V7M9 21h6" />
+    </Svg>
+  );
+}
+
+export function ChefHatIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M7 11.5a3.5 3.5 0 1 1 1-6.8 4 4 0 0 1 8 0 3.5 3.5 0 1 1 1 6.8v6.7a1.8 1.8 0 0 1-1.8 1.8H8.8A1.8 1.8 0 0 1 7 18.2v-6.7Z" />
+      <path d="M7 15.5h10" />
+    </Svg>
+  );
+}
+
+export function BroomIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m14.5 3.5 6 6" />
+      <path d="M16 5 8.5 12.5" />
+      <path d="M9 11c1.6 1.6 1.9 4.2.6 6.1L7 21l-4-4 3.9-2.6C8.8 13.1 7.4 9.4 9 11Z" />
+      <path d="m5.5 16.5 2 2" />
+    </Svg>
+  );
+}
+
+export function HammerIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m14 6 4 4" />
+      <path d="M4 20l7.5-7.5" />
+      <path d="M12.5 4.5 15 2l7 7-2.5 2.5-2-2-4-4-2 2-1.5-1.5 2.5-2.5Z" />
+    </Svg>
+  );
+}
+
+export function BoltIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l1-8Z" />
+    </Svg>
+  );
+}
+
+export function WrenchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M14.7 6.3a4.2 4.2 0 0 0 5.6 5.6l-9.4 9.4a2.3 2.3 0 0 1-3.2-3.2l9.4-9.4Z" />
+      <path d="M14.7 6.3 17 4a4.2 4.2 0 0 1 3.3 6" />
+    </Svg>
+  );
+}
+
+export function CameraIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 7.5h2.6L8.2 5h7.6l1.6 2.5H20a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18v-9A1.5 1.5 0 0 1 4 7.5Z" />
+      <circle cx="12" cy="13" r="3.4" />
+    </Svg>
+  );
+}
+
+export function TruckIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 6.5h10v10h-10z" />
+      <path d="M12.5 10.5H17l3.5 3.5v2.5h-8" />
+      <circle cx="6.5" cy="18" r="1.8" />
+      <circle cx="17" cy="18" r="1.8" />
+    </Svg>
+  );
+}
+
+export function LeafIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M20 4C11 4 5 8 5 15c0 2.5 1.5 4.5 4 4.5 7 0 11-6 11-15.5Z" />
+      <path d="M4 21c1.5-6 5-9.5 11-12" />
+    </Svg>
+  );
+}
+
+export function MusicIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 18V6l11-2v12" />
+      <circle cx="6.5" cy="18" r="2.5" />
+      <circle cx="17.5" cy="16" r="2.5" />
+    </Svg>
+  );
+}
+
+export function GridIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="4" width="7" height="7" rx="1.6" />
+      <rect x="13" y="4" width="7" height="7" rx="1.6" />
+      <rect x="4" y="13" width="7" height="7" rx="1.6" />
+      <rect x="13" y="13" width="7" height="7" rx="1.6" />
     </Svg>
   );
 }

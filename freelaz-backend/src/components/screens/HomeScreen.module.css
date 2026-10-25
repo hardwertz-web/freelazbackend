@@ -1,33 +1,127 @@
 .screen {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   padding: 14px 16px 8px;
 }
 
+/* ---------------------------------------------------------------- *
+ * Hero (Fase 2.4a)
+ * ---------------------------------------------------------------- */
+
 .hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  justify-content: flex-end;
+  min-height: 208px;
+  padding: 20px;
+  margin-bottom: 20px;
+  border-radius: 20px;
+  background: linear-gradient(120deg, #0066ff 0%, #0b1f44 100%);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(11, 31, 68, 0.18);
 }
 
-.title {
-  font-size: 22px;
+/* Foto da cidade (Serra da Mantiqueira) ancorada à direita. */
+.heroPhoto {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 66%;
+  background-image: url("/hero-itajuba.jpg");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+/* Overlay azul: garante contraste do texto mesmo se a foto não carregar. */
+.heroOverlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, #0066ff 0%, rgba(0, 102, 255, 0.94) 34%, rgba(11, 31, 68, 0.42) 100%),
+    linear-gradient(180deg, rgba(11, 31, 68, 0.05) 0%, rgba(11, 31, 68, 0.35) 100%);
+}
+
+.heroContent {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 230px;
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.22;
-  color: var(--title);
+  line-height: 1.16;
+  letter-spacing: -0.02em;
+  color: #fff;
 }
 
-.subtitle {
-  font-size: 12.5px;
-  color: var(--muted);
+.heroSubtitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.88);
 }
+
+.heroPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 40px;
+  padding: 0 13px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.heroButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 11px;
+  background: #fff;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(11, 31, 68, 0.16);
+}
+
+.heroButton:hover {
+  background: #f3f7ff;
+}
+
+.heroCredit {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 2;
+  font-size: 8px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.01em;
+}
+
+/* ---------------------------------------------------------------- *
+ * Busca compacta
+ * ---------------------------------------------------------------- */
 
 .searchRow {
   display: flex;
   gap: 8px;
-  margin-top: 9px;
+  margin-bottom: 14px;
 }
 
 .searchBox {
@@ -35,18 +129,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
-  padding: 0 12px;
-  background: var(--bg);
+  height: 46px;
+  padding: 0 14px;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   color: var(--muted);
   min-width: 0;
+  box-shadow: var(--shadow-card);
 }
 
 .searchBox:focus-within {
   border-color: var(--primary);
-  background: var(--surface);
 }
 
 .searchInput {
@@ -73,28 +167,81 @@
 }
 
 .filterButton {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   flex: none;
   border: 0;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--primary);
   color: #fff;
   display: grid;
   place-items: center;
+  box-shadow: var(--shadow-card);
 }
 
 .filterButtonOpen {
   background: var(--title);
 }
 
-.chipRow {
+/* ---------------------------------------------------------------- *
+ * Categorias (chips 60x60 com ícone)
+ * ---------------------------------------------------------------- */
+
+.categories {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   overflow-x: auto;
-  margin: 0 -16px;
+  scroll-snap-type: x proximity;
+  margin: 0 -16px 16px;
   padding: 2px 16px;
 }
+
+.categoryChip {
+  flex: 0 0 60px;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--muted);
+  scroll-snap-align: start;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.categoryChip:hover {
+  border-color: var(--border-strong);
+  color: var(--title);
+}
+
+.categoryChipActive {
+  background: #eaf1ff;
+  border-color: #d5e4ff;
+  color: var(--primary);
+}
+
+.categoryLabel {
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.categories::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- *
+ * Filtros (painel opcional)
+ * ---------------------------------------------------------------- */
 
 .pillRow {
   display: flex;
@@ -106,6 +253,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-bottom: 16px;
 }
 
 .filterGrid {
@@ -153,155 +301,211 @@
   color: var(--muted);
 }
 
+/* ---------------------------------------------------------------- *
+ * Seções
+ * ---------------------------------------------------------------- */
+
 .section {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-bottom: 18px;
+  scroll-margin-top: calc(var(--header-h) + 10px);
 }
 
 .sectionHead {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
 .sectionTitle {
-  font-size: 15px;
-  font-weight: 600;
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 700;
   letter-spacing: -0.01em;
+  color: var(--title);
 }
 
 .sectionLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   border: 0;
   background: transparent;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--primary);
   padding: 0;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+/* ---------------------------------------------------------------- *
+ * "Vagas perto de você" — carrossel horizontal
+ * ---------------------------------------------------------------- */
+
+.nearRow {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 16px;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
 }
 
-.jobCard {
+.nearCard {
+  position: relative;
+  flex: 0 0 260px;
+  width: 260px;
   display: flex;
   flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
   box-shadow: var(--shadow-card);
+  scroll-snap-align: start;
 }
 
-.thumb {
-  position: relative;
-  height: 120px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px 9px;
-  color: #fff;
-  overflow: hidden;
-}
-
-/* Camada azul sutil sobre a foto (identidade da marca). */
-.thumb::after {
-  content: "";
+/* Link cobre o card inteiro; o coração fica acima dele. */
+.nearLink {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: rgba(0, 102, 255, 0.1);
-  pointer-events: none;
+  border-radius: inherit;
 }
 
-.thumbImage {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+.nearLink:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.nearMedia {
+  position: relative;
+  height: 104px;
+  background: var(--selected);
+}
+
+.nearPhoto {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
-.thumbLabel {
-  position: relative;
+.nearMedia::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 31, 68, 0.05) 40%, rgba(11, 31, 68, 0.4) 100%);
+  pointer-events: none;
+}
+
+.nearBadge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
   z-index: 2;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  opacity: 0.95;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-shadow: 0 1px 4px rgba(11, 31, 68, 0.55);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.94);
+  color: #0f8a4a;
+  font-size: 9.5px;
+  font-weight: 700;
 }
 
-.thumbBadge {
-  position: relative;
+.nearHeart {
+  position: absolute;
+  top: 7px;
+  right: 7px;
   z-index: 2;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: #8a94a6;
+  cursor: not-allowed;
 }
 
-.jobBody {
+.nearHeart:disabled {
+  opacity: 1;
+}
+
+.nearBody {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 9px 10px 10px;
+  padding: 10px 11px 11px;
 }
 
-.jobTitle {
-  font-size: 12.8px;
-  font-weight: 600;
+.nearTitle {
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--title);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 32px;
+  min-height: 35px;
 }
 
-.jobMeta {
-  font-size: 10.5px;
-  color: var(--muted);
+.nearMeta {
   display: flex;
   align-items: center;
-  gap: 4px;
-  overflow: hidden;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
   white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.jobFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  margin-top: 3px;
+.nearMeta svg {
+  flex: none;
+  color: #8a94a6;
 }
 
-.price {
-  font-size: 12.5px;
+.nearPrice {
+  margin-top: 2px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
   color: var(--title);
 }
 
-.priceUnit {
-  font-size: 9.5px;
+.nearPriceUnit {
+  font-size: 10.5px;
   font-weight: 500;
   color: var(--muted);
 }
 
-.details {
-  font-size: 10.5px;
-  font-weight: 600;
+.nearDetails {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 33px;
+  margin-top: 5px;
+  border: 1px solid var(--primary);
+  border-radius: 9px;
   color: var(--primary);
-  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 600;
 }
+
+/* ---------------------------------------------------------------- *
+ * Lista vertical
+ * ---------------------------------------------------------------- */
 
 .list {
   display: flex;
@@ -375,9 +579,19 @@
   flex: none;
 }
 
+.price {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--title);
+}
+
 .chevron {
   color: #c3c9d3;
 }
+
+/* ---------------------------------------------------------------- *
+ * Estados
+ * ---------------------------------------------------------------- */
 
 .empty {
   display: flex;
@@ -408,8 +622,14 @@
   animation: shimmer 1.2s ease infinite;
 }
 
-.skeletonRow {
-  height: 72px;
+.skeletonCard {
+  flex: 0 0 260px;
+  width: 260px;
+  height: 232px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #f0f2f5 25%, #e7eaef 37%, #f0f2f5 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.2s ease infinite;
 }
 
 @keyframes shimmer {

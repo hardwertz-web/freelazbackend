@@ -1033,3 +1033,62 @@ backend/schema.
 **Nao alterados:** backend, schema, endpoints, Home, Carteira, avaliacao,
 publicar vaga. Mensagens mudou so na conversa (card pedido nesta fase).
 
+---
+
+## Sessao 36 - Fase 2.4a: Home redesign visual + 4 abas
+
+**Motivo:** aproximar a Home da referencia visual sem tocar em
+backend/schema/endpoints.
+
+**Feito:**
+1. `BottomTabBar` com 4 itens (Inicio, Mensagens, Carteira, Perfil),
+   `grid-template-columns: repeat(4, 1fr)`; removidos `useSearchParams`,
+   `SearchIcon` e a marcação especial de `?focus=search`. O `Suspense` do
+   layout `(web)` saiu junto.
+2. `src/app/(web)/buscar/page.tsx` deletada; `/buscar` responde 404 e nenhum
+   link para `?focus=search` restou.
+3. `HomeScreen` reescrita:
+   - hero com gradiente `#0066FF -> #0B1F44`, raio 20, padding 20, margem
+     inferior 20, titulo 24px, subtitulo 14px, pill de 40px e botao branco;
+   - foto `public/hero-itajuba.jpg` (Serra da Mantiqueira) com overlay e
+     credito;
+   - busca compacta de 46px reutilizando `query` e o filtro client-side;
+   - ate 6 chips de categoria 60x60 com icone (novos icones em `Icons.tsx`),
+     chave normalizada para unir `eventos`/`EVENTOS`;
+   - carrossel "Vagas perto de voce" com cards de 260px, gap 12, snap
+     obrigatorio, selo Verificado real, coracao desabilitado, calendario, pino,
+     contagem real de vagas, valor 18px e "Ver detalhes";
+   - lista vertical mantida, com `id="lista-vagas"`, ancora suave do hero e
+     `scroll-margin-top`;
+   - painel de filtros (cidade/valor) e ordenacao preservados atras do botao de
+     sliders.
+4. `HomeScreen` deixou de receber `userName`; `page.tsx` simplificado.
+5. `apiTypes` intocado nesta fase; nenhum endpoint/schema alterado.
+
+**Validacao no browser (dev, sessao da Ana):**
+- Tab bar: 4 itens, 4 colunas de 103px, "Inicio" ativo na Home e "Mensagens"
+  ativo em `/mensagens`.
+- Hero: 398x236,84px, raio 20px, padding 20px, margem 20px, titulo 24px/700
+  branco, pill 40px `rgba(255,255,255,.18)`, botao 38px branco/azul; foto
+  carregada (1200x800).
+- Busca: `"DJ"` digitado -> 1 card e 1 linha, contador "1 de 6"; limpar
+  restaura. Filtro por chip "Motorista" -> 1 card; segundo clique limpa.
+  Chip ativo medido em `rgb(234,241,255)` / `rgb(0,102,255)` apos a transicao.
+- Categorias: 6 chips de 60x60 com icone, gap 12px, largura rolavel 452px em
+  430px de viewport; scrollbar oculta.
+- Carrossel: 5 cards de 260px, gap 12px, `scroll-snap-type: x mandatory`,
+  `scrollWidth` 1380; `scrollLeft` chega a 272 sem estourar a pagina
+  (`scrollWidth` do documento = viewport).
+- Ancora: clique em "Ver vagas" -> `#lista-vagas` com topo em 68px (header
+  sticky), `location.hash = "#lista-vagas"` e scroll suave.
+- Card -> `/vaga/[id]` funcionou (clique no card levou ao detalhe).
+- Sem erros no console.
+- Para os 6 chips e o carrossel cheio, 4 vagas `[TESTE 2.4a]` foram criadas no
+  banco e removidas depois; a base voltou a 2 vagas abertas.
+
+**Build:** `npx tsc --noEmit` exit 0; `npm run build` exit 0 (Home 5,11 kB,
+`/buscar` fora da tabela de rotas).
+
+**Adiado:** abas Freelance/CLT/Prestadoras, mapa/geo, profissionais em destaque
+e tags de card (ver findings 4o).
+

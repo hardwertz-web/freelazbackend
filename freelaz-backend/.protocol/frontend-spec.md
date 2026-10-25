@@ -103,27 +103,42 @@ link "Criar conta". Cadastro: seletor CPF/CNPJ, documento, nome/razão social,
 nascimento (CPF) ou nome fantasia (CNPJ), e-mail, telefone, senha, escolha de
 papéis (Oferecer serviços / Contratar) e aceite de termos.
 
-### 4.2 Home (v1 — canônica)
+### 4.2 Home (Fase 2.4a — redesign visual)
 
-Fundo branco. Header fixo: marca "Freelaz" com símbolo azul e a tagline pequena
-"Trabalho que conecta."; à direita, sino e avatar. Abaixo, saudação em duas
-linhas ("Encontre o trabalho ideal para você.") em azul-marinho, com subtítulo
-cinza. Campo de busca grande, arredondado, com lupa e botão azul de filtros ao
-lado. Fileira horizontal de chips de categoria ("Todas", "Eventos", "Garçom",
-"Segurança"…), com o ativo em azul sólido. Fileira de pills de filtro
-("Data", "Valor", "Mais filtros"). Seção **"Oportunidades em destaque"** com
-grade de 2 colunas de cards: bloco superior colorido com o nome da categoria,
-badge "Destaque", título em duas linhas, localização com pino e valor em reais
-por dia. Seção **"Oportunidades mais recentes"** com lista de linhas: miniatura
-quadrada colorida, título, dia + horário, localização, selo de empresa
-verificada, valor à direita e chevron. Contador "N de total" no cabeçalho da
-seção.
+Header persistente (logo + sino + avatar) no layout. Abaixo, na ordem:
+
+1. **Hero** em card com gradiente `#0066FF → #0B1F44`, raio 20px, padding
+   20px e margem inferior 20px. Título "Encontre seu próximo trabalho" (24px,
+   branco), subtítulo "Vagas de hoje e amanhã, perto de você." (14px), pill
+   translúcida "Itajubá - MG" (40px) e botão branco "Ver vagas →" que ancora em
+   `#lista-vagas` com scroll suave. Foto da Serra da Mantiqueira
+   (`public/hero-itajuba.jpg`) no lado direito com overlay azul; se a foto não
+   carregar, o gradiente sustenta o contraste. Crédito da foto em 8px no canto.
+2. **Busca compacta**: input de 46px com lupa ("Buscar por profissão, categoria
+   ou empresa") + botão de filtros. Filtra em tempo real sobre `/api/jobs`.
+3. **Categorias**: até 6 chips de 60x60 (ícone 24px + rótulo 12px), scroll
+   horizontal com gap 12px e sem scrollbar. Ativo em `#EAF1FF` com ícone azul;
+   inativo branco/cinza. Derivadas de `/api/jobs` e agrupadas por chave
+   normalizada (une "eventos" e "EVENTOS"); clicar filtra, clicar de novo limpa.
+   Categoria desconhecida usa ícone de grade.
+4. **"Vagas perto de você"** + "Ver todas": carrossel horizontal com snap,
+   cards de 260px e gap 12px. Cada card tem foto da categoria, "Verificado" (só
+   quando o contratante é verificado), coração desabilitado (Fase 2), título,
+   data/hora com calendário, local + contagem real de vagas com pino, valor em
+   18px e "Ver detalhes" outlined azul. O card inteiro é link para `/vaga/[id]`.
+   Urgentes primeiro, depois as mais recentes (até 5).
+5. **"Oportunidades mais recentes"** com `id="lista-vagas"`: lista vertical de
+   linhas (miniatura, título, dia + horário, localização, selo verificado, valor
+   e chevron) e contador "N de total".
+
+O painel de filtros (cidade, faixa de valor e ordenação por data/valor) fica
+atrás do botão de filtros, preservando a funcionalidade da v1.
 
 ### 4.3 Buscar
 
-Não existe tela dedicada nas referências. Decisão da Fase 1: a busca vive na
-Home. A tab "Buscar" redireciona para `/?focus=search`, que foca o campo e
-mantém a tab Buscar ativa.
+A rota `/buscar` e a 5ª aba foram removidas na Fase 2.4a. A busca vive na Home,
+logo abaixo do hero, e o botão de busca da tab bar não existe mais. Acesso
+direto a `/buscar` responde 404.
 
 ### 4.4 Vaga única
 
@@ -221,10 +236,10 @@ Card fixo (`position: sticky`) logo abaixo do cabeçalho da conversa, visível e
 
 ### 4.8 Tab bar
 
-Barra fixa inferior com 5 itens (Início, Buscar, Mensagens, Carteira, Perfil),
-ícones outline de 20px sobre o rótulo de 10px. Item ativo em azul com fundo
-`--selected`; inativos em cinza. A referência da Carteira tinha 5 itens e as
-outras 4 — padronizamos em 5.
+Barra fixa inferior com 4 itens (Início, Mensagens, Carteira, Perfil) em
+`grid-template-columns: repeat(4, 1fr)`, ícones outline de 20px sobre o rótulo
+de 10px. Item ativo em azul com fundo `--selected`; inativos em cinza. A aba
+"Buscar" foi removida na Fase 2.4a (a busca vive na Home).
 
 ## 5. Rotas e arquivos
 
@@ -236,8 +251,7 @@ src/app/
   cadastro/page.tsx           fora do route group (sem tab bar)
   (web)/
     layout.tsx                guarda de sessão + ScreenHeader + BottomTabBar
-    page.tsx                  Home (v1)
-    buscar/page.tsx           redirect → /?focus=search
+    page.tsx                  Home (Fase 2.4a)
     mensagens/page.tsx
     mensagens/[hiringId]/page.tsx   conversa (Fase 2.1)
     carteira/page.tsx

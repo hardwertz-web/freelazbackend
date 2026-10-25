@@ -1007,4 +1007,77 @@ gitignored — ajuste local, nenhum codigo/commit envolvido.
 - Avaliacao (2.3b) e publicar vaga (2.3c) seguem pendentes; a avaliacao libera
   2h depois de `closingCodeUsedAt` (`isEvaluationUnlocked`).
 
+## 4o. Frontend Fase 2.4a — Home visual + 4 abas
+
+### Escopo entregue
+
+- `BottomTabBar` com 4 itens (Inicio, Mensagens, Carteira, Perfil) e
+  `repeat(4, 1fr)`; `useSearchParams` e a dependencia de `Suspense` no layout
+  removidas.
+- Rota `/buscar` apagada (404). Nenhum link restante para `?focus=search`.
+- Home: hero com foto, busca compacta, 6 chips de categoria com icone,
+  carrossel "Vagas perto de voce" (260px, snap) e lista vertical com
+  `id="lista-vagas"` para a ancora do hero.
+- Busca e filtros continuam client-side sobre `GET /api/jobs?limit=50`.
+
+### Foto do hero (licenca)
+
+O Unsplash bloqueia scraping direto (HTTP 401), entao a foto veio do Wikimedia
+Commons: "Campos do Jordao - Paisagem / Landscape", de **Deni Williams**
+(CC BY 2.0), redimensionada para 1200x800 e recomprimida (232 KB) em
+`public/hero-itajuba.jpg`. O credito aparece em 8px no canto do hero e nao ha
+dependencia externa em runtime. E uma paisagem da Serra da Mantiqueira, nao uma
+foto de Itajuba especifica.
+
+### Dados reais x 6 chips
+
+A base de dev tem apenas **2 vagas ABERTA+PUBLICA com `endsAt` no futuro**
+(seguranca e garcom), entao a tela real mostra 2 chips e 2 cards. Para validar
+os 6 chips, os icones e o snap, foram criadas 4 vagas temporarias
+(`[TESTE 2.4a]`, fotografo/cozinheiro/dj/motorista, uma delas com
+`urgentBoost`) direto no banco e **removidas em seguida**. Nenhum dado mock
+ficou na tela ou no codigo.
+
+### Decisoes
+
+1. **Categorias normalizadas** (`trim().toLowerCase()`, sem acento) porque o
+   banco tem `eventos` (67) e `EVENTOS` (5) como categorias distintas. O chip
+   filtra pela chave normalizada; o rotulo e capitalizado.
+2. **Sem chip "Todas"**: clicar no chip ativo limpa o filtro (padrao que ja
+   existia).
+3. **Selo "Verificado"** so aparece quando `contractor.verified` e true (dado
+   real de `verificationStatus`). Nao e decorativo.
+4. **"N vagas"** vem da contagem real dos jobs carregados por cidade +
+   categoria; nunca um numero inventado.
+5. **Lista vertical repete o carrossel** de proposito: com poucas vagas
+   abertas, excluir as do carrossel deixaria a secao vazia. O carrossel e um
+   recorte (urgentes primeiro, ate 5) e a lista e o acervo completo.
+6. **Filtros avancados preservados** atras do botao de sliders (cidade, faixa
+   de valor) e a ordenacao Data/Valor foi para dentro do painel. A v1 tinha
+   esses controles visiveis; o redesign priorizou a hierarquia da referencia.
+7. **Fallback da foto**: se `hero-itajuba.jpg` nao carregar, o gradiente
+   `#0066FF -> #0B1F44` + overlay mantem o hero legivel (nao ha TODO pendente).
+8. **Scroll suave** da ancora via `scrollIntoView` + `scroll-margin-top` de
+   68px (header sticky); o hash e atualizado com `replaceState`.
+
+### Adiado (depende de backend/schema)
+
+- **Abas "Freelance / CLT / Prestadoras"**: `JobPosting` nao tem `modality`
+  (2.4b).
+- **"Vagas na sua regiao" (mapa)**: nao ha geo/lat-long no `JobPosting`
+  (2.4b).
+- **"Profissionais em destaque"**: depende de `GET /api/professionals/featured`
+  (2.5), que nao existe.
+- **Tags de card ("Pagamento no dia", "Alimentacao")**: nao ha `tags[]` no
+  schema (2.4b).
+
+### Gaps/limitacoes
+
+- `categoryImages` nao tem foto para `fotografo`, `dj`, `motorista` etc.;
+  essas categorias caem em `default.jpg` (comportamento antigo, sem quebra).
+- O hero mostra "Itajuba - MG" fixo (como no pedido), enquanto as vagas vem de
+  contratantes de cidades variadas; a proximidade real depende de geo (2.4b).
+- A Home carrega no maximo 50 vagas por pagina (`hasMore`); nao ha "carregar
+  mais" — o aviso de rodape informa quantas estao sendo mostradas.
+
 
