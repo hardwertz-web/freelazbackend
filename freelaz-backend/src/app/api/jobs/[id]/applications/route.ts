@@ -79,23 +79,44 @@ export async function GET(
     },
   });
 
+  // Nota + quantidade exibidas no card do candidato (Fase 2.3b). Contamos
+  // SOMENTE avaliações liberadas — uma avaliação cega não pode aparecer aqui
+  // antes de a contraparte avaliar (ou dos 30 dias vencerem).
+  const targetIds = applications.map((application) => application.professional.id);
+  const ratingGroups = targetIds.length
+    ? await prisma.evaluation.groupBy({
+        by: ["targetId"],
+        where: { targetId: { in: targetIds }, releasedAt: { not: null } },
+        _avg: { rating: true },
+        _count: { _all: true },
+      })
+    : [];
+  const ratingByTarget = new Map(ratingGroups.map((group) => [group.targetId, group]));
+
   return NextResponse.json({
-    applications: applications.map((application) => ({
-      id: application.id,
-      status: application.status,
-      message: application.message,
-      counterOfferValueCents: application.counterOfferValueCents,
-      counterOfferBy: application.counterOfferBy,
-      agreedValueCents: application.agreedValueCents,
-      createdAt: application.createdAt,
-      // Para o contratante, o contato do candidato é informação legítima da
-      // contratação — diferente do marketplace público, onde nada disso vaza.
-      professional: {
-        ...publicUser(application.professional),
-        professionalProfile: application.professional.professionalProfile,
-        portfolioItemsCount: application.professional._count.portfolioItems,
-        workExperiencesCount: application.professional._count.workExperiences,
-      },
-    })),
+    applications: applications.map((application) => {
+      const rating = ratingByTarget.get(application.professional.id);
+      return {
+        id: application.id,
+        status: application.status,
+        message: application.message,
+        counterOfferValueCents: application.counterOfferValueCents,
+        counterOfferBy: application.counterOfferBy,
+        agreedValueCents: application.agreedValueCents,
+        createdAt: application.createdAt,
+        // Para o contratante, o contato do candidato é informação legítima da
+        // contratação — diferente do marketplace público, onde nada disso vaza.
+        professional: {
+          ...publicUser(application.professional),
+          professionalProfile: application.professional.professionalProfile,
+          // Nível "professional" (aditivo): o card de candidatura usa estes
+          // campos sem precisar cavar dentro de professionalProfile.
+          ratingAverage: rating?._avg.rating ?? null,
+          evaluationCount: rating?._count._all ?? 0,
+          portfolioItemsCount: application.professional._count.portfolioItems,
+          workExperiencesCount: application.professional._count.workExperiences,
+        },
+      };
+    }),
   });
 }

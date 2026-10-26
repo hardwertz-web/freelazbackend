@@ -62,11 +62,13 @@ function cleanStringArray(
 async function loadProfileBundle(userId: string) {
   const profile = await prisma.professionalProfile.findUnique({ where: { userId } });
   if (!profile) return null;
-  const [portfolioItems, workExperiences] = await Promise.all([
+  const [portfolioItems, workExperiences, evaluationCount] = await Promise.all([
     prisma.portfolioItem.findMany({ where: { userId }, orderBy: { position: "asc" } }),
     prisma.workExperience.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
+    // Contagem exibida junto da média (Fase 2.3b): só avaliações liberadas.
+    prisma.evaluation.count({ where: { targetId: userId, releasedAt: { not: null } } }),
   ]);
-  return { ...profile, portfolioItems, workExperiences };
+  return { ...profile, portfolioItems, workExperiences, evaluationCount };
 }
 
 export async function GET() {

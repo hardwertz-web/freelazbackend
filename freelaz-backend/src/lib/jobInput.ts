@@ -25,6 +25,8 @@ export type JobFields = {
   title: string;
   description: string;
   category: string;
+  city: string | null;
+  state: string | null;
   modality: JobModality;
   valueCents: number;
   startsAt: Date;
@@ -38,6 +40,8 @@ const MAX_TITLE = 120;
 const MIN_DESCRIPTION = 10;
 const MAX_DESCRIPTION = 4000;
 const MAX_CATEGORY = 60;
+const MAX_CITY = 80;
+const UF_PATTERN = /^[A-Z]{2}$/;
 const MAX_SHIFT_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 
 function text(value: unknown): string {
@@ -97,6 +101,23 @@ export function parseJobFields(
       return { ok: false, error: "Categoria é obrigatória" };
     }
     data.category = category;
+  }
+
+  if (!partial || has("city")) {
+    const city = text(body.city);
+    if (city.length > MAX_CITY) {
+      return { ok: false, error: `Cidade deve ter no máximo ${MAX_CITY} caracteres` };
+    }
+    // Ausente/vazio → null: vagas antigas continuam caindo no perfil da empresa.
+    data.city = city || null;
+  }
+
+  if (!partial || has("state")) {
+    const state = text(body.state).toUpperCase();
+    if (state && !UF_PATTERN.test(state)) {
+      return { ok: false, error: "UF deve ter 2 letras (ex: MG)" };
+    }
+    data.state = state || null;
   }
 
   if (!partial || has("modality")) {

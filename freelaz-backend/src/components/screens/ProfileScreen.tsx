@@ -134,6 +134,7 @@ export function ProfileScreen() {
   const displayName = user.tradeName || user.name;
   const verified = profile?.verificationStatus === "VERIFICADO";
   const hasRating = profile?.ratingAverage != null && profile.ratingAverage > 0;
+  const evaluationCount = profile?.evaluationCount ?? 0;
 
   return (
     <div className={styles.screen}>
@@ -171,7 +172,10 @@ export function ProfileScreen() {
                 {hasRating ? profile.ratingAverage!.toFixed(1) : "—"}
               </span>
               <span className={styles.metricLabel}>
-                <StarIcon size={9} filled={hasRating} /> Avaliação
+                <StarIcon size={9} filled={hasRating} />{" "}
+                {evaluationCount > 0
+                  ? `${evaluationCount} ${evaluationCount === 1 ? "avaliação" : "avaliações"}`
+                  : "Sem avaliações ainda"}
               </span>
             </div>
             <div className={styles.metric}>

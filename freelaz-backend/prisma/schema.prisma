@@ -295,6 +295,10 @@ model JobPosting {
   title               String
   description         String
   category            String
+  // Local do serviço (Fase 2.3b). Opcional de propósito: vagas antigas caem
+  // no endereço do contratante (`job.city ?? contractor.city`).
+  city                String?
+  state               String?
   // Modalidade da vaga (Fase 2.3c). String em vez de enum de propósito:
   // FREELANCE | CLT | PRESTADORA — migrar para enum depois é aditivo.
   modality            String               @default("FREELANCE")
@@ -695,6 +699,10 @@ model Evaluation {
   target    User     @relation("EvaluationTarget", fields: [targetId], references: [id])
   rating    Int // 1 a 5 estrelas (faixa garantida por CHECK no banco)
   comment   String? // opcional
+  // Avaliação cega (Fase 2.3b): null enquanto a outra parte ainda não avaliou.
+  // A 2ª avaliação do mesmo hiring libera as duas; se ninguém avaliar, o job
+  // diário libera em `closingCodeUsedAt + 30d`.
+  releasedAt DateTime?
   createdAt DateTime @default(now())
 
   @@unique([hiringId, authorId])

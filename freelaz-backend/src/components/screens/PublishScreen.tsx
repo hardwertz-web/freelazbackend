@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiGet, apiPost, apiPut } from "@/lib/apiClient";
+import { apiGet, apiPost } from "@/lib/apiClient";
 import type { JobDetailResponse, MeResponse } from "@/lib/apiTypes";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -123,22 +123,15 @@ export function PublishScreen() {
 
     setSubmitting(true);
     try {
-      // `JobPosting` não tem cidade/UF: a localização exibida vem do usuário
-      // contratante. Atualizamos o perfil (PUT real) antes de publicar — nada
-      // de campo inventado no corpo da vaga.
-      const profile = await apiPut<{ user: unknown }>("/api/profile/contractor", {
-        city: city.trim(),
-        state: uf.trim().toUpperCase(),
-      });
-      if (!profile.ok) {
-        setFormError(profile.error);
-        return;
-      }
-
+      // Cidade/UF agora são campos da própria vaga (Fase 2.3b). Antes o form
+      // fazia um PUT /api/profile/contractor como workaround — isso mudava o
+      // endereço da empresa ao publicar. Não fazer mais isso.
       const created = await apiPost<JobDetailResponse>("/api/jobs", {
         title: title.trim(),
         description: description.trim(),
         category,
+        city: city.trim(),
+        state: uf.trim().toUpperCase(),
         modality,
         valueCents: Number(value) * 100,
         startsAt: new Date(startsAt).toISOString(),
@@ -323,7 +316,7 @@ export function PublishScreen() {
             </div>
           </div>
           <span className={styles.helper}>
-            A cidade/UF ficam no perfil da empresa e aparecem no anúncio.
+            Cidade e UF ficam na vaga e aparecem no anúncio.
           </span>
 
           <div className={styles.field}>

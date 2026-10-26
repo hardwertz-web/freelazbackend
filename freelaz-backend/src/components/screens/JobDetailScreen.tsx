@@ -53,12 +53,36 @@ function gradientFor(seed: string): string {
 }
 
 function locationOf(job: JobDetail): string {
+  // Cidade/UF da vaga (Fase 2.3b) com fallback para o endereço da empresa nas
+  // vagas antigas, que nasceram antes de `JobPosting.city/state`.
+  const city = job.city ?? job.contractor.city;
+  const state = job.state ?? job.contractor.state;
+  if (city && state) return `${city} - ${state}`;
+  if (city) return city;
+  if (state) return state;
+  return "Local a combinar";
+}
+
+/** Localização da EMPRESA no card "Sobre a empresa" — não é o local da vaga. */
+function companyLocationOf(job: JobDetail): string {
   const { city, state } = job.contractor;
   if (city && state) return `${city} - ${state}`;
   if (city) return city;
   if (state) return state;
   return "Local a combinar";
 }
+
+const MODALITY_LABEL: Record<string, string> = {
+  FREELANCE: "Freelance",
+  CLT: "CLT",
+  PRESTADORA: "Prestadora",
+};
+
+const MODALITY_CLASS: Record<string, string> = {
+  FREELANCE: styles.modalityFreelance,
+  CLT: styles.modalityClt,
+  PRESTADORA: styles.modalityPrestadora,
+};
 
 const APPLICATION_STATUS: Record<
   string,
@@ -295,6 +319,14 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
       </section>
 
       <div className={styles.metaRow}>
+        <span
+          className={[
+            styles.modalityBadge,
+            MODALITY_CLASS[job.modality] ?? styles.modalityPrestadora,
+          ].join(" ")}
+        >
+          {MODALITY_LABEL[job.modality] ?? job.modality}
+        </span>
         <span className={styles.valuePill}>
           {formatBRLShort(job.valueCents)}
           <small>/dia</small>
@@ -372,7 +404,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
                   </>
                 )}
               </span>
-              <span className={styles.companyMeta}>{locationOf(job)}</span>
+              <span className={styles.companyMeta}>{companyLocationOf(job)}</span>
             </span>
           </div>
         </Card>
@@ -436,6 +468,13 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
                         <span className={styles.applicantTop}>
                           <span className={styles.applicantName}>{name}</span>
                           <Badge tone={meta.tone}>{meta.label}</Badge>
+                        </span>
+                        <span className={styles.applicantRating}>
+                          {person.evaluationCount > 0 && person.ratingAverage != null
+                            ? `${person.ratingAverage.toFixed(1)} ★ · ${person.evaluationCount} ${
+                                person.evaluationCount === 1 ? "avaliação" : "avaliações"
+                              }`
+                            : "Novo · sem avaliações"}
                         </span>
                         {profile?.headline && (
                           <span className={styles.applicantMeta}>{profile.headline}</span>

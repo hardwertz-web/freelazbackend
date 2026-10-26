@@ -1165,3 +1165,103 @@ ficou na tela ou no codigo.
   ativo); a tela tambem nao bloqueia por isso.
 
 
+
+## 4q. Fase 2.3b — avaliacao cega, prazo de 30d, rating e cidade/modalidade
+
+### Escopo entregue
+
+- `JobPosting.city String?` + `JobPosting.state String?` e
+  `Evaluation.releasedAt DateTime?` na 19ª migracao
+  (`20261025120000_etapa23b_avaliacao_cidade`). O SQL inclui o backfill
+  `releasedAt = createdAt` nas avaliacoes existentes (7/7 no banco de dev).
+- Avaliacao cega: a 1ª do hiring nasce `releasedAt = null`; a 2ª libera as
+  duas no mesmo instante. `releaseExpiredEvaluations()` libera pendentes em
+  `closingCodeUsedAt + 30d` e e chamada pelo job diario
+  (`evaluationsReleased` no corpo).
+- `recalculateRating` usa somente `releasedAt != null` e atualiza
+  `ProfessionalProfile`/`ContractorProfile`.
+- `evaluationUnlockAt` continua +2h; nova `evaluationDeadlineAt` (+30d) e
+  `EvaluationDeadlineError` -> 422 "Prazo de avaliação expirou". Demais erros
+  de avaliacao seguem 400.
+- `GET /api/hirings/[id]` devolve `evaluations: { mine, theirs, revealed,
+  deadline }`; `theirs.rating`/`comment` so quando `revealed`.
+- `GET /api/jobs/[id]/applications` devolve `professional.ratingAverage` e
+  `professional.evaluationCount` (so liberadas).
+- `GET /api/profile/professional` devolve `evaluationCount`.
+- `POST /api/jobs` e `PATCH /api/jobs/[id]` aceitam `city`/`state`; ausente
+  vira `null`.
+- Front: card de avaliacao na conversa (4 estados), media + contagem no
+  perfil, nota nos cards de candidatura, badge de modalidade, cidade da vaga
+  com fallback e `/publicar` sem `PUT /api/profile/contractor`.
+
+### Decisoes
+
+1. **`mine`/`theirs` sempre objetos** (`{ exists: false }` quando nao ha
+   avaliacao), em vez de `null`. O pedido citava `mine.exists === false`; o
+   objeto mantem o front simples e o tipo `HiringEvaluationPeer` previsivel.
+2. **422 so para prazo vencido.** O contrato antigo devolvia 400 em todos os
+   erros; criar um erro tipado evita mudar o status de validacao/duplicidade
+   e ainda distingue a regra de negocio.
+3. **`releasedAt` gravado como `closingCodeUsedAt + 30d`**, nao `now`, na
+   liberacao automatica: registra o instante em que a janela venceu, mesmo
+   que o job rode dias depois.
+4. **Recalculo dos dois lados** em `createEvaluation` (targets distintos) e
+   dos alvos pendentes em `releaseExpiredEvaluations`, sempre na mesma
+   transacao da liberacao.
+5. **`evaluations` deixou de ser array cru.** Era o unico jeito de nao vazar
+   nota da contraparte em clientes que leem a API; o front nao usava o array.
+6. **Badge de modalidade nao substitui o texto do status:** o badge fica ao
+   lado do valor no bloco hero, com as cores exatas pedidas.
+7. **Card "Sobre a empresa" usa o endereco da empresa**, nao o da vaga. O
+   detalhe da vaga passou a ter dois locais possiveis; manter o card da
+   empresa com o local da vaga seria uma regressao silenciosa.
+
+### Desvios do pedido (e por que)
+
+- Nenhum desvio de contrato em `POST /api/evaluations`: body
+  `{ hiringId, rating, comment }` e resposta `{ evaluation }` 201 continuam
+  iguais; so o status do prazo vencido virou 422.
+- `PRESTADORA` ganhou badge cinza (pedido dizia "futuro"); a modalidade ja
+  existia na API desde a 2.3c, entao o estilo foi incluido junto.
+- A cidade do formulario continua pre-preenchida pelo perfil, mas agora e
+  editavel e viaja no corpo da vaga; o `PUT` de perfil foi removido.
+
+### Testes (dev, banco real)
+
+- Backfill: 7 avaliacoes, todas com `releasedAt = createdAt`.
+- Hiring `cmvlssfes0004pw0b7ncgkccm`: antes `mine/theirs` inexistentes;
+  Ana avalia 5 -> `mine.rating 5`, `theirs` sem nota, `revealed false`;
+  empresa avalia 4 -> `revealed true` com 5 e 4 nas duas visoes.
+- Perfil da Ana: `ratingAverage 4`, `evaluationCount 1`. Candidaturas da
+  vaga "Garcom para jantar": Ana `4`/`1`, Bruno `null`/`0`.
+- Prazo: `closingCodeUsedAt` -40d -> POST 422; job diario liberou 2 e a
+  segunda execucao liberou 0; `releasedAt = fechamento + 30d`. Estado
+  restaurado em seguida (avaliacoes 4 e 5, `closing` original).
+- Cidade/modalidade: POST 201 com `city`/`state`; PATCH parcial; UF invalida
+  422; POST sem campos = `null`; Home e detalhe com fallback para vagas
+  antigas; cores do badge conferidas por `getComputedStyle`.
+- Browser: 4 estados do card (avaliar -> aguardando -> revelado -> expirado),
+  perfil "4.0 / 1 avaliacao", cards "4.0 ★ · 1 avaliação" e
+  "Novo · sem avaliações", Home/detalhe com "Contagem - MG".
+- `npx tsc --noEmit` exit 0; `npm run build` exit 0 (58 paginas).
+
+### Adiado
+
+- Listagem publica de avaliacoes recebidas (o servico existe, mas nao ha
+  tela/endpoint de "reviews" no perfil).
+- Notificacao quando a contraparte avalia/libera.
+- Denuncia de avaliacao e moderacao (fluxo de disputa nao cobre isso).
+- Edicao de cidade/UF pela UI de `/vaga/[id]` (PATCH ja aceita, sem tela).
+- Profissionais em destaque (2.5) e tags (2.4b).
+
+### Gaps/limitacoes
+
+- `deadline` e calculado no servidor a cada GET; o card compara com o relogio
+  do cliente. Um cliente com relogio muito adiantado pode ver "expirado"
+  antes da API recusar; o envio ainda seria aceito ate o prazo real.
+- `ratingAverage` e denormalizado: se uma avaliacao for apagada direto no
+  banco, o perfil so corrige quando `recalculateRating` rodar de novo.
+- O job diario so libera janelas vencidas; nao existe job separado por
+  avaliacao. Rodar o job mais de uma vez no dia e seguro (idempotente).
+- O card de avaliacao depende de `GET /api/hirings/[id]` (polling de 5s da
+  conversa); nao ha push em tempo real.

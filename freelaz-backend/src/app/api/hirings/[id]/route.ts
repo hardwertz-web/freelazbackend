@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHiringParticipant } from "@/lib/hiringAccess";
 import { commissionCentsFor } from "@/lib/commission";
+import { evaluationDeadlineAt } from "@/services/evaluationService";
 
 /**
  * GET /api/hirings/:id — detalhe de uma contratação (só as partes).
@@ -14,7 +15,7 @@ export async function GET(
 ) {
   const access = await requireHiringParticipant(params.id);
   if (access.error) return NextResponse.json(access.error.body, { status: access.error.status });
-  const { hiring, side } = access;
+  const { hiring, side, user } = access;
 
   const [contractor, professional, evaluations, checkIn, disputes] = await Promise.all([
     prisma.user.findUnique({
@@ -27,7 +28,15 @@ export async function GET(
     }),
     prisma.evaluation.findMany({
       where: { hiringId: hiring.id },
-      include: { author: { select: { id: true, name: true, tradeName: true } } },
+      select: {
+        id: true,
+        authorId: true,
+        targetId: true,
+        rating: true,
+        comment: true,
+        releasedAt: true,
+        createdAt: true,
+      },
     }),
     prisma.checkIn.findUnique({ where: { hiringId: hiring.id } }),
     prisma.dispute.findMany({
@@ -38,6 +47,19 @@ export async function GET(
   ]);
 
   const counterpart = side === "CONTRACTOR" ? professional : contractor;
+
+  // Avaliação CEGA: `mine` é sempre visível para o autor; `theirs` só expõe
+  // nota/comentário quando as duas foram liberadas. Sem isso a tela (ou
+  // qualquer cliente da API) conseguiria ler a nota da contraparte antes da
+  // hora e a janela cega não existiria de fato.
+  const mine = evaluations.find((evaluation) => evaluation.authorId === user.id) ?? null;
+  const theirs = evaluations.find((evaluation) => evaluation.authorId !== user.id) ?? null;
+  const revealed = Boolean(
+    mine && theirs && mine.releasedAt !== null && theirs.releasedAt !== null
+  );
+  const deadline = hiring.closingCodeUsedAt
+    ? evaluationDeadlineAt(hiring.closingCodeUsedAt).toISOString()
+    : null;
 
   return NextResponse.json({
     hiring: {
@@ -78,7 +100,19 @@ export async function GET(
         .slice()
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
       payout: hiring.payout,
-      evaluations,
+      evaluations: {
+        mine: mine
+          ? { exists: true, rating: mine.rating, comment: mine.comment }
+          : { exists: false },
+        theirs: theirs
+          ? {
+              exists: true,
+              ...(revealed ? { rating: theirs.rating, comment: theirs.comment } : {}),
+            }
+          : { exists: false },
+        revealed,
+        deadline,
+      },
       checkIn,
       disputes,
     },

@@ -132,7 +132,9 @@ Header persistente (logo + sino + avatar) no layout. Abaixo, na ordem:
    e chevron) e contador "N de total".
 
 O painel de filtros (cidade, faixa de valor e ordenação por data/valor) fica
-atrás do botão de filtros, preservando a funcionalidade da v1.
+atrás do botão de filtros, preservando a funcionalidade da v1. A localização
+de cada card é a da vaga (`job.city`/`job.state`) com fallback para o endereço
+da empresa nas vagas anteriores à Fase 2.3b (`job.city ?? contractor.city`).
 
 Entre as categorias e o carrossel ficam as **abas de modalidade** (Fase 2.3c):
 "Freelance" (ativa por padrão, azul `#0066FF`) e "CLT" (branca/inativa), cada
@@ -156,11 +158,15 @@ direto a `/buscar` responde 404.
 
 Header com voltar. Bloco hero em gradiente com a categoria em caixa alta,
 badge "Vaga aberta" e coração (Fase 2, desabilitado), título grande branco.
-Abaixo: pill azul com o valor ("R$ 180 /dia"), data por extenso com ícone de
-calendário ("Sábado, 18:00 – 02:00") e localização com pino. Três métricas em
-cards: candidaturas, empresa verificada, visibilidade. Cards "Sobre a vaga"
-(descrição real), "Pagamento" (valor + aviso de retenção até a conclusão) e
-"Sobre a empresa" (avatar com iniciais, nome/razão social, selo e local).
+Abaixo: badge de modalidade, pill azul com o valor ("R$ 180 /dia"), data por
+extenso com ícone de calendário ("Sábado, 18:00 – 02:00") e localização com
+pino. O badge usa `job.modality`: Freelance (`#EAF1FF`/`#0066FF`), CLT
+(`#FFF7ED`/`#F97316`) e Prestadora (cinza). A localização é
+`job.city ?? job.contractor.city` + `job.state ?? job.contractor.state`
+(fallback das vagas antigas). Três métricas em cards: candidaturas, empresa
+verificada, visibilidade. Cards "Sobre a vaga" (descrição real), "Pagamento"
+(valor + aviso de retenção até a conclusão) e "Sobre a empresa" (avatar com
+iniciais, nome/razão social, selo e o local da empresa — não o da vaga).
 Botão primário "Enviar proposta" abre um modal de confirmação com o campo
 "Mensagem (opcional)" (até 500 caracteres, com contador; vazio = sem mensagem)
 e chama `POST /api/jobs/[id]/apply` com `{ message }`. Em caso de sucesso:
@@ -168,16 +174,21 @@ toast "Proposta enviada" e retorno para a Home; duplicata (409) desabilita o
 botão como "Proposta enviada".
 
 Dono da vaga: a seção "Propostas recebidas (N)" lista as candidaturas com nome,
-status, mensagem e data. Candidaturas PENDENTES têm "Selecionar candidato"
-(`POST /api/jobs/[id]/select`); o sucesso leva a `/checkout/[hiringId]`. As
-demais aparecem como "Suplente" (o backend converte as PENDENTES restantes).
+status, mensagem e data. Abaixo do nome vem a nota do profissional
+(`ratingAverage` + `evaluationCount`): "4.0 ★ · 1 avaliação" ou
+"Novo · sem avaliações" quando não há avaliação liberada. Candidaturas
+PENDENTES têm "Selecionar candidato" (`POST /api/jobs/[id]/select`); o sucesso
+leva a `/checkout/[hiringId]`. As demais aparecem como "Suplente" (o backend
+converte as PENDENTES restantes).
 
 ### 4.5 Perfil
 
 Cartão superior centralizado: avatar circular com iniciais em gradiente azul,
 nome em destaque, badge "Verificado" com escudo, headline/bio curta e
-localização com pino. Três métricas em caixas cinza claro: avaliação (estrela),
-confiabilidade (%) e força do perfil (%). Abaixo: chips de categorias, card
+localização com pino. Três métricas em caixas cinza claro: avaliação (estrela,
+com `ratingAverage` em 1 casa e a contagem de avaliações liberadas — "1
+avaliação"/"N avaliações"; com 0, "Sem avaliações ainda"), confiabilidade (%)
+e força do perfil (%). Abaixo: chips de categorias, card
 "Sobre" com a bio, lista de experiências (ícone de maleta, cargo, empresa,
 período), grade 3×3 de portfólio (fotos reais de `/api/uploads/`), tags de
 disponibilidade e soft skills, barra de progresso "Força do perfil" (visível só
@@ -246,6 +257,28 @@ Card fixo (`position: sticky`) logo abaixo do cabeçalho da conversa, visível e
 - O polling de 5s da conversa busca também `GET /api/hirings/[id]`, então a
   transição de turno aparece sem reload.
 
+### 4.7.4 Avaliação cega (na conversa)
+
+Card `EvaluationCard` logo abaixo do card de código de turno, visível só em
+`CONCLUIDO` (Fase 2.3b). Lê `evaluations` de `GET /api/hirings/[id]`
+(`{ mine, theirs, revealed, deadline }`):
+
+- **Sem avaliação:** "Avalie o serviço" + "ATÉ {deadline}" (dd mmm yyyy) e o
+  aviso "Sua nota fica oculta até a contraparte avaliar (ou até o prazo de 30
+  dias)." Cinco estrelas (1–5) + textarea opcional com `maxLength 500` e
+  contador `N/500`; "Enviar avaliação" só habilita com nota escolhida.
+- **Avaliei, contraparte não:** "Avaliação enviada" + "REVELA ATÉ {deadline}",
+  "VOCÊ AVALIOU" com as estrelas escolhidas e o comentário, e "Aguardando
+  avaliação da contraparte. As duas notas são reveladas juntas."
+- **Revelado:** "Avaliações reveladas" + "SUA AVALIAÇÃO" e "AVALIAÇÃO DA
+  CONTRAPARTE" com estrelas (somente leitura) e comentário ("Sem comentário."
+  quando vazio).
+- **Prazo vencido:** "Prazo de avaliação expirou." + "A janela para avaliar
+  esta contratação era de 30 dias após o fechamento do turno."
+
+Envio real via `POST /api/evaluations` com `{ hiringId, rating, comment }`,
+seguido de refetch do hiring; 422 vira o estado de prazo expirado.
+
 ### 4.8 Tab bar
 
 Barra fixa inferior com 4 itens (Início, Mensagens, Carteira, Perfil) em
@@ -267,9 +300,10 @@ pré-preenchidos pelo perfil), modalidade (Freelance padrão / CLT) e visibilida
 
 A visibilidade mostra "Pública" e "Privada — convite direto (em breve)"
 desabilitada: `POST /api/jobs` grava sempre `PUBLICA` (vaga privada nasce pelo
-fluxo "Me contrate"). A cidade **não** está em `JobPosting`: o formulário faz
-`PUT /api/profile/contractor` com `{ city, state }` antes do POST e a
-localização do anúncio vem do usuário contratante.
+fluxo "Me contrate"). A cidade/UF da vaga vive em `JobPosting.city/state`
+(Fase 2.3b): os campos vêm pré-preenchidos pelo perfil, mas são editáveis e
+viajam no corpo do `POST /api/jobs`; o formulário não altera mais o perfil.
+Vagas antigas (sem cidade própria) continuam exibindo o endereço da empresa.
 
 Validação no cliente espelha a do backend (obrigatórios, título/descrição com
 tamanho mínimo, valor > 0, fim depois do início) com mensagem por campo e
@@ -297,6 +331,8 @@ src/app/
 src/components/
   Card.tsx / Chip.tsx / Button.tsx / Badge.tsx
   ScreenHeader.tsx / BottomTabBar.tsx / Icons.tsx / AuthShell.tsx
+  ShiftCodeCard.tsx           código de turno (Fase 2.3a)
+  EvaluationCard.tsx          avaliação cega na conversa (Fase 2.3b)
   screens/{Home,JobDetail,Messages,Chat,Wallet,Profile,Publish}Screen.tsx
 src/lib/
   apiClient.ts                fetch same-origin com erro tipado
@@ -315,25 +351,26 @@ usa Tailwind).
 | Login | `POST /api/auth/login` | cookie `freelaz_session` (httpOnly) |
 | Cadastro | `POST /api/auth/register` | papéis `PROFISSIONAL`/`CONTRATANTE` |
 | Home | `GET /api/jobs?limit=50&modality=FREELANCE\|CLT` | duas chamadas em paralelo (uma por aba); busca e filtros **client-side**; `total`/`hasMore` da resposta |
-| Publicar vaga | `POST /api/jobs` | `{ title, description, category, modality, valueCents, startsAt, endsAt }`; 201/422/403 |
-| Publicar vaga (cidade) | `PUT /api/profile/contractor` | `{ city, state }` — a localização vem do usuário, não da vaga |
+| Publicar vaga | `POST /api/jobs` | `{ title, description, category, modality, city, state, valueCents, startsAt, endsAt }`; `city`/`state` opcionais (ausente = `null`); 201/422/403 |
 | Vaga | `GET /api/jobs/[id]` | 404 → estado "Vaga não encontrada" |
-| Perfil | `GET /api/auth/me` + `GET /api/profile/professional` | 409 = papel não ativado (estado próprio) |
+| Perfil | `GET /api/auth/me` + `GET /api/profile/professional` | 409 = papel não ativado (estado próprio); traz `ratingAverage` e `evaluationCount` (só avaliações liberadas) |
 | Carteira | `GET /api/wallet?limit=50` | 403 = papel Profissional inativo (estado próprio) |
 | Mensagens | `GET /api/hirings` | chats `ABERTO` e `ENCERRADO`; `AGUARDANDO_PAGAMENTO` fica fora |
 | Vaga — candidatura | `POST /api/jobs/[id]/apply` | `{ message? }` (1–500 chars; vazio = sem mensagem); 201/409 |
+| Vaga — propostas | `GET /api/jobs/[id]/applications` | só o dono; cada `professional` traz `ratingAverage` e `evaluationCount` |
 | Conversa | `GET /api/hirings/[id]/chat` | histórico cronológico + status; 404 = oculto/sem acesso |
-| Conversa — cabeçalho | `GET /api/hirings/[id]` | contraparte, vaga, status, códigos e datas do turno |
+| Conversa — cabeçalho | `GET /api/hirings/[id]` | contraparte, vaga, status, códigos e datas do turno; `evaluations: { mine, theirs, revealed, deadline }` |
 | Conversa — enviar | `POST /api/hirings/[id]/chat/messages` | `{ body }`; 409 = chat encerrado |
 | Conversa — lidas | `PATCH /api/hirings/[id]/chat/messages/read` | ao abrir e ao chegar mensagem nova |
+| Avaliação | `POST /api/evaluations` | `{ hiringId, rating, comment? }`; 201; 422 = "Prazo de avaliação expirou" |
 | Seleção | `POST /api/jobs/[id]/select` | `{ applicationId }` → cria Hiring `AGUARDANDO_PAGAMENTO` |
 | Pagamento | `POST /api/payments/create` | `{ hiringId }` → QR/copia-e-cola; 503 sem Asaas; 409 fora de `AGUARDANDO_PAGAMENTO` |
 | Turno — confirmar | `POST /api/hirings/[id]/codes` | `{ kind: "OPENING"\|"CLOSING", code }`; só a empresa (403); 422 regra/limite |
 
 Nenhuma rota de front foi criada ou alterada além de `/publicar` (Fase 2.3c).
-Nenhum dado mock: tudo vem do backend. A Fase 2.3c acrescentou o campo
-`modality` e o filtro `?modality=` em `GET/POST /api/jobs` — nenhum endpoint
-novo.
+Nenhum dado mock: tudo vem do backend. A Fase 2.3b acrescentou `city`/`state`
+ao corpo de `POST/PATCH /api/jobs`, `evaluationCount` ao perfil e as rotas de
+avaliação/propostas já cobertas acima.
 
 ## 7. Estados e comportamento
 

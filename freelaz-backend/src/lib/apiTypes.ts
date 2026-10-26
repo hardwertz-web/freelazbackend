@@ -10,6 +10,8 @@ export type JobCard = {
   title: string;
   description: string;
   category: string;
+  city: string | null;
+  state: string | null;
   modality: JobModality;
   valueCents: number;
   status: string;
@@ -118,6 +120,8 @@ export type ProfessionalProfile = {
   reliabilityScore: number | null;
   ratingAverage: number | null;
   isInfluencer: boolean;
+  // Contagem de avaliações liberadas (Fase 2.3b). 0 = "Sem avaliações ainda".
+  evaluationCount: number;
   createdAt: string;
   updatedAt: string;
   portfolioItems: PortfolioItem[];
@@ -164,6 +168,23 @@ export type ChatResponse = {
 };
 
 /**
+ * Avaliação cega (Fase 2.3b): `theirs` só traz `rating`/`comment` quando
+ * `revealed` é true (as duas partes avaliaram ou o prazo de 30d venceu).
+ */
+export type HiringEvaluationPeer = {
+  exists: boolean;
+  rating?: number;
+  comment?: string | null;
+};
+
+export type HiringEvaluations = {
+  mine: HiringEvaluationPeer | null;
+  theirs: HiringEvaluationPeer | null;
+  revealed: boolean;
+  deadline: string | null;
+};
+
+/**
  * GET /api/hirings/:id — cabeçalho da conversa + dados do turno.
  *
  * Os códigos de turno saem para AMBAS as partes ("não são segredo entre as
@@ -198,6 +219,7 @@ export type HiringDetailResponse = {
     openingCode: string | null;
     closingCode: string | null;
     closingCodeUsedAt: string | null;
+    evaluations: HiringEvaluations;
     chat: {
       id: string;
       status: ChatStatus;
@@ -259,6 +281,9 @@ export type JobApplication = {
   agreedValueCents: number | null;
   createdAt: string;
   professional: PublicUser & {
+    // Nota + contagem de avaliações liberadas (Fase 2.3b).
+    ratingAverage: number | null;
+    evaluationCount: number;
     professionalProfile: {
       headline: string | null;
       bio: string | null;

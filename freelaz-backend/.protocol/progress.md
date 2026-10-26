@@ -1156,3 +1156,90 @@ real de publicacao pelo app.
 **Nao alterados:** checkout, chat, codigo de turno, carteira, mensagens,
 detalhe da vaga. Nenhum dado mock.
 
+## Sessao 38 - Fase 2.3b: avaliacao cega + prazo 30d + rating + fix cidade/modalidade
+
+**Motivo:** a avaliacao mutua (2.3a) era aberta e sem prazo: a primeira nota
+ja aparecia e alimentava a media. Nesta fase ela vira CEGA (libera quando as
+duas partes avaliam, ou 30 dias apos o fechamento), o perfil/candidaturas
+mostram a media real e a vaga passa a ter cidade/UF propria + badge de
+modalidade.
+
+**Feito:**
+1. Schema + 19ª migracao `20261025120000_etapa23b_avaliacao_cidade`:
+   `JobPosting.city String?`, `JobPosting.state String?`,
+   `Evaluation.releasedAt DateTime?`. Backfill obrigatorio
+   `UPDATE "Evaluation" SET "releasedAt" = "createdAt" WHERE "releasedAt" IS NULL`
+   na mesma migracao. Aplicada com `prisma migrate deploy` (respeitando as 18
+   anteriores); `prisma generate` com o dev server parado.
+2. `src/services/evaluationService.ts`:
+   - `evaluationDeadlineAt(closingCodeUsedAt)` = +30d;
+   - `createEvaluation` cria com `releasedAt = null`; se ja existe outra
+     avaliacao no hiring, libera AS DUAS no mesmo instante e recalcula os
+     dois lados;
+   - `recalculateRating(userId, db)` agrega somente `releasedAt != null` e
+     atualiza `ProfessionalProfile` e `ContractorProfile` (denormalizados);
+   - `releaseExpiredEvaluations()` libera pendentes com
+     `closingCodeUsedAt + 30d < now`, gravando `releasedAt = closing + 30d`
+     e recalculando os alvos; so toca `releasedAt = null` (idempotente);
+   - `evaluationUnlockAt` mantem o minimo de 2h (regra da 2.3a);
+   - `EvaluationDeadlineError` -> `POST /api/evaluations` responde 422
+     "Prazo de avaliação expirou" (demais erros seguem 400).
+3. `POST /api/jobs/daily-reconciliation/run`: chama
+   `releaseExpiredEvaluations()` depois da reconciliacao e devolve o campo
+   aditivo `evaluationsReleased`.
+4. `GET /api/hirings/[id]`: `evaluations` deixou de ser array cru e virou
+   `{ mine, theirs, revealed, deadline }`; `mine` sempre visivel, `theirs`
+   sem `rating`/`comment` enquanto `revealed = false`.
+5. `GET /api/jobs/[id]/applications`: cada `professional` ganhou
+   `ratingAverage` + `evaluationCount` (groupBy com `releasedAt != null`).
+6. `GET /api/profile/professional`: bundle ganhou `evaluationCount` (so
+   liberadas).
+7. `jobInput.ts`: `city` (max 80) e `state` (UF de 2 letras, uppercase);
+   ausente/vazio -> null. `jobPublic.jobCard` e `apiTypes` expoem os campos.
+8. Frontend:
+   - `EvaluationCard.tsx` + CSS: card sticky abaixo do `ShiftCodeCard`,
+     renderizado so em `CONCLUIDO`; 4 estados (avaliar com 5 estrelas +
+     textarea 500 + contador, aguardando contraparte, revelado com as duas
+     notas/comentarios, prazo expirado); envio real em `POST /api/evaluations`
+     com `{ hiringId, rating, comment }` + refetch;
+   - `ProfileScreen`: media (1 casa) + "N avaliacao(oes)" / "Sem avaliacoes
+     ainda";
+   - `JobDetailScreen`: badge de modalidade (FREELANCE `#EAF1FF`/`#0066FF`,
+     CLT `#FFF7ED`/`#F97316`, PRESTADORA cinza), local `job.city ?? contractor.city`
+     e nota do candidato ("4.0 ★ · 1 avaliação" / "Novo · sem avaliações");
+     o card "Sobre a empresa" continua com o endereco da EMPRESA;
+   - `HomeScreen`: cards, busca e contagem por cidade usam
+     `job.city ?? contractor.city`;
+   - `PublishScreen`: envia `city`/`state` no POST e NAO faz mais
+     `PUT /api/profile/contractor` antes de publicar.
+
+**Validacao (dev, banco real):**
+- Backfill: 7/7 avaliacoes antigas com `releasedAt = createdAt`; 0 pendentes.
+- Hiring `cmvlssfes0004pw0b7ncgkccm` (CONCLUIDO): GET antes = `mine.exists
+  false`, `theirs.exists false`, `deadline 2026-11-23T03:17:55.025Z`.
+- Ana avalia 5 -> 201 com `releasedAt: null`; Ana ve `mine.rating 5`; a
+  empresa ve `theirs.exists true` SEM nota; `revealed false`.
+- Empresa avalia 4 -> 201; ambas liberadas e `revealed true` nas duas visoes.
+- `GET /api/profile/professional` da Ana: `ratingAverage 4`,
+  `evaluationCount 1`; `GET .../applications`: Ana `4`/`1` e Bruno `null`/`0`.
+- Prazo: com `closingCodeUsedAt` -40d, POST = 422 "Prazo de avaliação
+  expirou"; job diario #1 `evaluationsReleased 2` (releasedAt =
+  fechamento+30d) e #2 `0` (idempotente). Dados restaurados depois.
+- Cidade: POST com `city "Belo Horizonte"`/`state "mg"` = 201 com `MG`;
+  PATCH troca cidade/modalidade; UF invalida = 422; POST sem campos = null.
+  Home/detalhe mostram "Contagem - MG" e vagas antigas caem em "Itajuba - MG".
+- Badge (computed styles): Freelance `rgb(234,241,255)`/`rgb(0,102,255)`;
+  CLT `rgb(255,247,237)`/`rgb(249,115,22)`.
+- Browser: card "Avalie o serviço" (estrelas habilitadas, textarea
+  `maxLength 500`, botao desabilitado ate escolher nota) -> envio pela UI ->
+  "Aguardando avaliação da contraparte"; contraparte avalia -> "Avaliações
+  reveladas" com as duas notas (5 e 4) e comentarios; prazo vencido mostra
+  "Prazo de avaliação expirou"; `/perfil` mostra "4.0 / 1 avaliação";
+  `/vaga` mostra "4.0 ★ · 1 avaliação" e "Novo · sem avaliações".
+- A vaga de teste foi cancelada; o hiring de teste voltou as avaliacoes 4/5.
+
+**Build:** `npx tsc --noEmit` exit 0; `npm run build` exit 0 (58 paginas).
+
+**Nao alterados:** checkout, codigo de turno, mensagens (so o card novo),
+carteira, contratacao, nenhum dado mock.
+

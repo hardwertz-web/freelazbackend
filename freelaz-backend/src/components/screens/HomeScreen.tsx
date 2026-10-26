@@ -106,7 +106,9 @@ function iconForCategory(key: string) {
 }
 
 function locationOf(job: JobCard): string {
-  const { city, state } = job.contractor;
+  // Cidade/UF da vaga com fallback para a empresa (vagas antigas).
+  const city = job.city ?? job.contractor.city;
+  const state = job.state ?? job.contractor.state;
   if (city && state) return `${city} - ${state}`;
   if (city) return city;
   if (state) return state;
@@ -255,6 +257,8 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
           job.category,
           job.contractor.name,
           job.contractor.tradeName ?? "",
+          job.city ?? "",
+          job.state ?? "",
           job.contractor.city ?? "",
         ]
           .join(" ")
@@ -263,7 +267,9 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
       }
 
       if (city) {
-        const jobCity = normalize(`${job.contractor.city ?? ""} ${job.contractor.state ?? ""}`);
+        const jobCity = normalize(
+          `${job.city ?? job.contractor.city ?? ""} ${job.state ?? job.contractor.state ?? ""}`
+        );
         if (!jobCity.includes(city)) return false;
       }
 
@@ -314,11 +320,11 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
   const nearbyCount = useMemo(() => {
     const counts = new Map<string, number>();
     for (const candidate of jobs) {
-      const key = `${normalize(candidate.contractor.city ?? "")}|${normalize(candidate.category)}`;
+      const key = `${normalize(candidate.city ?? candidate.contractor.city ?? "")}|${normalize(candidate.category)}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return (job: JobCard) =>
-      counts.get(`${normalize(job.contractor.city ?? "")}|${normalize(job.category)}`) ?? 1;
+      counts.get(`${normalize(job.city ?? job.contractor.city ?? "")}|${normalize(job.category)}`) ?? 1;
   }, [jobs]);
 
   const hasActiveFilters = Boolean(query.trim() || category || filterCount > 0);

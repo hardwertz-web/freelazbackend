@@ -508,3 +508,36 @@
     background-position: -100% 0;
   }
 }
+
+/* Badge de modalidade (Fase 2.3b) — cores exatas da fase 2.3c. */
+.modalityBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.modalityFreelance {
+  background: #eaf1ff;
+  color: #0066ff;
+}
+
+.modalityClt {
+  background: #fff7ed;
+  color: #f97316;
+}
+
+.modalityPrestadora {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* Nota no card do candidato (Fase 2.3b). */
+.applicantRating {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b45309;
+}

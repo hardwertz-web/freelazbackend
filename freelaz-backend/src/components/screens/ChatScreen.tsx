@@ -10,6 +10,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ChevronLeftIcon, SendIcon } from "@/components/Icons";
 import { ShiftCodeCard } from "@/components/ShiftCodeCard";
+import { EvaluationCard } from "@/components/EvaluationCard";
 import styles from "./ChatScreen.module.css";
 
 /** Polling (decisão do produto): sem WebSocket, busca a cada 5s. */
@@ -249,6 +250,12 @@ export function ChatScreen({ hiringId }: { hiringId: string }) {
             void refresh();
           }}
         />
+      )}
+
+      {/* Avaliação cega (Fase 2.3b): só depois da conclusão. O próprio card
+          decide entre avaliar / aguardar / revelado / prazo expirado. */}
+      {hiring && hiring.status === "CONCLUIDO" && (
+        <EvaluationCard hiring={hiring} onSubmitted={() => refresh()} />
       )}
 
       <div className={styles.messages} aria-live="polite">
