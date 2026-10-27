@@ -11,6 +11,7 @@ import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import {
   BriefcaseIcon,
+  CheckIcon,
   ChevronLeftIcon,
   LogoutIcon,
   MapPinIcon,
@@ -144,49 +145,67 @@ export function ProfileScreen() {
       </div>
 
       <section className={styles.hero}>
-        <span className={styles.avatar}>{initials(displayName)}</span>
-        <span className={styles.nameRow}>
-          <span className={styles.name}>{displayName}</span>
-          {verified && (
-            <Badge tone="primary" icon={<ShieldCheckIcon size={11} />}>
-              Verificado
-            </Badge>
-          )}
-        </span>
-        {profile?.headline && <span className={styles.headline}>{profile.headline}</span>}
-        {!profile?.headline && (
-          <span className={styles.headline}>
-            {profile ? "Profissional Freelaz" : "Conta Freelaz"}
+        <div className={styles.identity}>
+          <span className={styles.avatarWrap}>
+            <span className={styles.avatar}>{initials(displayName)}</span>
+            {verified && (
+              <span className={styles.avatarCheck} aria-hidden="true">
+                <CheckIcon size={12} />
+              </span>
+            )}
           </span>
-        )}
-        {profile?.region && (
-          <span className={styles.region}>
-            <MapPinIcon size={12} /> {profile.region}
+          <span className={styles.identityBody}>
+            <span className={styles.nameRow}>
+              <span className={styles.name}>{displayName}</span>
+              {verified && (
+                <Badge tone="primary" icon={<ShieldCheckIcon size={11} />}>
+                  Verificado
+                </Badge>
+              )}
+            </span>
+            {profile?.headline && <span className={styles.headline}>{profile.headline}</span>}
+            {!profile?.headline && (
+              <span className={styles.headline}>
+                {profile ? "Profissional Freelaz" : "Conta Freelaz"}
+              </span>
+            )}
+            {profile?.region && (
+              <span className={styles.region}>
+                <MapPinIcon size={12} /> {profile.region}
+              </span>
+            )}
           </span>
-        )}
+        </div>
 
         {profile && (
           <div className={styles.metrics}>
             <div className={styles.metric}>
-              <span className={styles.metricValue}>
-                {hasRating ? profile.ratingAverage!.toFixed(1) : "—"}
+              <span className={styles.metricIcon}>
+                <StarIcon size={14} filled={hasRating} />
               </span>
-              <span className={styles.metricLabel}>
-                <StarIcon size={9} filled={hasRating} />{" "}
-                {evaluationCount > 0
-                  ? `${evaluationCount} ${evaluationCount === 1 ? "avaliação" : "avaliações"}`
-                  : "Sem avaliações ainda"}
+              <span className={styles.metricBody}>
+                <span className={styles.metricValue}>
+                  {hasRating ? profile.ratingAverage!.toFixed(1) : "—"}
+                </span>
+                <span className={styles.metricLabel}>
+                  {evaluationCount > 0
+                    ? `${evaluationCount} ${evaluationCount === 1 ? "avaliação" : "avaliações"}`
+                    : "Avaliações"}
+                </span>
               </span>
             </div>
             <div className={styles.metric}>
-              <span className={styles.metricValue}>
-                {profile.reliabilityScore != null ? `${profile.reliabilityScore.toFixed(0)}%` : "—"}
+              <span className={styles.metricIcon}>
+                <ShieldCheckIcon size={14} />
               </span>
-              <span className={styles.metricLabel}>Confiabilidade</span>
-            </div>
-            <div className={styles.metric}>
-              <span className={styles.metricValue}>{strength}%</span>
-              <span className={styles.metricLabel}>Força do perfil</span>
+              <span className={styles.metricBody}>
+                <span className={styles.metricValue}>
+                  {profile.reliabilityScore != null
+                    ? `${profile.reliabilityScore.toFixed(0)}%`
+                    : "—"}
+                </span>
+                <span className={styles.metricLabel}>Confiabilidade</span>
+              </span>
             </div>
           </div>
         )}
@@ -218,8 +237,8 @@ export function ProfileScreen() {
                 <h2 className={styles.sectionTitle}>Categorias</h2>
               </div>
               <div className={styles.chipRow}>
-                {profile.categories.map((category) => (
-                  <Chip key={category} active>
+                {profile.categories.map((category, index) => (
+                  <Chip key={category} active={index === 0}>
                     {humanizeCategory(category)}
                   </Chip>
                 ))}
@@ -243,14 +262,14 @@ export function ProfileScreen() {
             </Card>
           </section>
 
-          <section className={styles.section}>
-            <div className={styles.sectionHead}>
-              <h2 className={styles.sectionTitle}>Experiência profissional</h2>
-              <span className={styles.sectionHint}>{profile.workExperiences.length} registro(s)</span>
-            </div>
-            {profile.workExperiences.length === 0 ? (
-              <span className={styles.portfolioEmpty}>Nenhuma experiência cadastrada.</span>
-            ) : (
+          {profile.workExperiences.length > 0 && (
+            <section className={styles.section}>
+              <div className={styles.sectionHead}>
+                <h2 className={styles.sectionTitle}>Experiência profissional</h2>
+                <span className={styles.sectionHint}>
+                  {profile.workExperiences.length} registro(s)
+                </span>
+              </div>
               <div className={styles.list}>
                 {profile.workExperiences.map((experience) => (
                   <div key={experience.id} className={styles.exp}>
@@ -268,33 +287,8 @@ export function ProfileScreen() {
                   </div>
                 ))}
               </div>
-            )}
-          </section>
-
-          <section className={styles.section}>
-            <div className={styles.sectionHead}>
-              <h2 className={styles.sectionTitle}>Portfólio</h2>
-              <span className={styles.sectionHint}>{profile.portfolioItems.length} item(ns)</span>
-            </div>
-            {profile.portfolioItems.length === 0 ? (
-              <span className={styles.portfolioEmpty}>
-                Sem fotos ou vídeos. O portfólio é o que mais pesa na força do perfil.
-              </span>
-            ) : (
-              <div className={styles.portfolio}>
-                {profile.portfolioItems.map((item) => (
-                  <span key={item.id} className={styles.portfolioItem}>
-                    {item.kind === "FOTO" ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- uploads servidos pela própria API
-                      <img src={item.url} alt="Item do portfólio" loading="lazy" />
-                    ) : (
-                      <span className={styles.portfolioEmpty}>Vídeo</span>
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-          </section>
+            </section>
+          )}
 
           {(profile.availability.length > 0 || profile.softSkills.length > 0) && (
             <section className={styles.section}>
@@ -316,6 +310,29 @@ export function ProfileScreen() {
             </section>
           )}
 
+          {profile.portfolioItems.length > 0 && (
+            <section className={styles.section}>
+              <div className={styles.sectionHead}>
+                <h2 className={styles.sectionTitle}>Portfólio</h2>
+                <span className={styles.sectionHint}>
+                  {profile.portfolioItems.length} item(ns)
+                </span>
+              </div>
+              <div className={styles.portfolio}>
+                {profile.portfolioItems.map((item) => (
+                  <span key={item.id} className={styles.portfolioItem}>
+                    {item.kind === "FOTO" ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- uploads servidos pela própria API
+                      <img src={item.url} alt="Item do portfólio" loading="lazy" />
+                    ) : (
+                      <span className={styles.portfolioEmpty}>Vídeo</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className={styles.section}>
             <div className={styles.sectionHead}>
               <h2 className={styles.sectionTitle}>Força do perfil</h2>
@@ -324,6 +341,11 @@ export function ProfileScreen() {
             <div className={styles.progressTrack}>
               <div className={styles.progressFill} style={{ width: `${Math.min(100, strength)}%` }} />
             </div>
+            {profile.portfolioItems.length === 0 && (
+              <span className={styles.sectionHint}>
+                Adicione portfólio e experiências para aumentar a força do perfil.
+              </span>
+            )}
           </section>
         </>
       )}

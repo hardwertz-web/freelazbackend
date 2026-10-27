@@ -147,30 +147,42 @@ export function WalletScreen() {
       </section>
 
       <div className={styles.actions}>
-        <div className={styles.action} title="Depositar — Fase 2">
+        <button type="button" className={styles.action} disabled title="Depositar — Fase 2">
           <span className={styles.actionIcon}>
-            <PlusIcon size={16} />
+            <PlusIcon size={17} />
           </span>
-          Depositar
-        </div>
-        <div className={styles.action} title="Sacar — Fase 2">
+          <span className={styles.actionBody}>
+            <span className={styles.actionLabel}>Depositar</span>
+            <span className={styles.actionHint}>Fase 2</span>
+          </span>
+        </button>
+        <button type="button" className={styles.action} disabled title="Sacar — Fase 2">
           <span className={styles.actionIcon}>
-            <ArrowUpRightIcon size={16} />
+            <ArrowUpRightIcon size={17} />
           </span>
-          Sacar
-        </div>
-        <div className={styles.action} title="Transferir — Fase 2">
+          <span className={styles.actionBody}>
+            <span className={styles.actionLabel}>Sacar</span>
+            <span className={styles.actionHint}>Fase 2</span>
+          </span>
+        </button>
+        <button type="button" className={styles.action} disabled title="Transferir — Fase 2">
           <span className={styles.actionIcon}>
-            <ArrowDownLeftIcon size={16} />
+            <ArrowDownLeftIcon size={17} />
           </span>
-          Transferir
-        </div>
-        <div className={styles.action} title="Histórico completo — Fase 2">
+          <span className={styles.actionBody}>
+            <span className={styles.actionLabel}>Transferir</span>
+            <span className={styles.actionHint}>Fase 2</span>
+          </span>
+        </button>
+        <button type="button" className={styles.action} disabled title="Histórico completo — Fase 2">
           <span className={styles.actionIcon}>
-            <ClockIcon size={16} />
+            <ClockIcon size={17} />
           </span>
-          Histórico
-        </div>
+          <span className={styles.actionBody}>
+            <span className={styles.actionLabel}>Histórico</span>
+            <span className={styles.actionHint}>Fase 2</span>
+          </span>
+        </button>
       </div>
 
       <section className={styles.section}>
@@ -180,18 +192,30 @@ export function WalletScreen() {
         </div>
         <div className={styles.summaryGrid}>
           <div className={styles.summary}>
+            <span className={styles.summaryIcon}>
+              <WalletIcon size={15} />
+            </span>
             <span className={styles.summaryLabel}>Disponível para saque</span>
             <span className={styles.summaryValue}>{formatBRL(wallet.disponivelCents)}</span>
           </div>
           <div className={styles.summary}>
+            <span className={styles.summaryIcon}>
+              <ClockIcon size={15} />
+            </span>
             <span className={styles.summaryLabel}>A receber</span>
             <span className={styles.summaryValue}>{formatBRL(wallet.aReceberCents)}</span>
           </div>
           <div className={styles.summary}>
+            <span className={styles.summaryIcon}>
+              <BanknoteIcon size={15} />
+            </span>
             <span className={styles.summaryLabel}>Em processamento</span>
             <span className={styles.summaryValue}>{formatBRL(wallet.emProcessamentoCents)}</span>
           </div>
           <div className={styles.summary}>
+            <span className={styles.summaryIcon}>
+              <ArrowUpRightIcon size={15} />
+            </span>
             <span className={styles.summaryLabel}>Total já sacado</span>
             <span className={styles.summaryValue}>{formatBRL(wallet.sacadoCents)}</span>
           </div>

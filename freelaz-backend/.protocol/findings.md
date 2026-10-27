@@ -1265,3 +1265,145 @@ ficou na tela ou no codigo.
   avaliacao. Rodar o job mais de uma vez no dia e seguro (idempotente).
 - O card de avaliacao depende de `GET /api/hirings/[id]` (polling de 5s da
   conversa); nao ha push em tempo real.
+
+## 4r. Fase 2.4b — Fidelidade visual
+
+### Metodo
+
+- As 6 imagens de referencia foram analisadas por um modelo de visao (subagente
+  `nemotron-3.5-super-vl-free`); as 5 telas implementadas foram inspecionadas
+  por DOM + `getComputedStyle` em `localhost:3000`, logado como Ana
+  (profissional, rating 4/1, confiabilidade 0%, perfil sem categorias,
+  experiencia, portfolio ou disponibilidade).
+- Escopo: CSS/layout e renderizacao condicional. Nenhum endpoint, schema,
+  campo, contrato de API ou regra de negocio foi alterado; nenhuma migracao.
+- Regra aplicada: metrica sem dado real nao e exibida nem inventada; elemento
+  que exigiria backend novo ficou de fora e esta listado abaixo.
+
+### Home (10.51.57.3)
+
+Aproximado:
+
+- Hero 236px, raio 18, padding 22; titulo 25px, subtitulo 13.5px; foto com
+  overlay preservada.
+- Busca 48px (raio 14, sombra de card) e botao de filtros 48x48.
+- Categorias 64x64, raio 16, fundo `--selected`; ativo azul solido com sombra.
+- Abas Freelance/CLT em trilho segmentado de 40px de altura.
+- Secoes com 20px entre si, titulo 16px; cards 268px, raio 18, imagem 112px;
+  linhas da lista com thumb 56px, raio 16.
+
+Mantido (nao tocado): busca em tempo real, painel de filtros, abas
+Freelance/CLT com contagem, estado vazio e FAB "Publicar vaga" (so para
+contratante).
+
+Nao factivel:
+
+- Mapa e distancia ("1,2 km"): falta geo/lat-long em `JobPosting`.
+- "Profissionais em destaque": falta endpoint de featured professionals (2.5).
+- Tags de card ("Pagamento no dia", "Alimentacao"): falta `tags[]` no schema.
+
+### Perfil (10.51.56)
+
+Aproximado:
+
+- Hero horizontal: avatar 92px com iniciais e selo de check; nome 21px; badge
+  "Verificado"; headline e regiao.
+- Dois cards de metrica em 2 colunas (rating e confiabilidade), com icone e
+  label curto. A forca do perfil saiu dos cards e ficou na secao propria.
+- Chips de categoria com o primeiro em estado ativo (azul).
+- Secoes Experiencia, Disponibilidade/habilidades e Portfolio agora so
+  renderizam quando o array correspondente tem item; Forca do perfil ganhou
+  dica de portfolio quando nao ha item.
+
+Mostrado com a Ana (dados reais): rating `4.0` / `1 avaliacao`, confiabilidade
+`0%`, "Sobre" com o texto de perfil vazio, "Forca do perfil 0%" com a dica.
+Categorias, experiencia, disponibilidade e portfolio ficaram ocultos porque os
+arrays estao vazios.
+
+Nao factivel:
+
+- Certificacoes: falta `certifications` no schema.
+- Distribuicao de estrelas (5->1): falta endpoint de ratings-summary.
+- Status "Disponivel": nao ha campo de status; `availability[]` e grade de
+  horarios, nao um selo.
+- Foto de perfil: falta upload/`avatarUrl`; mantidas as iniciais.
+
+### Carteira (10.51.57.2)
+
+Aproximado:
+
+- Card de saldo em gradiente azul, raio 20, com dois circulos decorativos;
+  valor em 32px; "A receber" e a taxa de saque instantaneo no botao
+  translucido (desabilitado).
+- 4 acoes em grade 2x2 (Depositar, Sacar, Transferir, Historico) como
+  `<button disabled>` com icone circular e legenda "Fase 2".
+- 4 cards de resumo com icone, label e valor real: disponivel para saque, a
+  receber, em processamento e total ja sacado.
+
+Grafico de ganhos: **nao implementado e nao ocultado** — nunca existiu; o
+backend nao expoe serie historica agregada por periodo. Nao ha "Proximo
+pagamento" nem "Avaliacao media" porque `GET /api/wallet` nao devolve esses
+dados. Extrato ("Movimentacoes recentes") preservado.
+
+### Mensagens (10.51.57)
+
+Aproximado:
+
+- Busca client-side de 44px, raio 12, filtrando por nome ou titulo da vaga.
+- Chips "Todas", "Contratantes" e "Profissionais" com contagem real. O filtro
+  usa o papel DO OUTRO LADO da conversa: `side === "PROFESSIONAL"` significa
+  que o outro lado e contratante. Contadores da Ana: 3 / 3 / 0 (a semantica
+  estava invertida e foi corrigida).
+- Linhas com raio 16, avatar 46px, nome 13.5px e meta 11px; a meta agora diz
+  "Contratante · <vaga>" / "Profissional · <vaga>", alem de
+  "Voce contrata"/"Voce trabalha", valor e dia.
+
+Mantido: a conversa inteira (polling de 5s, `ShiftCodeCard`, `EvaluationCard`,
+checkout e codigo de turno) nao foi tocada.
+
+Nao factivel:
+
+- Chip "Nao lidas": `ChatSummary` nao tem contador de nao lidas.
+- Preview da ultima mensagem: o resumo da conversa nao traz a ultima mensagem.
+- FAB de nova conversa: nao existe acao de iniciar conversa sem `hiring`.
+
+### Vaga (10.51.58)
+
+Aproximado:
+
+- Banner de 220px com foto da categoria, overlay, badge "Vaga aberta" e coracao
+  desabilitado (Fase 2); categoria, titulo 23px, data e local dentro do banner.
+- Linha de metadados com badge de modalidade e pill do valor.
+- 4 metricas: contratante (nome), candidaturas, empresa verificada e
+  visibilidade.
+- 2 cards lado a lado: "Local do servico" (cidade/UF + "Combinado com a
+  empresa", sem "Ver no mapa") e "Pagamento" (valor + "/dia" + "Pagamento no
+  final do servico"); a nota de retencao da plataforma virou `payNote` abaixo.
+- Secao "Sobre a empresa" e CTA de proposta preservados.
+
+Nao factivel:
+
+- Rating da empresa: `JobDetail` nao expoe nota do contratante (falta
+  ratings-summary no detalhe).
+- Requisitos/etiqueta/distancia: falta schema de requisitos e geo.
+- "Ver no mapa": nao ha mapa nem coordenadas.
+
+### O que saiu da tela (sem perda de funcao)
+
+- O card duplicado "Pagamento" (secao antiga com `payRow`) foi removido; o
+  mesmo valor/hint agora vive no card de Pagamento ao lado do Local, e o aviso
+  de retencao foi preservado em `payNote`.
+- Perfil deixou de renderizar os placeholders "Nenhuma experiencia
+  cadastrada." e "Sem fotos ou videos...". Nao havia acao nem endpoint nessas
+  mensagens; os dados continuam sendo exibidos quando existem.
+- Nenhum botao, link, filtro, aba, campo ou chamada de API foi removido.
+
+### Verificacao
+
+- `npx tsc --noEmit` exit 0.
+- `npm run build` exit 0.
+- Browser (DOM/computed): Home com busca/filtros/abas e cards 268x292;
+  Carteira com 4 acoes 195x62 desabilitadas e resumos 195x104; Mensagens com
+  busca 44px, chips 3/3/0 e linhas 398x81; Vaga com banner 220px, 4 metricas
+  (398x96) e cards Local/Pagamento 195x112; Perfil com avatar 92px e 2 cards de
+  metrica.

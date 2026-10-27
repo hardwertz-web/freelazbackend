@@ -24,6 +24,8 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import {
+  BanknoteIcon,
+  BuildingIcon,
   CalendarIcon,
   CheckIcon,
   ChevronLeftIcon,
@@ -315,6 +317,11 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
         <div className={styles.heroBody}>
           <span className={styles.heroLabel}>{humanizeCategory(job.category)}</span>
           <h1 className={styles.heroTitle}>{job.title}</h1>
+          <span className={styles.heroMeta}>
+            <CalendarIcon size={12} /> {formatShift(job.startsAt, job.endsAt)}
+            <span aria-hidden="true">·</span>
+            <MapPinIcon size={12} /> {locationOf(job)}
+          </span>
         </div>
       </section>
 
@@ -331,27 +338,37 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
           {formatBRLShort(job.valueCents)}
           <small>/dia</small>
         </span>
-        <span className={styles.metaItem}>
-          <CalendarIcon size={13} /> {formatShift(job.startsAt, job.endsAt)}
-        </span>
-        <span className={styles.metaItem}>
-          <MapPinIcon size={13} /> {locationOf(job)}
-        </span>
       </div>
 
       <div className={styles.metrics}>
         <div className={styles.metric}>
+          <span className={styles.metricIcon}>
+            <BuildingIcon size={14} />
+          </span>
+          <span className={[styles.metricValue, styles.metricValueName].join(" ")}>{company}</span>
+          <span className={styles.metricLabel}>Contratante</span>
+        </div>
+        <div className={styles.metric}>
+          <span className={styles.metricIcon}>
+            <SendIcon size={14} />
+          </span>
           <span className={styles.metricValue}>{job.applicationsCount}</span>
           <span className={styles.metricLabel}>candidatura(s)</span>
         </div>
         <div className={styles.metric}>
-          <span className={styles.metricValue}>
-            {job.contractor.verified ? "Sim" : "—"}
+          <span className={styles.metricIcon}>
+            <ShieldCheckIcon size={14} />
           </span>
+          <span className={styles.metricValue}>{job.contractor.verified ? "Sim" : "—"}</span>
           <span className={styles.metricLabel}>empresa verificada</span>
         </div>
         <div className={styles.metric}>
-          <span className={styles.metricValue}>{job.visibility === "PUBLICA" ? "Pública" : "Privada"}</span>
+          <span className={styles.metricIcon}>
+            <InfoIcon size={14} />
+          </span>
+          <span className={styles.metricValue}>
+            {job.visibility === "PUBLICA" ? "Pública" : "Privada"}
+          </span>
           <span className={styles.metricLabel}>visibilidade</span>
         </div>
       </div>
@@ -366,23 +383,34 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
         </Card>
       </section>
 
-      <section className={styles.section}>
-        <div className={styles.sectionHead}>
-          <h2 className={styles.sectionTitle}>Pagamento</h2>
+      <div className={styles.infoGrid}>
+        <div className={styles.infoCard}>
+          <span className={styles.infoIcon}>
+            <MapPinIcon size={15} />
+          </span>
+          <span className={styles.infoLabel}>Local do serviço</span>
+          <span className={styles.infoValue}>{locationOf(job)}</span>
+          <span className={styles.infoHint}>Combinado com a empresa</span>
         </div>
-        <Card>
-          <div className={styles.payRow}>
-            <div>
-              <div className={styles.payValue}>{formatBRL(job.valueCents)}</div>
-              <div className={styles.payHint}>por dia de serviço</div>
-            </div>
-            <InfoIcon size={17} />
-          </div>
-          <div className={styles.payHint} style={{ marginTop: 8 }}>
-            O pagamento é feito pela plataforma e fica retido até a conclusão do serviço.
-          </div>
-        </Card>
-      </section>
+        <div className={styles.infoCard}>
+          <span className={styles.infoIcon}>
+            <BanknoteIcon size={15} />
+          </span>
+          <span className={styles.infoLabel}>Pagamento</span>
+          <span className={styles.infoValue}>
+            {formatBRL(job.valueCents)}
+            <small> /dia</small>
+          </span>
+          <span className={styles.infoHint}>Pagamento no final do serviço</span>
+        </div>
+      </div>
+
+      <div className={styles.payNote}>
+        <InfoIcon size={14} />
+        <span>
+          O pagamento é feito pela plataforma e fica retido até a conclusão do serviço.
+        </span>
+      </div>
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>

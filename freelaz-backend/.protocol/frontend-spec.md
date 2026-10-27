@@ -107,29 +107,32 @@ papéis (Oferecer serviços / Contratar) e aceite de termos.
 
 Header persistente (logo + sino + avatar) no layout. Abaixo, na ordem:
 
-1. **Hero** em card com gradiente `#0066FF → #0B1F44`, raio 20px, padding
-   20px e margem inferior 20px. Título "Encontre seu próximo trabalho" (24px,
-   branco), subtítulo "Vagas de hoje e amanhã, perto de você." (14px), pill
-   translúcida "Itajubá - MG" (40px) e botão branco "Ver vagas →" que ancora em
-   `#lista-vagas` com scroll suave. Foto da Serra da Mantiqueira
-   (`public/hero-itajuba.jpg`) no lado direito com overlay azul; se a foto não
-   carregar, o gradiente sustenta o contraste. Crédito da foto em 8px no canto.
-2. **Busca compacta**: input de 46px com lupa ("Buscar por profissão, categoria
-   ou empresa") + botão de filtros. Filtra em tempo real sobre `/api/jobs`.
-3. **Categorias**: até 6 chips de 60x60 (ícone 24px + rótulo 12px), scroll
-   horizontal com gap 12px e sem scrollbar. Ativo em `#EAF1FF` com ícone azul;
-   inativo branco/cinza. Derivadas de `/api/jobs` e agrupadas por chave
-   normalizada (une "eventos" e "EVENTOS"); clicar filtra, clicar de novo limpa.
-   Categoria desconhecida usa ícone de grade.
+1. **Hero** em card com gradiente `#0066FF → #0B1F44`, raio 18px, padding
+   22px, altura minima 236px e margem inferior 22px. Título "Encontre seu
+   próximo trabalho" (25px, branco), subtítulo "Vagas de hoje e amanhã, perto
+   de você." (13.5px), pill translúcida "Itajubá - MG" (40px) e botão branco
+   "Ver vagas →" que ancora em `#lista-vagas` com scroll suave. Foto da Serra da
+   Mantiqueira (`public/hero-itajuba.jpg`) no lado direito com overlay azul; se a
+   foto não carregar, o gradiente sustenta o contraste. Crédito da foto em 8px
+   no canto.
+2. **Busca compacta**: input de 48px com lupa ("Buscar por profissão, categoria
+   ou empresa") + botão de filtros de 48x48. Filtra em tempo real sobre
+   `/api/jobs`.
+3. **Categorias**: até 6 chips de 64x64 (ícone 24px + rótulo 10.5px), scroll
+   horizontal com gap 10px e sem scrollbar. Todos partem do fundo `#EAF1FF` com
+   ícone azul; o ativo vira azul sólido `#0066FF` com texto branco e sombra.
+   Derivadas de `/api/jobs` e agrupadas por chave normalizada (une "eventos" e
+   "EVENTOS"); clicar filtra, clicar de novo limpa. Categoria desconhecida usa
+   ícone de grade.
 4. **"Vagas perto de você"** + "Ver todas": carrossel horizontal com snap,
-   cards de 260px e gap 12px. Cada card tem foto da categoria, "Verificado" (só
-   quando o contratante é verificado), coração desabilitado (Fase 2), título,
+   cards de 268px e gap 12px. Cada card tem foto da categoria (112px), "Verificado"
+   (só quando o contratante é verificado), coração desabilitado (Fase 2), título,
    data/hora com calendário, local + contagem real de vagas com pino, valor em
    18px e "Ver detalhes" outlined azul. O card inteiro é link para `/vaga/[id]`.
    Urgentes primeiro, depois as mais recentes (até 5).
 5. **"Oportunidades mais recentes"** com `id="lista-vagas"`: lista vertical de
-   linhas (miniatura, título, dia + horário, localização, selo verificado, valor
-   e chevron) e contador "N de total".
+   linhas (miniatura de 56px, título, dia + horário, localização, selo
+   verificado, valor e chevron) e contador "N de total". Raio 16 nas linhas.
 
 O painel de filtros (cidade, faixa de valor e ordenação por data/valor) fica
 atrás do botão de filtros, preservando a funcionalidade da v1. A localização
@@ -137,8 +140,9 @@ de cada card é a da vaga (`job.city`/`job.state`) com fallback para o endereço
 da empresa nas vagas anteriores à Fase 2.3b (`job.city ?? contractor.city`).
 
 Entre as categorias e o carrossel ficam as **abas de modalidade** (Fase 2.3c):
-"Freelance" (ativa por padrão, azul `#0066FF`) e "CLT" (branca/inativa), cada
-uma com o contador real da modalidade ("3 vagas"). Trocar de aba reseta a
+"Freelance" (ativa por padrão, azul `#0066FF`) e "CLT" (branca/inativa), dentro
+de um trilho segmentado de 40px de altura, cada uma com o contador real da
+modalidade ("3 vagas"). Trocar de aba reseta a
 categoria selecionada (os chips vêm da modalidade ativa) e a escolha é lembrada
 em `sessionStorage`. A modalidade PRESTADORA existe na API e no banco, mas não
 tem aba no MVP. Quando a modalidade ativa não tem vagas, o estado vazio diz
@@ -156,17 +160,28 @@ direto a `/buscar` responde 404.
 
 ### 4.4 Vaga única
 
-Header com voltar. Bloco hero em gradiente com a categoria em caixa alta,
-badge "Vaga aberta" e coração (Fase 2, desabilitado), título grande branco.
-Abaixo: badge de modalidade, pill azul com o valor ("R$ 180 /dia"), data por
-extenso com ícone de calendário ("Sábado, 18:00 – 02:00") e localização com
-pino. O badge usa `job.modality`: Freelance (`#EAF1FF`/`#0066FF`), CLT
-(`#FFF7ED`/`#F97316`) e Prestadora (cinza). A localização é
-`job.city ?? job.contractor.city` + `job.state ?? job.contractor.state`
-(fallback das vagas antigas). Três métricas em cards: candidaturas, empresa
-verificada, visibilidade. Cards "Sobre a vaga" (descrição real), "Pagamento"
-(valor + aviso de retenção até a conclusão) e "Sobre a empresa" (avatar com
-iniciais, nome/razão social, selo e o local da empresa — não o da vaga).
+Header com voltar. Banner de 220px com a foto da categoria (`categoryImages`),
+overlay em gradiente, badge "Vaga aberta" no topo e coração desabilitado (Fase
+2) à direita. No rodapé do banner: categoria em caixa alta, título branco de
+23px, data por extenso com calendário ("Terça-feira, 15:00 – 20:00") e
+localização com pino. Abaixo, linha de metadados com o badge de modalidade e a
+pill azul do valor ("R$ 180 /dia"). O badge usa `job.modality`: Freelance
+(`#EAF1FF`/`#0066FF`), CLT (`#FFF7ED`/`#F97316`) e Prestadora (cinza). A
+localização é `job.city ?? job.contractor.city` + `job.state ??
+job.contractor.state` (fallback das vagas antigas).
+
+Quatro métricas em cards de altura fixa: contratante (nome/razão social),
+candidaturas (contagem real), empresa verificada ("Sim"/"—", de
+`contractor.verified`) e visibilidade (Pública/Privada). Não há rating da
+empresa porque o `JobDetail` não expõe nota do contratante.
+
+Seção "Sobre a vaga" (descrição real, com badge "Destaque" quando
+`urgentBoost`) e dois cards lado a lado: "Local do serviço" (cidade/UF +
+"Combinado com a empresa", sem "Ver no mapa" porque não há mapa) e "Pagamento"
+(valor + "/dia" + "Pagamento no final do serviço"). Abaixo, nota azul de que o
+valor fica retido pela plataforma até a conclusão. Fecha com "Sobre a empresa"
+(avatar com iniciais, nome/razão social, selo e o local da empresa — não o da
+vaga).
 Botão primário "Enviar proposta" abre um modal de confirmação com o campo
 "Mensagem (opcional)" (até 500 caracteres, com contador; vazio = sem mensagem)
 e chama `POST /api/jobs/[id]/apply` com `{ message }`. Em caso de sucesso:
@@ -183,38 +198,50 @@ converte as PENDENTES restantes).
 
 ### 4.5 Perfil
 
-Cartão superior centralizado: avatar circular com iniciais em gradiente azul,
-nome em destaque, badge "Verificado" com escudo, headline/bio curta e
-localização com pino. Três métricas em caixas cinza claro: avaliação (estrela,
-com `ratingAverage` em 1 casa e a contagem de avaliações liberadas — "1
-avaliação"/"N avaliações"; com 0, "Sem avaliações ainda"), confiabilidade (%)
-e força do perfil (%). Abaixo: chips de categorias, card
-"Sobre" com a bio, lista de experiências (ícone de maleta, cargo, empresa,
-período), grade 3×3 de portfólio (fotos reais de `/api/uploads/`), tags de
-disponibilidade e soft skills, barra de progresso "Força do perfil" (visível só
-para o dono) e card "Conta" (e-mail, telefone, documento mascarado, local,
-papéis). Botões "Editar perfil (Fase 2)" e "Sair".
+Cartão superior em duas colunas: avatar circular de 92px com iniciais em
+gradiente azul (não há upload de foto no schema) e selo de check quando
+verificado; ao lado, nome de 21px, badge "Verificado" com escudo, headline e
+região com pino. Abaixo, dois cards de métrica em 2 colunas: avaliação
+(estrela, com `ratingAverage` em 1 casa e a contagem de avaliações liberadas —
+"1 avaliação"/"N avaliações"; com 0, "Avaliações") e confiabilidade (% de
+`reliabilityScore`). A força do perfil não é card; tem seção própria com barra
+de progresso no fim.
+
+Seções condicionais, todas com dados reais: chips de categorias (o primeiro em
+estado ativo), card "Sobre" com a bio, experiência profissional (só quando
+`workExperiences.length > 0`), disponibilidade + soft skills (só quando algum
+array tem item), portfólio (só quando existe `PortfolioItem`) e "Força do
+perfil" com dica de portfólio quando a grade está vazia. Categorias,
+experiência, disponibilidade e portfólio não renderizam placeholder vazio.
+Card "Conta" (e-mail, telefone, documento mascarado, local, papéis). Botões
+"Editar perfil (Fase 2)" e "Sair".
 
 ### 4.6 Carteira
 
-Cabeçalho "Carteira" + subtítulo. Cartão azul em gradiente com "Saldo
-disponível", valor grande, "A receber" e botão translúcido com a taxa de saque
-instantâneo. Grade de 4 ações (Depositar, Sacar, Transferir, Histórico) em
-cards com ícone circular — desabilitadas na Fase 1. Seção "Resumo" com 4 cards
-(disponível, a receber, em processamento, total já sacado). Seção
-"Movimentações recentes": linhas com ícone (entrada verde / saída azul), rótulo,
-data, taxa quando houver, valor com sinal e badge de status do repasse.
+Cabeçalho "Carteira" + subtítulo. Card azul em gradiente (raio 20, dois
+círculos decorativos) com "Saldo disponível", valor de 32px, "A receber" e
+botão translúcido com a taxa de saque instantâneo (desabilitado). Grade 2×2 de
+ações (Depositar, Sacar, Transferir, Histórico) em cards com ícone circular e a
+legenda "Fase 2" — `<button disabled>`, sem handler. Seção "Resumo" com 4 cards
+(ícone + label + valor real): disponível para saque, a receber, em
+processamento e total já sacado. Seção "Movimentações recentes": linhas com
+ícone (entrada verde / saída azul), rótulo, data, taxa quando houver, valor com
+sinal e badge de status do repasse. Não há gráfico de ganhos: o backend não
+expõe série histórica agregada por período.
 
 ### 4.7 Mensagens
 
-Título "Mensagens" + subtítulo. Campo de busca de conversa. Chips com contagem:
-"Todas 8", "Contratantes 3", "Profissionais 5", "Não lidas 2" na referência —
-na Fase 1 usamos Todas/Contratantes/Profissionais com contagem real (não há
-contador de não lidas no backend). Lista de linhas: avatar com iniciais, nome da
-contraparte, badge "Chat aberto"/"Encerrado", título da vaga, lado ("Você
-contrata" / "Você trabalha"), valor e horário relativo. Cada linha abre
-`/mensagens/[hiringId]`. Estado vazio explica que o chat só abre após o
-pagamento confirmado.
+Título "Mensagens" + subtítulo. Campo de busca client-side de 44px (raio 12)
+que filtra por nome da contraparte ou título da vaga. Três chips com contagem
+real: "Todas", "Contratantes" e "Profissionais" — o filtro usa o papel DO OUTRO
+LADO da conversa (`ChatSummary.side`: se `side === "PROFESSIONAL"`, o outro lado
+é o contratante; se `side === "CONTRACTOR"`, o outro lado é o profissional).
+Não há chip "Não lidas": o resumo da conversa não traz contador de não lidas.
+Lista de linhas (raio 16): avatar com iniciais de 46px, nome da contraparte,
+badge "Chat aberto"/"Encerrado", papel do outro lado + título da vaga ("Contratante
+· <vaga>"), lado ("Você contrata" / "Você trabalha"), valor e dia. Cada linha
+abre `/mensagens/[hiringId]`. Estado vazio explica que o chat só abre após o
+pagamento confirmado. Sem FAB: não existe ação de iniciar conversa avulsa.
 
 ### 4.7.1 Conversa (`/mensagens/[hiringId]`)
 

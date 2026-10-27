@@ -1,8 +1,8 @@
 .screen {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px 16px 8px;
+  gap: 13px;
+  padding: 16px 16px 8px;
 }
 
 .head {
@@ -12,9 +12,9 @@
 }
 
 .title {
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 
 .subtitle {
@@ -26,12 +26,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 42px;
-  padding: 0 12px;
-  background: var(--bg);
+  height: 44px;
+  padding: 0 14px;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--muted);
+  box-shadow: var(--shadow-card);
 }
 
 .searchBox:focus-within {
@@ -58,7 +59,7 @@
   gap: 8px;
   overflow-x: auto;
   margin: 0 -16px;
-  padding: 2px 16px;
+  padding: 2px 16px 4px;
 }
 
 .list {
@@ -70,11 +71,11 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px;
+  gap: 11px;
+  padding: 12px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: var(--shadow-card);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
@@ -89,15 +90,15 @@
 }
 
 .avatar {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   flex: none;
   display: grid;
   place-items: center;
   background: var(--selected);
   color: var(--primary);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
 }
 
@@ -117,7 +118,7 @@
 }
 
 .name {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -125,7 +126,7 @@
 }
 
 .meta {
-  font-size: 10.8px;
+  font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;

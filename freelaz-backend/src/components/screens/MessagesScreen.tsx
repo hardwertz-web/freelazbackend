@@ -55,8 +55,10 @@ export function MessagesScreen() {
   const counts = useMemo(
     () => ({
       todas: chats.length,
-      contratantes: chats.filter((h) => h.side === "CONTRACTOR").length,
-      profissionais: chats.filter((h) => h.side === "PROFESSIONAL").length,
+      // O chip filtra pelo papel DO OUTRO LADO da conversa: se eu sou o
+      // contratante (side CONTRACTOR), o outro lado é profissional.
+      contratantes: chats.filter((h) => h.side === "PROFESSIONAL").length,
+      profissionais: chats.filter((h) => h.side === "CONTRACTOR").length,
     }),
     [chats]
   );
@@ -65,8 +67,8 @@ export function MessagesScreen() {
     const term = query.trim().toLowerCase();
     return chats
       .filter((hiring) => {
-        if (filter === "CONTRATANTES" && hiring.side !== "CONTRACTOR") return false;
-        if (filter === "PROFISSIONAIS" && hiring.side !== "PROFESSIONAL") return false;
+        if (filter === "CONTRATANTES" && hiring.side !== "PROFESSIONAL") return false;
+        if (filter === "PROFISSIONAIS" && hiring.side !== "CONTRACTOR") return false;
         if (!term) return true;
         const haystack = `${hiring.counterpart.name} ${hiring.counterpart.tradeName ?? ""} ${hiring.jobTitle}`.toLowerCase();
         return haystack.includes(term);
@@ -184,7 +186,10 @@ export function MessagesScreen() {
                     <Badge tone="neutral">Encerrado</Badge>
                   )}
                 </span>
-                <span className={styles.meta}>{hiring.jobTitle}</span>
+                <span className={styles.meta}>
+                  {hiring.side === "CONTRACTOR" ? "Profissional" : "Contratante"} ·{" "}
+                  {hiring.jobTitle}
+                </span>
                 <span className={styles.meta}>
                   {hiring.side === "CONTRACTOR" ? "Você contrata" : "Você trabalha"} ·{" "}
                   {formatBRLShort(hiring.grossValueCents)}
