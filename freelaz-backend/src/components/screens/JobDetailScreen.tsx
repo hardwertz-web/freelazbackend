@@ -117,6 +117,8 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
   const [notFound, setNotFound] = useState(false);
 
   const [isOwner, setIsOwner] = useState(false);
+  const [isProfessionalActive, setIsProfessionalActive] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [applications, setApplications] = useState<JobApplication[]>([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [appsError, setAppsError] = useState<string | null>(null);
@@ -139,6 +141,8 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
     setError(null);
     setNotFound(false);
     setIsOwner(false);
+    setIsProfessionalActive(false);
+    setIsLoggedIn(false);
     setApplications([]);
     setAppsError(null);
 
@@ -156,6 +160,17 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
 
     setJob(result.data.jobPosting);
     setLoading(false);
+
+    if (meResult.ok) {
+      setIsLoggedIn(true);
+      const hasProfessionalActive = (meResult.data.roles ?? []).some(
+        (r) => r.role === "PROFISSIONAL" && r.status === "ATIVO"
+      );
+      setIsProfessionalActive(hasProfessionalActive);
+    } else {
+      setIsLoggedIn(false);
+      setIsProfessionalActive(false);
+    }
 
     // Só o contratante dono enxerga as candidaturas (a rota devolve 403 para
     // os demais). Comparamos com a sessão antes de chamar para não gerar 403.
@@ -220,6 +235,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
 
   const submitAccept = useCallback(async () => {
     if (!job) return;
+    if (job.valueCents == null || job.valueCents <= 0) return;
     setAccepting(true);
     setAcceptError(null);
 
@@ -615,17 +631,34 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
 
       {!isOwner && (
         <section className={styles.cta}>
-          {isOpen && !applied && !accepted ? (
-            <>
+          {!isProfessionalActive ? (
+            isLoggedIn ? (
+              <Card>
+                <div className={styles.body} style={{ textAlign: "center" }}>
+                  Entre como profissional para se candidatar
+                </div>
+              </Card>
+            ) : (
               <Button
                 block
-                onClick={() => {
-                  setAcceptError(null);
-                  setAcceptOpen(true);
-                }}
+                onClick={() => router.push(`/login?redirect=/vaga/${encodeURIComponent(jobId)}`)}
               >
-                <CheckIcon size={16} /> Aceitar valor proposto ({formatBRLShort(job.valueCents)})
+                Entrar para se candidatar
               </Button>
+            )
+          ) : isOpen && !applied && !accepted ? (
+            <>
+              {job.valueCents != null && job.valueCents > 0 && (
+                <Button
+                  block
+                  onClick={() => {
+                    setAcceptError(null);
+                    setAcceptOpen(true);
+                  }}
+                >
+                  <CheckIcon size={16} /> Aceitar valor proposto ({formatBRLShort(job.valueCents)})
+                </Button>
+              )}
               <Button
                 block
                 variant="secondary"
@@ -644,15 +677,17 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
               {accepted ? "Valor aceito" : applied ? "Proposta enviada" : isOpen ? "Enviar proposta" : "Vaga fechada"}
             </Button>
           )}
-          <span className={styles.ctaNote}>
-            {accepted
-              ? "Valor aceito! Aguarde a empresa selecionar."
-              : applied
-                ? "Você já enviou uma proposta para esta vaga."
-                : isOpen
-                  ? "O pagamento fica retido na plataforma até a conclusão do serviço."
-                  : "Esta vaga não está mais aberta para candidaturas."}
-          </span>
+          {isProfessionalActive && (
+            <span className={styles.ctaNote}>
+              {accepted
+                ? "Valor aceito! Aguarde a empresa selecionar."
+                : applied
+                  ? "Você já enviou uma proposta para esta vaga."
+                  : isOpen
+                    ? "O pagamento fica retido na plataforma até a conclusão do serviço."
+                    : "Esta vaga não está mais aberta para candidaturas."}
+            </span>
+          )}
         </section>
       )}
 
