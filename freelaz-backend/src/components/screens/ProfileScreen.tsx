@@ -3,12 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost } from "@/lib/apiClient";
-import type { MeResponse, ProfileResponse, Role } from "@/lib/apiTypes";
+import type {
+  MeResponse,
+  ProfileResponse,
+  PublicProfessionalProfile,
+  Role,
+} from "@/lib/apiTypes";
 import { formatBRLShort, humanizeCategory, humanizeCode, initials } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
+import { HireMeModal } from "@/components/HireMeModal";
 import {
   BriefcaseIcon,
   CheckIcon,
@@ -44,7 +50,7 @@ function roleBadgeTone(status: string): "success" | "tag" | "neutral" {
  * Se o papel Profissional estiver PENDENTE, a rota devolve 409 — nesse caso
  * mostramos a conta e explicamos o que falta, em vez de inventar dados.
  */
-export function ProfileScreen() {
+function SelfProfileScreen() {
   const router = useRouter();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [profileData, setProfileData] = useState<ProfileResponse | null>(null);
@@ -398,6 +404,289 @@ export function ProfileScreen() {
           <LogoutIcon size={14} /> {loggingOut ? "Saindo..." : "Sair"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ----- Perfil público (Fase 2.5) -----
+
+type PublicViewer = {
+  loggedIn: boolean;
+  canHire: boolean;
+  isSelf: boolean;
+};
+
+type ProfileScreenProps =
+  | { mode?: "self" }
+  | {
+      mode: "public";
+      professional: PublicProfessionalProfile;
+      viewer: PublicViewer;
+    };
+
+/**
+ * `mode="public"` reusa a mesma casca visual do perfil próprio, mas com a
+ * projeção pública de `GET /api/professionals/:id`: sem Editar/Sair, sem
+ * Conta/PII, sem força do perfil e com o CTA de contratação.
+ */
+export function ProfileScreen(props: ProfileScreenProps) {
+  if (props.mode === "public") {
+    return (
+      <PublicProfileScreen
+        professional={props.professional}
+        viewer={props.viewer}
+      />
+    );
+  }
+  return <SelfProfileScreen />;
+}
+
+function PublicProfileScreen({
+  professional,
+  viewer,
+}: {
+  professional: PublicProfessionalProfile;
+  viewer: PublicViewer;
+}) {
+  const router = useRouter();
+  const [hireOpen, setHireOpen] = useState(false);
+
+  const displayName = professional.name;
+  const verified = professional.verificationStatus === "VERIFICADO";
+  const hasRating =
+    professional.ratingAverage != null && professional.evaluationCount > 0;
+  const location = [professional.city, professional.state].filter(Boolean).join(" - ");
+  const loginHref = `/login?redirect=${encodeURIComponent(`/profissional/${professional.id}`)}`;
+
+  return (
+    <div className={styles.screen}>
+      <div className={styles.head}>
+        <h1 className={styles.title}>Perfil profissional</h1>
+        <p className={styles.subtitle}>Categorias, experiência e avaliações de {displayName}.</p>
+      </div>
+
+      <section className={styles.hero}>
+        <div className={styles.identity}>
+          <span className={styles.avatarWrap}>
+            <span className={styles.avatar}>{initials(displayName)}</span>
+            {verified && (
+              <span className={styles.avatarCheck} aria-hidden="true">
+                <CheckIcon size={12} />
+              </span>
+            )}
+          </span>
+          <span className={styles.identityBody}>
+            <span className={styles.nameRow}>
+              <span className={styles.name}>{displayName}</span>
+              {verified && (
+                <Badge tone="primary" icon={<ShieldCheckIcon size={11} />}>
+                  Verificado
+                </Badge>
+              )}
+            </span>
+            <span className={styles.headline}>
+              {professional.headline ??
+                (professional.categories.length > 0
+                  ? professional.categories.map(humanizeCategory).join(" · ")
+                  : "Profissional Freelaz")}
+            </span>
+            {(professional.region || location) && (
+              <span className={styles.region}>
+                <MapPinIcon size={12} /> {professional.region ?? location}
+              </span>
+            )}
+          </span>
+        </div>
+
+        <div className={styles.metrics}>
+          <div className={styles.metric}>
+            <span className={styles.metricIcon}>
+              <StarIcon size={14} filled={hasRating} />
+            </span>
+            <span className={styles.metricBody}>
+              <span className={styles.metricValue}>
+                {hasRating ? professional.ratingAverage!.toFixed(1) : "—"}
+              </span>
+              <span className={styles.metricLabel}>
+                {professional.evaluationCount > 0
+                  ? `${professional.evaluationCount} ${
+                      professional.evaluationCount === 1 ? "avaliação" : "avaliações"
+                    }`
+                  : "Novo no Freelaz"}
+              </span>
+            </span>
+          </div>
+          <div className={styles.metric}>
+            <span className={styles.metricIcon}>
+              <BriefcaseIcon size={14} />
+            </span>
+            <span className={styles.metricBody}>
+              <span className={styles.metricValue}>
+                {professional.referencePriceCents != null
+                  ? formatBRLShort(professional.referencePriceCents)
+                  : "—"}
+              </span>
+              <span className={styles.metricLabel}>Preço de referência</span>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {professional.categories.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Categorias</h2>
+          </div>
+          <div className={styles.chipRow}>
+            {professional.categories.map((category, index) => (
+              <Chip key={category} active={index === 0}>
+                {humanizeCategory(category)}
+              </Chip>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {professional.bio && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Sobre</h2>
+            {professional.referencePriceCents != null && (
+              <span className={styles.sectionHint}>
+                Referência: {formatBRLShort(professional.referencePriceCents)}
+              </span>
+            )}
+          </div>
+          <Card>
+            <p className={styles.bio}>{professional.bio}</p>
+          </Card>
+        </section>
+      )}
+
+      {professional.workExperience.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Experiência profissional</h2>
+            <span className={styles.sectionHint}>
+              {professional.workExperience.length} registro(s)
+            </span>
+          </div>
+          <div className={styles.list}>
+            {professional.workExperience.map((experience) => (
+              <div key={experience.id} className={styles.exp}>
+                <span className={styles.expIcon}>
+                  <BriefcaseIcon size={15} />
+                </span>
+                <span className={styles.expBody}>
+                  <span className={styles.expRole}>{experience.role}</span>
+                  <span className={styles.expMeta}>{experience.company}</span>
+                  <span className={styles.expMeta}>
+                    {experience.periodStart}
+                    {experience.periodEnd ? ` — ${experience.periodEnd}` : " — atual"}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(professional.availability.length > 0 || professional.softSkills.length > 0) && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Disponibilidade e habilidades</h2>
+          </div>
+          <div className={styles.tags}>
+            {professional.availability.map((code) => (
+              <span key={code} className={styles.tag}>
+                {humanizeCode(code)}
+              </span>
+            ))}
+            {professional.softSkills.map((skill) => (
+              <span key={skill} className={styles.tag}>
+                {skill}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {professional.portfolio.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Portfólio</h2>
+            <span className={styles.sectionHint}>{professional.portfolio.length} item(ns)</span>
+          </div>
+          {viewer.loggedIn ? (
+            <div className={styles.portfolio}>
+              {professional.portfolio.map((item) => (
+                <span key={item.id} className={styles.portfolioItem}>
+                  {item.kind === "FOTO" ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- uploads servidos pela própria API
+                    <img src={item.url} alt="Item do portfólio" loading="lazy" />
+                  ) : (
+                    <span className={styles.portfolioEmpty}>Vídeo</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <div className={styles.empty}>
+                <span className={styles.emptyTitle}>Entre para ver o portfólio</span>
+                <span className={styles.emptyText}>
+                  As imagens do portfólio são liberadas para usuários logados.
+                </span>
+                <Button size="sm" onClick={() => router.push(loginHref)}>
+                  Entrar
+                </Button>
+              </div>
+            </Card>
+          )}
+        </section>
+      )}
+
+      {viewer.isSelf ? (
+        <Card>
+          <div className={styles.empty}>
+            <span className={styles.emptyTitle}>Este é o seu perfil público</span>
+            <span className={styles.emptyText}>É assim que os contratantes veem você.</span>
+          </div>
+        </Card>
+      ) : viewer.canHire ? (
+        <div className={styles.actionsRow}>
+          <Button block onClick={() => setHireOpen(true)}>
+            Me contrate
+          </Button>
+        </div>
+      ) : viewer.loggedIn ? (
+        <Card>
+          <div className={styles.empty}>
+            <span className={styles.emptyTitle}>Contrate este profissional</span>
+            <span className={styles.emptyText}>
+              Ative o papel Contratante na sua conta para enviar propostas.
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => router.push("/perfil")}>
+              Ativar papel Contratante
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <div className={styles.actionsRow}>
+          <Button block onClick={() => router.push(loginHref)}>
+            Entrar para contratar
+          </Button>
+        </div>
+      )}
+
+      {hireOpen && (
+        <HireMeModal
+          professionalId={professional.id}
+          professionalName={displayName}
+          categories={professional.categories}
+          onClose={() => setHireOpen(false)}
+        />
+      )}
     </div>
   );
 }

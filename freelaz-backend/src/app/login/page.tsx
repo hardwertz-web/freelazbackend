@@ -7,7 +7,13 @@ import { apiGet, apiPost } from "@/lib/apiClient";
 import { AuthShell, authStyles } from "@/components/AuthShell";
 import { Button } from "@/components/Button";
 
-/** POST /api/auth/login → cookie de sessão httpOnly → Home. */
+// Só aceita caminho interno: `//evil.com` e URLs absolutas caem na Home.
+function redirectTarget(): string {
+  const raw = new URLSearchParams(window.location.search).get("redirect") ?? "";
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+}
+
+/** POST /api/auth/login → cookie de sessão httpOnly → Home (ou `?redirect=`). */
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -20,7 +26,7 @@ export default function LoginPage() {
     let alive = true;
     void (async () => {
       const result = await apiGet<unknown>("/api/auth/me");
-      if (alive && result.ok) router.replace("/");
+      if (alive && result.ok) router.replace(redirectTarget());
     })();
     return () => {
       alive = false;
@@ -38,7 +44,7 @@ export default function LoginPage() {
     });
 
     if (result.ok) {
-      router.replace("/");
+      router.replace(redirectTarget());
       router.refresh();
       return;
     }

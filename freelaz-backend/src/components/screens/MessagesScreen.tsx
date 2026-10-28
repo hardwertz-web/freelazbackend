@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { apiGet } from "@/lib/apiClient";
-import type { HiringSummary, HiringsResponse } from "@/lib/apiTypes";
-import { formatBRLShort, formatListTime, initials } from "@/lib/format";
+import { useRouter } from "next/navigation";
+import { apiGet, apiPost } from "@/lib/apiClient";
+import type {
+  HiringSummary,
+  HiringsResponse,
+  Proposal,
+  ProposalsResponse,
+} from "@/lib/apiTypes";
+import { formatBRLShort, formatListTime, formatShift, initials } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -12,7 +18,12 @@ import { Chip } from "@/components/Chip";
 import { SearchIcon } from "@/components/Icons";
 import styles from "./MessagesScreen.module.css";
 
-type Filter = "TODAS" | "CONTRATANTES" | "PROFISSIONAIS";
+type Filter = "TODAS" | "CONTRATANTES" | "PROFISSIONAIS" | "PROPOSTAS";
+
+type RespondResponse = {
+  application: { hiring: { id: string } | null };
+  agreedValueCents: number;
+};
 
 /**
  * Lista de conversas = contratações com chat criado (o backend só libera a
@@ -25,18 +36,30 @@ type Filter = "TODAS" | "CONTRATANTES" | "PROFISSIONAIS";
  * lidas nem o texto da última mensagem — a lista mostra `lastMessageAt`.
  */
 export function MessagesScreen() {
+  const router = useRouter();
   const [hirings, setHirings] = useState<HiringSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [counterFor, setCounterFor] = useState<Proposal | null>(null);
   const [filter, setFilter] = useState<Filter>("TODAS");
   const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = await apiGet<HiringsResponse>("/api/hirings");
-    if (result.ok) setHirings(result.data.hirings);
-    else setError(result.error);
+    setProposalsError(null);
+    const [hiringsResult, proposalsResult] = await Promise.all([
+      apiGet<HiringsResponse>("/api/hirings"),
+      apiGet<ProposalsResponse>("/api/proposals"),
+    ]);
+    if (hiringsResult.ok) setHirings(hiringsResult.data.hirings);
+    else setError(hiringsResult.error);
+    if (proposalsResult.ok) setProposals(proposalsResult.data.proposals);
+    else setProposalsError(proposalsResult.error);
     setLoading(false);
   }, []);
 
@@ -59,8 +82,9 @@ export function MessagesScreen() {
       // contratante (side CONTRACTOR), o outro lado é profissional.
       contratantes: chats.filter((h) => h.side === "PROFESSIONAL").length,
       profissionais: chats.filter((h) => h.side === "CONTRACTOR").length,
+      propostas: proposals.length,
     }),
-    [chats]
+    [chats, proposals]
   );
 
   const visible = useMemo(() => {
@@ -79,6 +103,60 @@ export function MessagesScreen() {
         return bTime - aTime;
       });
   }, [chats, filter, query]);
+
+  const visibleProposals = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return proposals;
+    return proposals.filter((proposal) => {
+      const haystack = `${proposal.counterpart.name} ${proposal.counterpart.tradeName ?? ""} ${
+        proposal.jobPosting.title
+      }`.toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [proposals, query]);
+
+  async function respond(proposal: Proposal, decision: "ACCEPT" | "REJECT") {
+    setBusyId(proposal.id);
+    setActionError(null);
+    const result = await apiPost<RespondResponse>(
+      `/api/applications/${proposal.id}/respond`,
+      { decision }
+    );
+    if (!result.ok) {
+      setActionError(result.error);
+      setBusyId(null);
+      return;
+    }
+
+    if (decision === "ACCEPT") {
+      const hiringId = result.data.application?.hiring?.id;
+      if (hiringId) {
+        // Profissional não paga: vai para a conversa. Contratante segue para o
+        // checkout da contratação recém-criada.
+        router.push(
+          proposal.side === "RECEIVED" ? `/mensagens/${hiringId}` : `/checkout/${hiringId}`
+        );
+        router.refresh();
+        return;
+      }
+    }
+
+    setBusyId(null);
+    await load();
+  }
+
+  async function cancelProposal(proposal: Proposal) {
+    setBusyId(proposal.id);
+    setActionError(null);
+    const result = await apiPost(`/api/proposals/${proposal.id}/cancel`, {});
+    if (!result.ok) {
+      setActionError(result.error);
+      setBusyId(null);
+      return;
+    }
+    setBusyId(null);
+    await load();
+  }
 
   return (
     <div className={styles.screen}>
@@ -117,9 +195,168 @@ export function MessagesScreen() {
         >
           Profissionais
         </Chip>
+        <Chip
+          active={filter === "PROPOSTAS"}
+          onClick={() => setFilter("PROPOSTAS")}
+          count={counts.propostas}
+        >
+          Propostas
+        </Chip>
       </div>
 
-      {loading && (
+      {filter === "PROPOSTAS" && (
+        <>
+          {actionError && (
+            <div className={styles.actionError} role="alert">
+              {actionError}
+            </div>
+          )}
+
+          {loading && (
+            <div className={styles.list}>
+              <div className={styles.skeleton} />
+              <div className={styles.skeleton} />
+            </div>
+          )}
+
+          {!loading && proposalsError && (
+            <Card>
+              <div className={styles.empty}>
+                <span className={styles.emptyTitle}>Não foi possível carregar as propostas</span>
+                <span className={styles.emptyText}>{proposalsError}</span>
+                <Button size="sm" onClick={() => void load()}>
+                  Tentar de novo
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {!loading && !proposalsError && visibleProposals.length === 0 && (
+            <Card>
+              <div className={styles.empty}>
+                <span className={styles.emptyTitle}>
+                  {proposals.length === 0 ? "Nenhuma proposta" : "Nada com essa busca"}
+                </span>
+                <span className={styles.emptyText}>
+                  {proposals.length === 0
+                    ? "Propostas privadas do \"Me contrate\" aparecem aqui para aceitar, contrapropor ou recusar."
+                    : "Tente outro termo de busca."}
+                </span>
+              </div>
+            </Card>
+          )}
+
+          {!loading && !proposalsError && visibleProposals.length > 0 && (
+            <div className={styles.list}>
+              {visibleProposals.map((proposal) => {
+                const name = proposal.counterpart.tradeName || proposal.counterpart.name;
+                const activeStatus =
+                  proposal.status === "PENDENTE" || proposal.status === "CONTRAPROPOSTA";
+                const busy = busyId === proposal.id;
+                const canCancel = proposal.side === "SENT" && proposal.status === "PENDENTE";
+                return (
+                  <Card key={proposal.id} className={styles.proposalCard}>
+                    <div className={styles.proposalHead}>
+                      <span className={styles.avatar}>{initials(name)}</span>
+                      <span className={styles.body}>
+                        <span className={styles.nameRow}>
+                          <span className={styles.name}>{name}</span>
+                          <Badge tone={proposal.side === "RECEIVED" ? "tag" : "primary"}>
+                            {proposal.side === "RECEIVED" ? "Recebida" : "Enviada"}
+                          </Badge>
+                        </span>
+                        <span className={styles.meta}>{proposal.jobPosting.title}</span>
+                        <span className={styles.meta}>{formatShift(proposal.jobPosting.startsAt, proposal.jobPosting.endsAt)}</span>
+                      </span>
+                      <span className={styles.proposalValue}>
+                        {formatBRLShort(proposal.valueCents)}
+                      </span>
+                    </div>
+
+                    {proposal.message && (
+                      <p className={styles.proposalMessage}>{proposal.message}</p>
+                    )}
+
+                    <div className={styles.proposalStatus}>
+                      {proposal.awaitingMe && activeStatus ? (
+                        <Badge tone={proposal.status === "CONTRAPROPOSTA" ? "tag" : "primary"}>
+                          {proposal.status === "CONTRAPROPOSTA"
+                            ? "Contraproposta — aguarda você"
+                            : "Aguarda sua resposta"}
+                        </Badge>
+                      ) : (
+                        <Badge tone="neutral">Aguardando o outro lado</Badge>
+                      )}
+                      {proposal.counterOfferValueCents != null &&
+                        proposal.counterOfferValueCents !== proposal.jobPosting.valueCents && (
+                          <span className={styles.proposalCounter}>
+                            Contraproposta: {formatBRLShort(proposal.counterOfferValueCents)}
+                          </span>
+                        )}
+                    </div>
+
+                    {proposal.awaitingMe && activeStatus && (
+                      <div className={styles.proposalActions}>
+                        <Button
+                          size="sm"
+                          block
+                          disabled={busy}
+                          onClick={() => void respond(proposal, "ACCEPT")}
+                        >
+                          Aceitar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          block
+                          disabled={busy}
+                          onClick={() => setCounterFor(proposal)}
+                        >
+                          Contrapor
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          block
+                          disabled={busy}
+                          onClick={() => void respond(proposal, "REJECT")}
+                        >
+                          Recusar
+                        </Button>
+                      </div>
+                    )}
+
+                    {canCancel && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        block
+                        disabled={busy}
+                        onClick={() => void cancelProposal(proposal)}
+                      >
+                        {busy ? "Cancelando..." : "Cancelar proposta"}
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {counterFor && (
+            <CounterOfferModal
+              proposal={counterFor}
+              onClose={() => setCounterFor(null)}
+              onDone={() => {
+                setCounterFor(null);
+                void load();
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {filter !== "PROPOSTAS" && loading && (
         <div className={styles.list}>
           <div className={styles.skeleton} />
           <div className={styles.skeleton} />
@@ -127,7 +364,7 @@ export function MessagesScreen() {
         </div>
       )}
 
-      {!loading && error && (
+      {filter !== "PROPOSTAS" && !loading && error && (
         <Card>
           <div className={styles.empty}>
             <span className={styles.emptyTitle}>Não foi possível carregar as conversas</span>
@@ -139,7 +376,7 @@ export function MessagesScreen() {
         </Card>
       )}
 
-      {!loading && !error && visible.length === 0 && (
+      {filter !== "PROPOSTAS" && !loading && !error && visible.length === 0 && (
         <Card>
           <div className={styles.empty}>
             <span className={styles.emptyTitle}>
@@ -166,7 +403,7 @@ export function MessagesScreen() {
         </Card>
       )}
 
-      {!loading && !error && visible.length > 0 && (
+      {filter !== "PROPOSTAS" && !loading && !error && visible.length > 0 && (
         <div className={styles.list}>
           {visible.map((hiring) => (
             <Link
@@ -202,6 +439,93 @@ export function MessagesScreen() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function brlToCents(value: string): number {
+  const normalized = value.replace(/\./g, "").replace(",", ".").trim();
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(parsed * 100);
+}
+
+/** Contraproposta de uma proposta privada — qualquer lado pode propor. */
+function CounterOfferModal({
+  proposal,
+  onClose,
+  onDone,
+}: {
+  proposal: Proposal;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cents = brlToCents(value);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (cents <= 0 || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    const result = await apiPost(`/api/applications/${proposal.id}/counter-offer`, {
+      valueCents: cents,
+    });
+    if (result.ok) {
+      onDone();
+      return;
+    }
+    setError(result.error);
+    setSubmitting(false);
+  }
+
+  return (
+    <div className={styles.overlay} role="presentation" onMouseDown={() => !submitting && onClose()}>
+      <div
+        className={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="counter-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="counter-modal-title" className={styles.modalTitle}>
+          Contraproposta
+        </h2>
+        <p className={styles.modalText}>
+          Valor atual: <strong>{formatBRLShort(proposal.valueCents)}</strong>. Proponha um novo
+          valor para {proposal.counterpart.tradeName || proposal.counterpart.name}.
+        </p>
+
+        <form className={styles.modalForm} onSubmit={handleSubmit}>
+          {error && (
+            <div className={styles.actionError} role="alert">
+              {error}
+            </div>
+          )}
+          <label className={styles.modalField}>
+            <span className={styles.modalLabel}>Novo valor (R$)</span>
+            <input
+              className={styles.modalInput}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="300,00"
+              inputMode="decimal"
+              autoFocus
+              required
+            />
+          </label>
+          <div className={styles.modalActions}>
+            <Button variant="secondary" onClick={onClose} disabled={submitting}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={cents <= 0 || submitting}>
+              {submitting ? "Enviando..." : "Enviar contraproposta"}
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

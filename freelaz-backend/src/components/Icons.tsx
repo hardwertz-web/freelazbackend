@@ -440,3 +440,14 @@ export function GridIcon(props: IconProps) {
     </Svg>
   );
 }
+
+export function UsersIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" />
+      <path d="M16 5.5a3.2 3.2 0 0 1 0 6.2" />
+      <path d="M17.5 14.8c2.1.6 3.5 2.3 3.5 4.7" />
+    </Svg>
+  );
+}

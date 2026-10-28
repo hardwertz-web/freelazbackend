@@ -301,3 +301,104 @@ export type JobApplication = {
 };
 
 export type JobApplicationsResponse = { applications: JobApplication[] };
+
+// ----- Fase 2.5: profissionais públicos, "Me contrate" e propostas -----
+
+/** Item de GET /api/professionals (bio já truncada em 200 chars). */
+export type ProfessionalSummary = {
+  id: string;
+  name: string;
+  headline: string | null;
+  bio: string | null;
+  categories: string[];
+  city: string | null;
+  state: string | null;
+  referencePriceCents: number | null;
+  ratingAverage: number | null;
+  evaluationCount: number;
+  verificationStatus: string;
+};
+
+export type ProfessionalsResponse = {
+  professionals: ProfessionalSummary[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+};
+
+export type PublicPortfolioItem = {
+  id: string;
+  kind: "FOTO" | "VIDEO";
+  url: string;
+  position: number;
+};
+
+export type PublicWorkExperience = {
+  id: string;
+  company: string;
+  role: string;
+  periodStart: string;
+  periodEnd: string | null;
+};
+
+/** GET /api/professionals/:id — projeção pública (sem PII nem campos internos). */
+export type PublicProfessionalProfile = {
+  id: string;
+  name: string;
+  headline: string | null;
+  bio: string | null;
+  categories: string[];
+  availability: string[];
+  softSkills: string[];
+  region: string | null;
+  city: string | null;
+  state: string | null;
+  referencePriceCents: number | null;
+  ratingAverage: number | null;
+  evaluationCount: number;
+  portfolio: PublicPortfolioItem[];
+  workExperience: PublicWorkExperience[];
+  isInfluencer: boolean;
+  verificationStatus: string;
+  createdAt: string;
+};
+
+export type PublicProfessionalResponse = {
+  professional: PublicProfessionalProfile;
+};
+
+/** Proposta privada ("Me contrate") — GET /api/proposals. */
+export type ProposalSide = "RECEIVED" | "SENT";
+
+export type Proposal = {
+  id: string;
+  status: ApplicationStatus;
+  side: ProposalSide;
+  /** true quando a resposta é desta sessão (é o que conta no badge). */
+  awaitingMe: boolean;
+  message: string | null;
+  valueCents: number;
+  counterOfferValueCents: number | null;
+  counterOfferBy: string | null;
+  agreedValueCents: number | null;
+  createdAt: string;
+  counterpart: { id: string; name: string; tradeName: string | null };
+  jobPosting: {
+    id: string;
+    title: string;
+    category: string;
+    city: string | null;
+    state: string | null;
+    valueCents: number;
+    startsAt: string;
+    endsAt: string;
+    status: string;
+  };
+  hiring: { id: string; status: string } | null;
+};
+
+export type ProposalsResponse = {
+  proposals: Proposal[];
+  counts: { pending: number; received: number; sent: number; active: number };
+};
