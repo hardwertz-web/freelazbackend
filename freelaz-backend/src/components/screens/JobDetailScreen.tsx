@@ -124,11 +124,15 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
   const [applyOpen, setApplyOpen] = useState(false);
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [accepted, setAccepted] = useState(false);
   const [applyMessage, setApplyMessage] = useState("");
   const [applyError, setApplyError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [acceptOpen, setAcceptOpen] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,6 +212,56 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
 
     setApplyError(result.error);
   }, [applyMessage, jobId, router]);
+
+  const closeAccept = useCallback(() => {
+    setAcceptOpen(false);
+    setAcceptError(null);
+  }, []);
+
+  const submitAccept = useCallback(async () => {
+    if (!job) return;
+    setAccepting(true);
+    setAcceptError(null);
+
+    const result = await apiPost<{ application: { id: string } }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/apply`,
+      { agreedValueCents: job.valueCents }
+    );
+    setAccepting(false);
+
+    if (result.ok) {
+      setAccepted(true);
+      setApplied(true);
+      setAcceptOpen(false);
+      setToast("Valor aceito! Aguarde a empresa selecionar.");
+      return;
+    }
+
+    if (result.status === 409) {
+      if (/já aceitou/i.test(result.error)) {
+        setAccepted(true);
+        setApplied(true);
+        setAcceptOpen(false);
+        setToast(result.error);
+        return;
+      }
+      if (/já se candidatou/i.test(result.error)) {
+        setApplied(true);
+        setAcceptOpen(false);
+        setToast("Você já se candidatou a esta vaga.");
+        return;
+      }
+      setAcceptError(result.error);
+      return;
+    }
+
+    if (result.status === 422) {
+      setAcceptError(result.error);
+      return;
+    }
+
+    setAcceptError(result.error);
+  }, [job, jobId]);
 
   const handleSelect = useCallback(
     async (applicationId: string) => {
@@ -495,6 +549,22 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
                       <span className={styles.applicantBody}>
                         <span className={styles.applicantTop}>
                           <span className={styles.applicantName}>{name}</span>
+                          {application.agreedValueCents != null && (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                borderRadius: 9999,
+                                padding: "2px 8px",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                background: "#DCFCE7",
+                                color: "#16A34A",
+                              }}
+                            >
+                              Aceitou o valor
+                            </span>
+                          )}
                           <Badge tone={meta.tone}>{meta.label}</Badge>
                         </span>
                         <span className={styles.applicantRating}>
@@ -545,23 +615,43 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
 
       {!isOwner && (
         <section className={styles.cta}>
-          <Button
-            block
-            disabled={!isOpen || applied || applying}
-            onClick={() => {
-              setApplyError(null);
-              setApplyOpen(true);
-            }}
-            title={!isOpen ? "Esta vaga não está mais aberta" : undefined}
-          >
-            <SendIcon size={16} /> {applied ? "Proposta enviada" : "Enviar proposta"}
-          </Button>
+          {isOpen && !applied && !accepted ? (
+            <>
+              <Button
+                block
+                onClick={() => {
+                  setAcceptError(null);
+                  setAcceptOpen(true);
+                }}
+              >
+                <CheckIcon size={16} /> Aceitar valor proposto ({formatBRLShort(job.valueCents)})
+              </Button>
+              <Button
+                block
+                variant="secondary"
+                disabled={applying}
+                onClick={() => {
+                  setApplyError(null);
+                  setApplyOpen(true);
+                }}
+              >
+                <SendIcon size={16} /> Enviar proposta
+              </Button>
+            </>
+          ) : (
+            <Button block disabled={!isOpen || applied || accepted}>
+              <SendIcon size={16} />{" "}
+              {accepted ? "Valor aceito" : applied ? "Proposta enviada" : isOpen ? "Enviar proposta" : "Vaga fechada"}
+            </Button>
+          )}
           <span className={styles.ctaNote}>
-            {applied
-              ? "Você já enviou uma proposta para esta vaga."
-              : isOpen
-                ? "O pagamento fica retido na plataforma até a conclusão do serviço."
-                : "Esta vaga não está mais aberta para candidaturas."}
+            {accepted
+              ? "Valor aceito! Aguarde a empresa selecionar."
+              : applied
+                ? "Você já enviou uma proposta para esta vaga."
+                : isOpen
+                  ? "O pagamento fica retido na plataforma até a conclusão do serviço."
+                  : "Esta vaga não está mais aberta para candidaturas."}
           </span>
         </section>
       )}
@@ -629,6 +719,59 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
               </Button>
               <Button onClick={() => void submitApplication()} disabled={applying}>
                 {applying ? "Enviando..." : "Confirmar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {acceptOpen && (
+        <div
+          className={styles.overlay}
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !accepting) closeAccept();
+          }}
+        >
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="accept-title"
+          >
+            <div className={styles.modalHead}>
+              <h2 id="accept-title" className={styles.modalTitle}>
+                Aceitar valor proposto
+              </h2>
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={closeAccept}
+                disabled={accepting}
+                aria-label="Fechar"
+              >
+                <XIcon size={16} />
+              </button>
+            </div>
+
+            <p className={styles.modalJob}>{job.title}</p>
+            <p className={styles.body}>
+              Aceitar {formatBRL(job.valueCents)} por {job.title}? Você receberá o valor integral
+              (a empresa paga as taxas).
+            </p>
+
+            {acceptError && (
+              <div className={styles.alert} role="alert">
+                {acceptError}
+              </div>
+            )}
+
+            <div className={styles.modalActions}>
+              <Button variant="secondary" onClick={closeAccept} disabled={accepting}>
+                Cancelar
+              </Button>
+              <Button onClick={() => void submitAccept()} disabled={accepting}>
+                {accepting ? "Confirmando..." : "Confirmar"}
               </Button>
             </div>
           </div>

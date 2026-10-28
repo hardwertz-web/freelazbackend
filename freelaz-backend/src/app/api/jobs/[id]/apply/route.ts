@@ -14,6 +14,9 @@ import { hasActiveHiring } from "@/services/hiringService";
  *  - uma vaga com contratação em andamento está reservada (409);
  *  - uma candidatura por profissional/vaga (garantido pelo @@unique do banco);
  *  - a mensagem é opcional (1-500 chars): ausente/null/vazia grava NULL.
+ *  - Fase 2.5.1: `agreedValueCents` opcional = "aceitar valor proposto".
+ *    Se presente, deve ser inteiro > 0 e IGUAL a `job.valueCents`. Só pode
+ *    ser definido uma vez (não sobrescreve nem cria segunda candidatura).
  *
  * Vaga PRIVADA ("Me contrate") não passa por aqui: a candidatura dela já
  * nasce junto do convite, em /api/jobs/invite.
@@ -61,6 +64,17 @@ export async function POST(
     return NextResponse.json({ error: message.error }, { status: 422 });
   }
 
+  let agreedValueCents: number | undefined = undefined;
+  if (payload.agreedValueCents !== undefined && payload.agreedValueCents !== null) {
+    if (!Number.isInteger(payload.agreedValueCents) || (payload.agreedValueCents as number) <= 0) {
+      return NextResponse.json(
+        { error: "agreedValueCents deve ser inteiro positivo" },
+        { status: 422 }
+      );
+    }
+    agreedValueCents = payload.agreedValueCents as number;
+  }
+
   if (!hasActiveRole(user, "PROFISSIONAL")) {
     return NextResponse.json(
       { error: "Ative o papel Profissional (verificação aprovada) para se candidatar" },
@@ -93,6 +107,15 @@ export async function POST(
     );
   }
 
+  if (agreedValueCents !== undefined) {
+    if (agreedValueCents !== job.valueCents) {
+      return NextResponse.json(
+        { error: "O aceite deve ser exatamente pelo valor proposto" },
+        { status: 422 }
+      );
+    }
+  }
+
   try {
     const application = await prisma.application.create({
       data: {
@@ -100,12 +123,29 @@ export async function POST(
         professionalId: user.id,
         status: "PENDENTE",
         message: message.value,
+        ...(agreedValueCents !== undefined ? { agreedValueCents } : {}),
       },
     });
     return NextResponse.json({ application }, { status: 201 });
   } catch (err) {
     // P2002 = violação do @@unique([jobPostingId, professionalId])
     if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
+      if (agreedValueCents !== undefined) {
+        const existing = await prisma.application.findUnique({
+          where: { jobPostingId_professionalId: { jobPostingId: job.id, professionalId: user.id } },
+          select: { agreedValueCents: true, status: true },
+        });
+        if (existing?.agreedValueCents != null) {
+          return NextResponse.json({ error: "Você já aceitou esta proposta" }, { status: 409 });
+        }
+        if (existing) {
+          const updated = await prisma.application.update({
+            where: { jobPostingId_professionalId: { jobPostingId: job.id, professionalId: user.id } },
+            data: { agreedValueCents },
+          });
+          return NextResponse.json({ application: updated }, { status: 200 });
+        }
+      }
       return NextResponse.json(
         { error: "Você já se candidatou a esta vaga" },
         { status: 409 }
