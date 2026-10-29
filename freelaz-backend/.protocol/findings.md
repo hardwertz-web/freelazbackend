@@ -503,6 +503,25 @@ Sugestão de sequência (1 frase de justificativa cada; **não implementar**):
 - Suplentes (R2) ← decisões **17, 18**.
 - Contraproposta (V5c/V5end) ← decisões **13, 14, 15, 16**.
 
+## IA de cadastro — Sessão 1 (INSPECT + stub)
+
+**Contratos reais inspecionados:**
+- `IdentityVerification` (schema): `id`, `userId`, `user` (relation), `role` (UserRole), `documentUrl` (String? RG/CNH para CPF ou comprovante), `selfieUrl` (String? obrigatório p/ CPF), `status` (VerificationStatus default `EM_ANALISE`), `rejectionReason`, `decidedById`, `submittedAt` (default now), `analyzedAt`. Fluxo: submissão via rotas de verificação → cria/atualiza com `status=EM_ANALISE`; aprovação humana via `/api/admin/verifications/[id]/approve` (transação: seta `VERIFICADO`, `decidedById`, `analyzedAt`; ativa `UserRoleAssignment.status=ATIVO`; atualiza perfil correspondente p/ `VERIFICADO`). Rejeição via `/api/admin/verifications/[id]/reject` (obrigatório `reason`): seta `NAO_VERIFICADO`, `rejectionReason`, `decidedById`, `analyzedAt`; perfil volta p/ `NAO_VERIFICADO`; papel permanece PENDENTE permitindo reenvio.
+- `POST /api/verification/professional`: requer auth + papel PROFISSIONAL PENDENTE. CPF: exige `documentUrl` e `selfieUrl` (dataUrl) → salva via `saveDataUrlFile` em `verifications/${user.id}` → `documentUrl`/`selfieUrl` (URLs relativas). CNPJ: sem anexos. Bloqueia se já `EM_ANALISE`. Cria `IdentityVerification` e atualiza `ProfessionalProfile.verificationStatus` para `EM_ANALISE` em transação.
+- `POST /api/verification/contractor`: requer e-mail confirmado, cria/atualiza `IdentityVerification` com id `\`${user.id}:CONTRATANTE\`` e status `VERIFICADO` (verificação leve).
+- Admin `/admin` aba Identidade: `GET /api/admin/verifications?status=EM_ANALISE` lista fila (mascara documento via `maskDocument`), mostra links para `/api/uploads/...` (documento/selfie). Botão Aprovar chama `POST /api/admin/verifications/[id]/approve` (corpo vazio; `adminId` vem da sessão). Botão Rejeitar abre form com motivo obrigatório → `POST /api/admin/verifications/[id]/reject`. Acesso a uploads de `verifications/` liberado para ADMIN.
+- `src/lib/uploads.ts`: `saveDataUrlFile` salva dataUrl base64 em `UPLOAD_ROOT` (env `UPLOAD_DIR` ou `process.cwd()/uploads`) em `folder/hex.ext` (jpg/png/webp/pdf). `MAX_DATA_URL_LENGTH` ~2.5MB. `resolveUploadPath` protege contra path traversal. `GET /api/uploads/[...path]` exige auth; `verifications/` e `private/` só dono ou ADMIN.
+- `sharp`: presente (`0.33.5`) no package.json. `jimp`: ausente. `tesseract.js`: instalado nesta sessão (`5.1.1`).
+- Python: não encontrado no ambiente (descartado subprocess Python).
+
+**Decisão OCR:** A) Node puro com `tesseract.js` (recomendado p/ MVP Itajubá). B) Python+PaddleOCR mais preciso mas requer Python/instalação. C) API externa descartada (LGPD). Justificativa: sem Python, menor complexidade, resolve ~60-70% casos limpos, fácil migrar p/ B se necessário.
+
+**Stub criado:** `src/services/documentOcrService.ts` com `extractFields(imagePath)`. Usa `tesseract.js` (por). Regex CPF: `/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/` ou `/\b\d{11}\b/`. Data nascimento: `/\b\d{2}\/\d{2}\/\d{4}\b/`. Nome: heurística - primeira linha com ≥2 palavras alfabéticas maiúsculas, ignora linhas com >3 dígitos.
+
+**Teste sintético:** imagem `test-synthetic.png` gerada com texto "JOAO DA SILVA", "CPF: 123.456.789-00", "NASCIMENTO: 01/01/1990". Output bruto (sem PII completo no log): `{"hasName": true, "hasCpf": true, "hasBirthDate": true, "confidence": 93.27}`. Texto OCR capturado conforme retorno da função.
+
+**Feature flag:** `DOCUMENT_AI_ENABLED=false` adicionado ao `.env.example`. **NUNCA** integrado ao fluxo de aprovação.
+
 ## Agendamento de jobs (Etapa 3.2)
 
 Os 4 jobs têm **rotas finas** (`POST /api/jobs/<nome>/run`, autenticadas por `x-jobs-token` = `JOBS_RUN_TOKEN`), mas **quem os chama periodicamente é externo ao processo**: o agendador é **infraestrutura**, não código do app. As rotas são a superfície estável; o agendador só as chama.
