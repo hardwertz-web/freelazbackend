@@ -85,5 +85,16 @@ export async function POST(req: NextRequest) {
     return v;
   });
 
+  // Pré-triagem OCR (sessão 2) - flag off por padrão, nunca falha submissão
+  if (process.env.DOCUMENT_AI_ENABLED === "true") {
+    try {
+      const { triageDocument } = await import("@/services/identityTriageService");
+      await triageDocument(verification.id);
+    } catch (err) {
+      // Falha OCR não pode falhar submissão
+      console.error("Falha na pré-triagem OCR:", err);
+    }
+  }
+
   return NextResponse.json({ verification }, { status: 201 });
 }

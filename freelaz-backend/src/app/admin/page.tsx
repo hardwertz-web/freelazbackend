@@ -64,6 +64,9 @@ type VerificationRow = {
   documentUrl: string | null;
   selfieUrl: string | null;
   submittedAt: string;
+  autoDecision: string | null;
+  reviewReasons: string[];
+  autoConfidence: number | null;
   user: { id: string; name: string; tradeName: string | null; documentType: string; documentMasked: string };
 };
 
@@ -535,6 +538,36 @@ function IdentidadeTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
             {v.user.tradeName ? ` (${v.user.tradeName})` : ""} · papel {v.role} · {v.user.documentType} {v.user.documentMasked} ·
             enviado em {dt(v.submittedAt)}
           </p>
+          <p style={{ margin: "0 0 6px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {v.autoDecision === "AUTO_OK" && (
+              <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 4, fontSize: 12 }}>AUTO_OK</span>
+            )}
+            {v.autoDecision === "REVIEW" && (
+              <span style={{ background: "#fff3e0", color: "#ef6c00", padding: "2px 8px", borderRadius: 4, fontSize: 12 }}>REVIEW</span>
+            )}
+            {!v.autoDecision && (
+              <span style={{ background: "#f5f5f5", color: "#666", padding: "2px 8px", borderRadius: 4, fontSize: 12 }}>Análise manual</span>
+            )}
+            {v.autoConfidence !== null && v.autoConfidence !== undefined && (
+              <span style={S.muted}>{Math.round(v.autoConfidence)}% de confiança do OCR</span>
+            )}
+          </p>
+          {v.reviewReasons && v.reviewReasons.length > 0 && (
+            <p style={{ margin: "0 0 6px" }}>
+              <span style={S.muted}>Motivos: </span>
+              {v.reviewReasons.map((r, i) => (
+                <span key={i}>
+                  {i > 0 && ", "}
+                  {r === "low_confidence" ? "baixa confiança" :
+                   r === "name_mismatch" ? "nome divergente" :
+                   r === "cpf_mismatch" ? "CPF divergente" :
+                   r === "birthdate_mismatch" ? "data de nascimento divergente" :
+                   r === "missing_field" ? "campo ausente" :
+                   r === "ocr_error" ? "erro no OCR" : r}
+                </span>
+              ))}
+            </p>
+          )}
           <p style={{ margin: "0 0 6px" }}>
             {v.documentUrl && (
               <a href={`/api/uploads/${v.documentUrl}`} target="_blank" rel="noreferrer">

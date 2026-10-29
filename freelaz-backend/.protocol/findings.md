@@ -503,6 +503,22 @@ Sugestão de sequência (1 frase de justificativa cada; **não implementar**):
 - Suplentes (R2) ← decisões **17, 18**.
 - Contraproposta (V5c/V5end) ← decisões **13, 14, 15, 16**.
 
+## IA de cadastro — Sessão 2 (integrar OCR + fila priorizada)
+
+**Critérios AUTO_OK vs REVIEW:**
+- AUTO_OK apenas se **TODOS**: confiança OCR ≥ 85, nome OCR bate com `User.name` (lowercase/sem acento/substring), CPF OCR bate com `User.document` (só dígitos), data nascimento bate com `User.birthDate` (DD/MM/AAAA). **Nunca** aprova automaticamente.
+- REVIEW caso contrário. Status permanece `EM_ANALISE`.
+
+**Motivos possíveis:** `low_confidence` | `name_mismatch` | `cpf_mismatch` | `birthdate_mismatch` | `missing_field` | `ocr_error`. Não loga CPF/nome/data completo (só "extraiu X de 3 campos, confidence Y").
+
+**Migração aditiva:** `IdentityVerification.autoDecision` (String?), `reviewReasons` (String[] default []), `autoConfidence` (Float?). Backfill implícito (null/[]/null). Migração `20261029120000_etapa_ia_cadastro_auto_decision` aplicada.
+
+**Hook:** `POST /api/verification/professional` chama `triageDocument` em try/catch quando `DOCUMENT_AI_ENABLED=true`. Falha OCR não falha submissão.
+
+**Fila admin:** `GET /api/admin/verifications` ordena por `reviewReasons.length DESC`, `autoConfidence ASC`, `submittedAt ASC`. Frontend mostra badge AUTO_OK/REVIEW/Análise manual, confiança e motivos legíveis.
+
+**Risco de bundle/deploy:** `node_modules/tesseract.js` + modelos de idioma são pesados. Em deploy serverless (Vercel) pode estourar limite (~250MB). Alternativas para produção: (a) função separada com runtime custom/maior limite, (b) Python + PaddleOCR em servidor próprio, (c) serviço externo licenciado. Decidir no deploy.
+
 ## IA de cadastro — Sessão 1 (INSPECT + stub)
 
 **Contratos reais inspecionados:**

@@ -181,6 +181,10 @@ model IdentityVerification {
   decidedById     String?
   submittedAt     DateTime           @default(now())
   analyzedAt      DateTime?
+  // Pré-triagem IA (sessão 2) — classificação, nunca decisão automática
+  autoDecision    String?
+  reviewReasons   String[]           @default([])
+  autoConfidence  Float?
 }
 
 model ProfessionalProfile {

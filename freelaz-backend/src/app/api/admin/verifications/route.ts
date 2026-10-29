@@ -21,7 +21,6 @@ export async function GET(req: NextRequest) {
 
   const verifications = await prisma.identityVerification.findMany({
     where: { status: status as never },
-    orderBy: { submittedAt: "asc" },
     include: {
       user: {
         select: {
@@ -35,6 +34,17 @@ export async function GET(req: NextRequest) {
     }
   });
 
+  // Ordenar: reviewReasons.length DESC, autoConfidence ASC, submittedAt ASC
+  verifications.sort((a, b) => {
+    const aReasons = a.reviewReasons?.length || 0;
+    const bReasons = b.reviewReasons?.length || 0;
+    if (aReasons !== bReasons) return bReasons - aReasons;
+    const aConf = a.autoConfidence ?? 1000;
+    const bConf = b.autoConfidence ?? 1000;
+    if (aConf !== bConf) return aConf - bConf;
+    return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+  });
+
   const shaped = verifications.map((v) => ({
     id: v.id,
     role: v.role,
@@ -45,6 +55,9 @@ export async function GET(req: NextRequest) {
     decidedById: v.decidedById,
     submittedAt: v.submittedAt,
     analyzedAt: v.analyzedAt,
+    autoDecision: v.autoDecision,
+    reviewReasons: v.reviewReasons || [],
+    autoConfidence: v.autoConfidence,
     user: {
       id: v.user.id,
       name: v.user.name,
