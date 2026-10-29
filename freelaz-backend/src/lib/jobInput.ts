@@ -31,6 +31,9 @@ export type JobFields = {
   valueCents: number;
   startsAt: Date;
   endsAt: Date;
+  tags?: string[];
+  requirements?: string[];
+  eventTag?: string | null;
 };
 
 // Limites apenas para barrar abuso/erro de digitação — não há regra de
@@ -154,6 +157,44 @@ export function parseJobFields(
     const endsAt = parseDate(body.endsAt);
     if (!endsAt) return { ok: false, error: "endsAt inválido (esperado ISO 8601)" };
     data.endsAt = endsAt;
+  }
+
+  if (!partial || has("tags")) {
+    if (Array.isArray(body.tags)) {
+      const tags = body.tags
+        .filter((t) => typeof t === "string")
+        .map((t) => (t as string).trim())
+        .filter((t) => t.length > 0 && t.length <= 30)
+        .slice(0, 5);
+      data.tags = tags;
+    } else if (!partial) {
+      data.tags = [];
+    }
+  }
+
+  if (!partial || has("requirements")) {
+    if (Array.isArray(body.requirements)) {
+      const requirements = body.requirements
+        .filter((t) => typeof t === "string")
+        .map((t) => (t as string).trim())
+        .filter((t) => t.length > 0 && t.length <= 80)
+        .slice(0, 10);
+      data.requirements = requirements;
+    } else if (!partial) {
+      data.requirements = [];
+    }
+  }
+
+  if (!partial || has("eventTag")) {
+    if (body.eventTag === null || body.eventTag === undefined || body.eventTag === "") {
+      data.eventTag = null;
+    } else if (typeof body.eventTag === "string") {
+      const et = body.eventTag.trim();
+      if (et.length > 30) return { ok: false, error: "Etiqueta deve ter no máximo 30 caracteres" };
+      data.eventTag = et || null;
+    } else if (!partial) {
+      data.eventTag = null;
+    }
   }
 
   // Checagens cruzadas só fazem sentido quando os dois extremos estão no

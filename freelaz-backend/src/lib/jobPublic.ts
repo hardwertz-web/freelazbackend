@@ -21,6 +21,9 @@ export const jobCardSelect = {
   startsAt: true,
   endsAt: true,
   createdAt: true,
+  tags: true,
+  requirements: true,
+  eventTag: true,
   contractor: {
     select: {
       id: true,
@@ -28,7 +31,7 @@ export const jobCardSelect = {
       tradeName: true,
       city: true,
       state: true,
-      contractorProfile: { select: { verificationStatus: true } },
+      contractorProfile: { select: { verificationStatus: true, ratingAverage: true } },
     },
   },
 } satisfies Prisma.JobPostingSelect;
@@ -51,6 +54,9 @@ export function jobCard(job: JobCardRow) {
     startsAt: job.startsAt,
     endsAt: job.endsAt,
     createdAt: job.createdAt,
+    tags: job.tags || [],
+    requirements: job.requirements || [],
+    eventTag: job.eventTag,
     contractor: {
       id: job.contractor.id,
       name: job.contractor.name,
@@ -59,6 +65,7 @@ export function jobCard(job: JobCardRow) {
       state: job.contractor.state,
       // selo de verificado do contratante (Fase 1: verificação leve por e-mail)
       verified: job.contractor.contractorProfile?.verificationStatus === "VERIFICADO",
+      ratingAverage: job.contractor.contractorProfile?.ratingAverage ?? null,
     },
   };
 }

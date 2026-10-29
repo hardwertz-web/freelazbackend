@@ -36,9 +36,39 @@ export async function GET(
   const job = await prisma.jobPosting.findUnique({
     where: { id: params.id },
     select: {
-      ...jobCardSelect,
+      id: true,
+      title: true,
+      description: true,
+      category: true,
+      city: true,
+      state: true,
+      modality: true,
+      valueCents: true,
+      status: true,
+      visibility: true,
+      urgentBoost: true,
+      startsAt: true,
+      endsAt: true,
+      createdAt: true,
+      tags: true,
+      requirements: true,
+      eventTag: true,
       targetProfessionalId: true,
       contractorId: true,
+      contractor: {
+        select: {
+          id: true,
+          name: true,
+          tradeName: true,
+          city: true,
+          state: true,
+          contractorProfile: { select: { verificationStatus: true, ratingAverage: true } },
+          evaluationsReceived: {
+            where: { releasedAt: { not: null } },
+            select: { id: true },
+          },
+        },
+      },
       _count: { select: { applications: true } },
     },
   });
@@ -57,11 +87,17 @@ export async function GET(
   // Não vaza ids internos de vaga privada para quem não é dono/alvo.
   const isOwner = viewer?.id === job.contractorId;
 
+  const jc = jobCard(job);
   return NextResponse.json({
     jobPosting: {
-      ...jobCard(job),
+      ...jc,
       targetProfessionalId: isOwner ? job.targetProfessionalId : undefined,
       applicationsCount: job._count.applications,
+      contractor: {
+        ...jc.contractor,
+        ratingAverage: job.contractor.contractorProfile?.ratingAverage ?? null,
+        evaluationCount: (job.contractor as any).evaluationsReceived?.length || 0,
+      },
     },
   });
 }

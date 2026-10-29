@@ -313,8 +313,12 @@ model JobPosting {
   urgentBoost         Boolean              @default(false) // true se a empresa pagou o destaque de R$10
   startsAt            DateTime
   endsAt              DateTime // necessário para checar conflito de agenda dos suplentes
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  // Fidelidade visual (Bloco 1)
+  tags         String[] @default([])
+  requirements String[] @default([])
+  eventTag     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   applications Application[]
   hirings      Hiring[]
