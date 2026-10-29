@@ -23,7 +23,7 @@ O Freelaz é um marketplace que conecta profissionais freelancers e prestadores 
 
 | Integração | Para quê | Status |
 |---|---|---|
-| **Mercado Pago** (Checkout + Webhooks + Transferências Pix) | Cobrança da empresa, retenção interna, repasse ao profissional | Código escrito, testável em sandbox (ver README) |
+| **Asaas** (Checkout + Webhooks + Transferências Pix) | Cobrança da empresa, retenção interna, repasse ao profissional | Código escrito, testável em sandbox (ver README) | Subcontas Asaas existem no schema com flags off (não ativar sem decisão). |
 | **WhatsApp Business API** | Notificações críticas (vaga compatível, código de turno, pagamento liberado) | Ainda não implementado — fase de polimento |
 | **Instagram / Facebook / TikTok (OAuth)** | Verificar/exibir redes sociais no perfil de quem usa a categoria "influenciador digital" | Planejado, ainda não codificado |
 | **Postgres (Neon/Supabase em dev)** | Banco de dados principal | Schema Prisma pronto |
@@ -35,7 +35,7 @@ Se o projeto migrar para automações externas via **MCP** (ex: n8n para orquest
 
 ## A — Arquitetura
 
-**Stack:** Next.js (App Router) + PostgreSQL + Prisma + Mercado Pago. Ver `CLAUDE.md` para o detalhe de cada modelo de dado e regra de negócio.
+**Stack:** Next.js (App Router) + PostgreSQL + Prisma + Asaas. Ver `CLAUDE.md` para o detalhe de cada modelo de dado e regra de negócio.
 
 **Princípio geral:** confiabilidade antes de velocidade — isso significa:
 - O backend é sempre a fonte da verdade (nunca confiar em estado do frontend)
@@ -44,7 +44,7 @@ Se o projeto migrar para automações externas via **MCP** (ex: n8n para orquest
 
 **Camadas:**
 1. `prisma/schema.prisma` — modelo de dados (fonte única da estrutura)
-2. `src/lib/` — clientes e utilitários de baixo nível (Mercado Pago, Prisma, idempotência)
+2. `src/lib/` — clientes e utilitários de baixo nível (Asaas, Prisma, idempotência)
 3. `src/services/` — regras de negócio (seleção de candidato, cancelamento, geração de código, repasse)
 4. `src/app/api/` — rotas HTTP, finas, só traduzindo requisição → chamada de service → resposta
 
@@ -54,9 +54,9 @@ Se o projeto migrar para automações externas via **MCP** (ex: n8n para orquest
 
 ## E — Estilo
 
-**Fonte da verdade visual:** `design-reference/freelaz-prototipo.html` (protótipo já validado) + a identidade de marca documentada no `CLAUDE.md`:
-- Azul Principal `#0066FF`, Azul Escuro `#0B1F3B`, Cinza Claro `#F2F4F7`
-- Tipografia Poppins
+**Fonte da verdade visual:** 6 imagens em `C:\Users\PC\Desktop\Herbert\` (10.51.56–58.jpeg). Protótipo HTML `design-reference/freelaz-prototipo.html` não existe nesta máquina. Identidade de marca documentada no `CLAUDE.md`:
+- Azul Principal `#0066FF`, Azul Escuro `#0B1F44`, Cinza Claro `#E8EEF7`
+- Tipografia Montserrat
 - Cantos arredondados, sombra leve em cards, ícones outline azuis, mobile-first
 
 **Regra de estilo de código** (para manter consistência entre sessões/agentes diferentes trabalhando no projeto):
@@ -71,19 +71,30 @@ Se o projeto migrar para automações externas via **MCP** (ex: n8n para orquest
 
 | Gatilho | Dispara |
 |---|---|
-| Pagamento aprovado (webhook Mercado Pago) | Retém saldo, marca vaga como `PREENCHIDA`, libera o chat |
+| Pagamento aprovado (webhook Asaas) | Retém saldo, marca vaga como `PREENCHIDA`, libera o chat |
 | Vaga começa em ~1h | Gera código de abertura (`generateOpeningCodesDue`, job agendado) |
 | Turno termina em ~1h | Gera código de fechamento (`generateClosingCodesDue`, job agendado) |
 | Código de fechamento confirmado pela empresa | Marca `CONCLUIDO`, inicia contagem de 2h para liberar avaliação |
 | 2h após o código de fechamento | Libera as opções de avaliação mútua |
 | Cancelamento (qualquer origem) | `cancelHiring` — reembolso conforme política, reabre a vaga, filtra suplentes por conflito de agenda |
 | Fim de semana/dia configurado | Repasse semanal em lote dos saldos liberados |
-| Diariamente (madrugada) | Job de reconciliação financeira (ledger interno x saldo real no Mercado Pago) |
+| Diariamente (madrugada) | Job de reconciliação financeira (ledger interno x saldo real no Asaas) |
 
 Os jobs agendados (`generateOpeningCodesDue`, `generateClosingCodesDue`, repasse semanal, reconciliação diária) ainda precisam de um agendador real (ex: cron job, Vercel Cron, ou fila) — o código das funções já existe em `src/services/`, falta só o disparo periódico.
 
 ---
 
+## Estado atual do projeto (2026-10-29)
+Para o estado REAL de implementação, ver:
+
+- `.protocol/progress.md` — sessão por sessão, o que foi feito
+- `.protocol/findings.md` — descobertas técnicas, lacunas, decisões
+- `.protocol/decisions/D1-D8.md` — decisões de chargeback
+- `.protocol/frontend-spec.md` — spec visual atualizada
+- `VLAEG.md` — visão de alto nível
+
+Este arquivo (VLAEG.md) contém visão/estrutura; decisões de produto e estado detalhado estão nos arquivos acima.
+
 ## Como usar este documento
 
-Antes de iniciar qualquer sessão de trabalho no projeto (com Claude Code ou qualquer outro agente), leia este arquivo e o `CLAUDE.md` juntos. Depois, siga o **Protocolo 0** (pasta `.protocol/`) para saber exatamente em que ponto o projeto está e o que fazer a seguir.
+Antes de iniciar qualquer sessão de trabalho no projeto (com Claude Code ou qualquer outro agente), leia este arquivo e os documentos em `.protocol/` juntos. Depois, siga o **Protocolo 0** (pasta `.protocol/`) para saber exatamente em que ponto o projeto está e o que fazer a seguir.
