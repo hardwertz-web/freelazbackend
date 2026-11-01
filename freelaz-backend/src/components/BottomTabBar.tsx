@@ -23,17 +23,24 @@ const TABS = [
 
 export function BottomTabBar() {
   const pathname = usePathname() ?? "/";
-  const [proposalCount, setProposalCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  // Badge da aba Mensagens: só aparece com contagem REAL de propostas que
-  // aguardam resposta desta sessão (`counts.pending`). Falha de rede não vira
-  // badge nem quebra a navegação.
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const result = await apiGet<ProposalsResponse>("/api/proposals");
-      if (!alive) return;
-      setProposalCount(result.ok ? result.data.counts.pending : 0);
+      try {
+        const [p, h] = await Promise.all([
+          apiGet<ProposalsResponse>("/api/proposals"),
+          apiGet<{ hirings: any[] }>("/api/hirings"),
+        ]);
+        if (!alive) return;
+        const pUnread = (p.ok && (p.data.counts as any)?.unread) ? (p.data.counts as any).unread : (p.ok ? p.data.counts.pending : 0);
+        const hUnread = h.ok ? h.data.hirings.reduce((s, x) => s + (x.chat?.unreadCount || 0), 0) : 0;
+        setUnreadCount(pUnread + hUnread);
+      } catch {
+        if (!alive) return;
+        setUnreadCount(0);
+      }
     })();
     return () => {
       alive = false;
@@ -44,7 +51,7 @@ export function BottomTabBar() {
     <nav className={styles.bar} aria-label="Navegação principal">
       {TABS.map(({ href, label, Icon, match }) => {
         const active = match(pathname);
-        const badge = href === "/mensagens" && proposalCount > 0 ? proposalCount : 0;
+        const badge = href === "/mensagens" && unreadCount > 0 ? unreadCount : 0;
         return (
           <Link
             key={href}
@@ -55,7 +62,7 @@ export function BottomTabBar() {
             <span className={styles.iconWrap}>
               <Icon size={20} strokeWidth={active ? 2 : 1.8} />
               {badge > 0 && (
-                <span className={styles.badge} aria-label={`${badge} propostas aguardando resposta`}>
+                <span className={styles.badge} aria-label={`${badge} não lidas`}>
                   {badge > 9 ? "9+" : badge}
                 </span>
               )}

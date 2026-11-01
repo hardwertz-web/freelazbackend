@@ -138,6 +138,8 @@ export type ChatSummary = {
   id: string;
   status: "AGUARDANDO_PAGAMENTO" | "ABERTO" | "ENCERRADO";
   lastMessageAt: string | null;
+  lastMessage?: { body: string; createdAt: string; senderId: string } | null;
+  unreadCount?: number;
 };
 
 export type ChatStatus = ChatSummary["status"];

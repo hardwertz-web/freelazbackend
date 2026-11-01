@@ -417,23 +417,34 @@ export function MessagesScreen() {
                   <span className={styles.name}>
                     {hiring.counterpart.tradeName || hiring.counterpart.name}
                   </span>
+                  {hiring.chat?.unreadCount && hiring.chat.unreadCount > 0 ? (
+                    <span style={{ marginLeft: 6, background: "#DC2626", color: "#fff", borderRadius: 9999, padding: "1px 6px", fontSize: 11 }}>
+                      {hiring.chat.unreadCount > 9 ? "9+" : hiring.chat.unreadCount}
+                    </span>
+                  ) : null}
                   {hiring.chat?.status === "ABERTO" ? (
                     <Badge tone="success">Chat aberto</Badge>
                   ) : (
                     <Badge tone="neutral">Encerrado</Badge>
                   )}
                 </span>
-                <span className={styles.meta}>
-                  {hiring.side === "CONTRACTOR" ? "Profissional" : "Contratante"} ·{" "}
-                  {hiring.jobTitle}
-                </span>
+                {hiring.chat?.lastMessage?.body ? (
+                  <span className={styles.meta} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {hiring.chat.lastMessage.body}
+                  </span>
+                ) : (
+                  <span className={styles.meta}>
+                    {hiring.side === "CONTRACTOR" ? "Profissional" : "Contratante"} ·{" "}
+                    {hiring.jobTitle}
+                  </span>
+                )}
                 <span className={styles.meta}>
                   {hiring.side === "CONTRACTOR" ? "Você contrata" : "Você trabalha"} ·{" "}
                   {formatBRLShort(hiring.grossValueCents)}
                 </span>
               </span>
               <span className={styles.right}>
-                <span className={styles.time}>{formatListTime(hiring.chat?.lastMessageAt ?? hiring.createdAt)}</span>
+                <span className={styles.time}>{formatListTime(hiring.chat?.lastMessage?.createdAt ?? hiring.chat?.lastMessageAt ?? hiring.createdAt)}</span>
               </span>
             </Link>
           ))}

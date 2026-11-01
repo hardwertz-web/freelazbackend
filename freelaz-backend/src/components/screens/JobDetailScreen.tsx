@@ -415,7 +415,11 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
           <span className={styles.metricIcon}>
             <BuildingIcon size={14} />
           </span>
-          <span className={[styles.metricValue, styles.metricValueName].join(" ")}>{company}</span>
+          <span className={[styles.metricValue, styles.metricValueName].join(" ")}>
+            {(job.contractor as any)?.ratingAverage != null && (job.contractor as any).ratingAverage > 0
+              ? `${company} · ${Number((job.contractor as any).ratingAverage).toFixed(1)} ★`
+              : company}
+          </span>
           <span className={styles.metricLabel}>Contratante</span>
         </div>
         <div className={styles.metric}>

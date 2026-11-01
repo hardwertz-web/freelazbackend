@@ -151,5 +151,5 @@ export async function GET(_req: NextRequest) {
     { pending: 0, received: 0, sent: 0, active: 0 }
   );
 
-  return NextResponse.json({ proposals, counts });
+  return NextResponse.json({ proposals, counts: { ...counts, unread: counts.pending } });
 }

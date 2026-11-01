@@ -450,6 +450,21 @@ function PublicProfileScreen({
 }) {
   const router = useRouter();
   const [hireOpen, setHireOpen] = useState(false);
+  const [ratingsSummary, setRatingsSummary] = useState<{ total: number; average: number; distribution: Record<number, number> } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`/api/professionals/${professional.id}/ratings-summary`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setRatingsSummary(data);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [professional.id]);
 
   const displayName = professional.name;
   const verified = professional.verificationStatus === "VERIFICADO";
@@ -588,6 +603,36 @@ function PublicProfileScreen({
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {(professional.evaluationCount > 0 || (ratingsSummary && ratingsSummary.total > 0)) && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Avaliações</h2>
+            <span className={styles.sectionHint}>
+              {ratingsSummary?.average?.toFixed(1) ?? professional.ratingAverage?.toFixed(1)} ★ · {ratingsSummary?.total ?? professional.evaluationCount} avaliação(ões)
+            </span>
+          </div>
+          <Card>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[5, 4, 3, 2, 1].map((star) => {
+                const dist = ratingsSummary?.distribution || {};
+                const count = dist[star] || 0;
+                const total = ratingsSummary?.total || professional.evaluationCount || 0;
+                const pct = total > 0 ? (count / total) * 100 : 0;
+                return (
+                  <div key={star} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 32, fontSize: 12 }}>{star} ★</span>
+                    <div style={{ flex: 1, height: 8, background: "#E5E7EB", borderRadius: 9999, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: "#F59E0B" }} />
+                    </div>
+                    <span style={{ width: 36, fontSize: 12, textAlign: "right" }}>{Math.round(pct)}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
         </section>
       )}
 

@@ -59,9 +59,31 @@ export async function GET(req: NextRequest) {
     },
   });
 
+  // Buscar últimas mensagens e unread counts
+  const chatIds = hirings.map((h: any) => h.chat?.id).filter(Boolean);
+  const [lastMsgs, unreadList] = await Promise.all([
+    prisma.message.findMany({
+      where: { chatId: { in: chatIds } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, chatId: true, body: true, createdAt: true, senderId: true },
+      distinct: ["chatId"],
+    }).catch(() => []),
+    prisma.message.groupBy({
+      by: ["chatId"],
+      where: { chatId: { in: chatIds }, readAt: null, senderId: { not: auth.user.id } },
+      _count: { _all: true },
+    }).catch(() => []),
+  ]);
+  const lastMsgMap = new Map(lastMsgs.map((m: any) => [m.chatId, m]));
+  const unreadMap = new Map(unreadList.map((u: any) => [u.chatId, u._count._all]));
+
   return NextResponse.json({
-    hirings: hirings.map((hiring) => {
+    hirings: hirings.map((hiring: any) => {
       const viewerSide = hiring.contractorId === auth.user.id ? "CONTRACTOR" : "PROFESSIONAL";
+      const chatId = hiring.chat?.id;
+      const lastMessage = chatId ? lastMsgMap.get(chatId) || null : null;
+      const unreadCount = chatId ? unreadMap.get(chatId) || 0 : 0;
+      const chatObj = hiring.chat ? { ...hiring.chat, lastMessage, unreadCount } : hiring.chat ? { ...hiring.chat, lastMessage: null, unreadCount: 0 } : null;
       return {
         id: hiring.id,
         status: hiring.status,
@@ -73,7 +95,7 @@ export async function GET(req: NextRequest) {
         completedAt: hiring.completedAt,
         side: viewerSide,
         jobPosting: hiring.jobPosting,
-        chat: hiring.chat,
+        chat: chatObj,
         // Só a contraparte — nunca a própria conta (o front já sabe quem é).
         counterpart:
           viewerSide === "CONTRACTOR"
