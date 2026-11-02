@@ -1,10 +1,16 @@
-/** @type {import('next').NextConfig} */
+﻿/** @type {import('next').NextConfig} */
+const path = require('path');
+
 const nextConfig = {
   experimental: {
-    // Habilita `src/instrumentation.ts` (startup do servidor) no Next 14.
-    // É lá que `assertJobsAllowUntokenSafe` barra o app de subir com
-    // JOBS_ALLOW_UNTOKEN=1 em produção (Etapa 3.3).
     instrumentationHook: true,
+  },
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@': path.resolve(__dirname, 'src'),
+    };
+    return config;
   },
 };
 
