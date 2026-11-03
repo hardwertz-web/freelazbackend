@@ -1,43 +1,67 @@
-import { NextRequest, NextResponse } from "next/server";
+// Cliente mínimo para Meta WhatsApp Cloud API
+// Docs: https://developers.facebook.com/docs/whatsapp/cloud-api
 
-// GET: Verificação do webhook pela Meta (roda uma vez quando você salva a URL)
-export async function GET(req: NextRequest) {
-  const searchParams = req.nextUrl.searchParams;
-  const mode = searchParams.get("hub.mode");
-  const token = searchParams.get("hub.verify_token");
-  const challenge = searchParams.get("hub.challenge");
+const WHATSAPP_API_URL = "https://graph.facebook.com/v21.0";
 
-  const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN;
+type SendResult =
+  | { ok: true; messageId: string }
+  | { ok: false; error: string };
 
-  if (mode === "subscribe" && token === expectedToken) {
-    return new NextResponse(challenge ?? "", { status: 200 });
+export async function sendWhatsAppMessage(
+  toPhone: string,
+  body: string
+): Promise<SendResult> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!token || !phoneNumberId) {
+    return { ok: false, error: "WHATSAPP_TOKEN ou WHATSAPP_PHONE_NUMBER_ID não configurado" };
   }
 
-  return new NextResponse("Forbidden", { status: 403 });
+  const digits = toPhone.replace(/\D/g, "");
+  const e164 = digits.startsWith("55") ? digits : `55${digits}`;
+
+  try {
+    const res = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: e164,
+        type: "text",
+        text: { body },
+      }),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.text();
+      return { ok: false, error: `HTTP ${res.status}: ${errBody.slice(0, 200)}` };
+    }
+
+    const data = await res.json();
+    const messageId = data?.messages?.[0]?.id ?? "unknown";
+    return { ok: true, messageId };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: message };
+  }
 }
 
-// POST: Recebe eventos do WhatsApp (mensagens recebidas, status de entrega)
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
+export function tplOpeningCode(code: string, jobTitle: string): string {
+  return `🎯 Seu turno de "${jobTitle}" começa em 1h.\n\nCódigo de abertura: *${code}*\n\nMostre este código para a empresa quando chegar.`;
+}
 
-    // Log estruturado sem PII
-    const entry = body?.entry?.[0];
-    const changes = entry?.changes?.[0]?.value;
-    const messages = changes?.messages ?? [];
-    const statuses = changes?.statuses ?? [];
+export function tplClosingCode(code: string, jobTitle: string): string {
+  return `🏁 Falta 1h para o fim do turno de "${jobTitle}".\n\nCódigo de fechamento: *${code}*\n\nMostre para a empresa confirmar a conclusão.`;
+}
 
-    if (messages.length > 0) {
-      console.log(`[whatsapp-webhook] recebida ${messages.length} mensagem(ns)`);
-    }
-    if (statuses.length > 0) {
-      console.log(`[whatsapp-webhook] recebido ${statuses.length} status`);
-    }
+export function tplPaymentConfirmed(jobTitle: string): string {
+  return `✅ Pagamento confirmado para "${jobTitle}"!\n\nO chat está liberado no app. Combinem os detalhes por lá.`;
+}
 
-    // Por enquanto só logamos. Implementar respostas automáticas depois.
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error("[whatsapp-webhook] erro ao processar", e);
-    return NextResponse.json({ ok: false }, { status: 500 });
-  }
+export function tplProposalReceived(jobTitle: string, valueFormatted: string): string {
+  return `📩 Você recebeu uma proposta para "${jobTitle}" (R$ ${valueFormatted}).\n\nAbra o app para aceitar, recusar ou contrapropor.`;
 }

@@ -21,7 +21,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Log estruturado sem PII
     const entry = body?.entry?.[0];
     const changes = entry?.changes?.[0]?.value;
     const messages = changes?.messages ?? [];
@@ -34,7 +33,6 @@ export async function POST(req: NextRequest) {
       console.log(`[whatsapp-webhook] recebido ${statuses.length} status`);
     }
 
-    // Por enquanto só logamos. Implementar respostas automáticas depois.
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[whatsapp-webhook] erro ao processar", e);

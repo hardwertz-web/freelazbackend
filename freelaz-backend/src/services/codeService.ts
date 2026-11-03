@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma";
 import crypto from "crypto";
 import { setHiringStatus } from "./hiringService";
 import { notifyAndDispatch } from "./notificationService";
+import { sendWhatsAppMessage, tplOpeningCode, tplClosingCode } from "../lib/whatsapp";
 
 /**
  * Códigos de turno — timing exato definido no CLAUDE.md:
@@ -89,6 +90,24 @@ export async function generateOpeningCodesDue() {
         `[codeService] falha ao notificar abertura (hiring ${hiring.id}): ${err instanceof Error ? err.message : String(err)}`
       );
     }
+
+    // WhatsApp: notificar profissional com o código de abertura
+    try {
+      const professional = await prisma.user.findUnique({
+        where: { id: hiring.professionalId },
+        select: { phone: true },
+      });
+      if (professional?.phone) {
+        await sendWhatsAppMessage(
+          professional.phone,
+          tplOpeningCode(code, hiring.jobTitle)
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[codeService] falha WhatsApp abertura (hiring ${hiring.id}): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   return hirings.length;
@@ -159,6 +178,24 @@ export async function generateClosingCodesDue() {
     } catch (err) {
       console.warn(
         `[codeService] falha ao notificar fechamento (hiring ${hiring.id}): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    // WhatsApp: notificar contratante com o código de fechamento
+    try {
+      const contractor = await prisma.user.findUnique({
+        where: { id: hiring.contractorId },
+        select: { phone: true },
+      });
+      if (contractor?.phone) {
+        await sendWhatsAppMessage(
+          contractor.phone,
+          tplClosingCode(code, hiring.jobTitle)
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[codeService] falha WhatsApp fechamento (hiring ${hiring.id}): ${err instanceof Error ? err.message : String(err)}`
       );
     }
   }
