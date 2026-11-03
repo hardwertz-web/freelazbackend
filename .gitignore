@@ -53,3 +53,8 @@ logo.png
 logo.jpeg
 identidadevisual.jpeg
 *.bak
+.neon
+ativar-profissional.bat
+ativar-profissional.mjs
+neon.ts
+package.json

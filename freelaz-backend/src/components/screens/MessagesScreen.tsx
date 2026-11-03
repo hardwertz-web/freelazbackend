@@ -43,6 +43,11 @@ export function MessagesScreen() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [acceptModal, setAcceptModal] = useState<{
+  proposal: Proposal;
+  step: "confirm" | "counter";
+  counterValue: string;
+} | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [counterFor, setCounterFor] = useState<Proposal | null>(null);
   const [filter, setFilter] = useState<Filter>("TODAS");
@@ -73,6 +78,25 @@ export function MessagesScreen() {
         (hiring) => hiring.chat && hiring.chat.status !== "AGUARDANDO_PAGAMENTO"
       ),
     [hirings]
+{acceptModal && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 400, width: "90%" }}>
+      <h3 style={{ marginBottom: 12 }}>Responder proposta</h3>
+      <p style={{ marginBottom: 16, color: "#6B7280" }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")} ou enviar contraproposta?
+      </p>
+      <Button block onClick={() => { void respond(acceptModal.proposal, "ACCEPT"); setAcceptModal(null); }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")}
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal({ ...acceptModal, step: "counter" })}>
+        Enviar contraproposta
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal(null)}>
+        Cancelar
+      </Button>
+    </div>
+  </div>
+)}
   );
 
   const counts = useMemo(
@@ -85,6 +109,25 @@ export function MessagesScreen() {
       propostas: proposals.length,
     }),
     [chats, proposals]
+{acceptModal && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 400, width: "90%" }}>
+      <h3 style={{ marginBottom: 12 }}>Responder proposta</h3>
+      <p style={{ marginBottom: 16, color: "#6B7280" }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")} ou enviar contraproposta?
+      </p>
+      <Button block onClick={() => { void respond(acceptModal.proposal, "ACCEPT"); setAcceptModal(null); }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")}
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal({ ...acceptModal, step: "counter" })}>
+        Enviar contraproposta
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal(null)}>
+        Cancelar
+      </Button>
+    </div>
+  </div>
+)}
   );
 
   const visible = useMemo(() => {
@@ -121,7 +164,26 @@ export function MessagesScreen() {
     const result = await apiPost<RespondResponse>(
       `/api/applications/${proposal.id}/respond`,
       { decision }
-    );
+  {acceptModal && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 400, width: "90%" }}>
+      <h3 style={{ marginBottom: 12 }}>Responder proposta</h3>
+      <p style={{ marginBottom: 16, color: "#6B7280" }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")} ou enviar contraproposta?
+      </p>
+      <Button block onClick={() => { void respond(acceptModal.proposal, "ACCEPT"); setAcceptModal(null); }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")}
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal({ ...acceptModal, step: "counter" })}>
+        Enviar contraproposta
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal(null)}>
+        Cancelar
+      </Button>
+    </div>
+  </div>
+)}
+  );
     if (!result.ok) {
       setActionError(result.error);
       setBusyId(null);
@@ -135,7 +197,26 @@ export function MessagesScreen() {
         // checkout da contratação recém-criada.
         router.push(
           proposal.side === "RECEIVED" ? `/mensagens/${hiringId}` : `/checkout/${hiringId}`
-        );
+      {acceptModal && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 400, width: "90%" }}>
+      <h3 style={{ marginBottom: 12 }}>Responder proposta</h3>
+      <p style={{ marginBottom: 16, color: "#6B7280" }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")} ou enviar contraproposta?
+      </p>
+      <Button block onClick={() => { void respond(acceptModal.proposal, "ACCEPT"); setAcceptModal(null); }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")}
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal({ ...acceptModal, step: "counter" })}>
+        Enviar contraproposta
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal(null)}>
+        Cancelar
+      </Button>
+    </div>
+  </div>
+)}
+  );
         router.refresh();
         return;
       }
@@ -301,7 +382,7 @@ export function MessagesScreen() {
                           size="sm"
                           block
                           disabled={busy}
-                          onClick={() => void respond(proposal, "ACCEPT")}
+                          onClick={() => setAcceptModal({ proposal, step: "confirm", counterValue: "" })}
                         >
                           Aceitar
                         </Button>
@@ -338,7 +419,26 @@ export function MessagesScreen() {
                       </Button>
                     )}
                   </Card>
-                );
+              {acceptModal && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 400, width: "90%" }}>
+      <h3 style={{ marginBottom: 12 }}>Responder proposta</h3>
+      <p style={{ marginBottom: 16, color: "#6B7280" }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")} ou enviar contraproposta?
+      </p>
+      <Button block onClick={() => { void respond(acceptModal.proposal, "ACCEPT"); setAcceptModal(null); }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")}
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal({ ...acceptModal, step: "counter" })}>
+        Enviar contraproposta
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal(null)}>
+        Cancelar
+      </Button>
+    </div>
+  </div>
+)}
+  );
               })}
             </div>
           )}
@@ -451,6 +551,25 @@ export function MessagesScreen() {
         </div>
       )}
     </div>
+{acceptModal && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 400, width: "90%" }}>
+      <h3 style={{ marginBottom: 12 }}>Responder proposta</h3>
+      <p style={{ marginBottom: 16, color: "#6B7280" }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")} ou enviar contraproposta?
+      </p>
+      <Button block onClick={() => { void respond(acceptModal.proposal, "ACCEPT"); setAcceptModal(null); }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")}
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal({ ...acceptModal, step: "counter" })}>
+        Enviar contraproposta
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal(null)}>
+        Cancelar
+      </Button>
+    </div>
+  </div>
+)}
   );
 }
 
@@ -538,5 +657,24 @@ function CounterOfferModal({
         </form>
       </div>
     </div>
+{acceptModal && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 400, width: "90%" }}>
+      <h3 style={{ marginBottom: 12 }}>Responder proposta</h3>
+      <p style={{ marginBottom: 16, color: "#6B7280" }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")} ou enviar contraproposta?
+      </p>
+      <Button block onClick={() => { void respond(acceptModal.proposal, "ACCEPT"); setAcceptModal(null); }}>
+        Aceitar R$ {(acceptModal.proposal.valueCents / 100).toFixed(2).replace(".", ",")}
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal({ ...acceptModal, step: "counter" })}>
+        Enviar contraproposta
+      </Button>
+      <Button block variant="secondary" style={{ marginTop: 8 }} onClick={() => setAcceptModal(null)}>
+        Cancelar
+      </Button>
+    </div>
+  </div>
+)}
   );
 }
