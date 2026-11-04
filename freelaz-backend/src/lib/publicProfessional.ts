@@ -54,6 +54,7 @@ export type PublicProfessional = {
   isInfluencer: boolean;
   verificationStatus: string;
   createdAt: Date;
+  avatarUrl?: string | null;
 };
 
 export type PublicProfessionalsQuery = {
@@ -254,6 +255,7 @@ export async function getPublicProfessional(
       city: true,
       state: true,
       createdAt: true,
+      avatarUrl: true,
       professionalProfile: {
         select: {
           headline: true,
@@ -313,5 +315,6 @@ export async function getPublicProfessional(
     isInfluencer: profile.isInfluencer,
     verificationStatus: profile.verificationStatus,
     createdAt: user.createdAt,
+    avatarUrl: user.avatarUrl ?? null,
   };
 }

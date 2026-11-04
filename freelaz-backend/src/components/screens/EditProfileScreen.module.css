@@ -1,0 +1,16 @@
+.screen { padding: 20px 16px 100px; display: flex; flex-direction: column; gap: 20px; }
+.back { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; color: var(--primary); font-size: 14px; cursor: pointer; padding: 0; margin-bottom: 8px; }
+.title { font-size: 22px; font-weight: 700; margin: 0; }
+.subtitle { font-size: 14px; color: var(--muted); margin: 0; }
+.section { display: flex; flex-direction: column; gap: 12px; }
+.sectionTitle { font-size: 16px; font-weight: 600; margin: 0; }
+.avatarBlock { display: flex; gap: 16px; align-items: center; }
+.avatarImg { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; }
+.avatarPlaceholder { width: 80px; height: 80px; border-radius: 50%; background: var(--selected); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--muted); }
+.hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.portfolioGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.portfolioItem { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--selected); }
+.portfolioItem img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.removeBtn { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 16px; cursor: pointer; }
+.addCard { aspect-ratio: 1; border-radius: 8px; border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--muted); cursor: pointer; text-align: center; padding: 8px; }
+.addCard:hover { border-color: var(--primary); color: var(--primary); }

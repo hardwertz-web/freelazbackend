@@ -58,6 +58,7 @@ model User {
   passwordHash String
   city         String?
   state        String?
+  avatarUrl    String?
   pixKey       String? // chave Pix para receber repasses (papel Profissional)
 
   // Endereço e renda exigidos pelo POST /v3/accounts (subconta Asaas) —

@@ -88,7 +88,8 @@ export async function GET() {
   const strength = computeProfileStrength(profile);
   // A chave Pix fica em User (destino dos repasses) — devolvida à parte para
   // não misturar o perfil do papel com o dado de recebimento.
-  return NextResponse.json({ profile, profileStrength: strength, pixKey: user.pixKey });
+  const userFull = await prisma.user.findUnique({ where: { id: user.id }, select: { pixKey: true, avatarUrl: true } });
+  return NextResponse.json({ profile: { ...profile, avatarUrl: userFull?.avatarUrl ?? null }, profileStrength: strength, pixKey: userFull?.pixKey ?? user.pixKey });
 }
 
 export async function PUT(req: NextRequest) {

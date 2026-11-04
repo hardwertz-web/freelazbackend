@@ -153,7 +153,12 @@ function SelfProfileScreen() {
       <section className={styles.hero}>
         <div className={styles.identity}>
           <span className={styles.avatarWrap}>
-            <span className={styles.avatar}>{initials(displayName)}</span>
+            {(profile as any)?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={(profile as any).avatarUrl} alt={displayName} className={styles.avatarImg} />
+            ) : (
+              <span className={styles.avatar}>{initials(displayName)}</span>
+            )}
             {verified && (
               <span className={styles.avatarCheck} aria-hidden="true">
                 <CheckIcon size={12} />
@@ -395,10 +400,9 @@ function SelfProfileScreen() {
       <div className={styles.actionsRow}>
         <Button
           variant="secondary"
-          disabled
-          title="Edição de perfil — Fase 2"
+          onClick={() => router.push("/perfil/editar")}
         >
-          <ChevronLeftIcon size={14} /> Editar perfil (Fase 2)
+          <ChevronLeftIcon size={14} /> Editar perfil
         </Button>
         <Button variant="danger" onClick={() => void handleLogout()} disabled={loggingOut}>
           <LogoutIcon size={14} /> {loggingOut ? "Saindo..." : "Sair"}
@@ -483,7 +487,12 @@ function PublicProfileScreen({
       <section className={styles.hero}>
         <div className={styles.identity}>
           <span className={styles.avatarWrap}>
-            <span className={styles.avatar}>{initials(displayName)}</span>
+            {(professional as any)?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={(professional as any).avatarUrl} alt={displayName} className={styles.avatarImg} />
+            ) : (
+              <span className={styles.avatar}>{initials(displayName)}</span>
+            )}
             {verified && (
               <span className={styles.avatarCheck} aria-hidden="true">
                 <CheckIcon size={12} />

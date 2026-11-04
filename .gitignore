@@ -58,3 +58,7 @@ ativar-profissional.bat
 ativar-profissional.mjs
 neon.ts
 package.json
+build.out
+fix.js
+readlog*.js
+*.restored
