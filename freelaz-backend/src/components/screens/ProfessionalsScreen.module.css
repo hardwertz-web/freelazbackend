@@ -316,3 +316,9 @@
     opacity: 0.45;
   }
 }
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 8px;
+}

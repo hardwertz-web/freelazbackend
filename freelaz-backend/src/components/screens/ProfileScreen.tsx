@@ -188,6 +188,23 @@ function SelfProfileScreen() {
           </span>
         </div>
 
+        {profile &&
+          !(profile as any).avatarUrl &&
+          roles.some((r) => r.role === "PROFISSIONAL" && r.status === "ATIVO") && (
+            <Card>
+              <div className={styles.avatarWarning}>
+                <strong>Adicione uma foto de perfil</strong>
+                <span>
+                  Profissionais sem foto não aparecem na busca pública. Vá em{" "}
+                  <button onClick={() => router.push("/perfil/editar")} className={styles.link}>
+                    Editar perfil
+                  </button>{" "}
+                  e envie uma foto.
+                </span>
+              </div>
+            </Card>
+          )}
+
         {profile && (
           <div className={styles.metrics}>
             <div className={styles.metric}>

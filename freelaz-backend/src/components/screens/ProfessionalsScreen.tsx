@@ -164,6 +164,9 @@ export function ProfessionalsScreen() {
     <div className={styles.screen}>
       <div className={styles.head}>
         <h1 className={styles.title}>Profissionais</h1>
+        <p className={styles.hint}>
+          Apenas profissionais com foto de perfil aparecem aqui. Adicione sua foto em Perfil → Editar perfil.
+        </p>
         <p className={styles.subtitle}>Encontre quem faz acontecer na sua região.</p>
       </div>
 

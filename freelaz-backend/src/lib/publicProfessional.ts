@@ -116,6 +116,7 @@ export async function listPublicProfessionals(
 
   const where: Prisma.UserWhereInput = {
     roles: { some: { role: "PROFISSIONAL", status: "ATIVO" } },
+    avatarUrl: { not: null },
     // Sem categoria, basta existir perfil; com categoria, o filtro é no array.
     ...(category
       ? { professionalProfile: { is: { categories: { has: category } } } }
