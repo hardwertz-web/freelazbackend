@@ -290,8 +290,9 @@ export default function CadastroPage() {
             required
           />
           <span>
-            Li e aceito os Termos de Uso e a Política de Privacidade (LGPD). Tenho 18 anos ou
-            mais.
+            Li e aceito os <Link href="/termos">Termos de Uso</Link> e a{" "}
+            <Link href="/privacidade">Política de Privacidade</Link> (LGPD). Tenho 18 anos
+            ou mais.
           </span>
         </label>
 
