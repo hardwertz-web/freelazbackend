@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { randomBytes } from "crypto";
+import { isR2Configured, uploadToR2 } from "./r2Service";
 
 // Onde os arquivos enviados (documento, selfie, currículo, portfólio) ficam
 // guardados em dev. Em produção isso deve virar um storage de objeto
@@ -44,11 +45,22 @@ export async function saveDataUrlFile(
   const bytes = Buffer.from(b64, "base64");
   if (bytes.length === 0) return { error: "Arquivo vazio" };
 
-  const relativePath = `${folder}/${randomBytes(12).toString("hex")}.${ext}`;
+  const filename = `${randomBytes(12).toString("hex")}.${ext}`;
+
+  if (isR2Configured()) {
+    const key = `${folder}/${filename}`;
+    const result = await uploadToR2(bytes, key, mime);
+    if (!result.ok) {
+      return { error: result.error };
+    }
+    return { url: result.url, relativePath: key };
+  }
+
+  // Fallback: disco local (dev sem R2 configurado)
+  const relativePath = `${folder}/${filename}`;
   const fullPath = path.join(UPLOAD_ROOT, relativePath);
   await mkdir(path.dirname(fullPath), { recursive: true });
   await writeFile(fullPath, bytes);
-
   return { url: `/api/uploads/${relativePath}`, relativePath };
 }
 
