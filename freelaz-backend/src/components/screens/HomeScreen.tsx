@@ -137,6 +137,21 @@ function gradientFor(seed: string): string {
   return `linear-gradient(135deg, ${from}, ${to})`;
 }
 
+function formatJobAge(createdAt: string): { label: string; tone: "new" | "recent" } | null {
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  const ageHours = ageMs / (1000 * 60 * 60);
+  if (ageHours < 24) return { label: "Novo", tone: "new" };
+  if (ageHours < 24 * 7) {
+    const hours = Math.floor(ageHours);
+    const days = Math.floor(hours / 24);
+    return {
+      label: days >= 1 ? `Há ${days}d` : `Há ${hours}h`,
+      tone: "recent",
+    };
+  }
+  return null; // > 7 dias: sem badge
+}
+
 export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
   const [byModality, setByModality] = useState<Record<ModalityTab, ModalityData>>({
     FREELANCE: EMPTY_MODALITY,
@@ -589,6 +604,7 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
                 {nearby.map((job) => {
                   const verified = job.contractor.verified;
                   const count = nearbyCount(job);
+                  const age = formatJobAge(job.createdAt);
                   return (
                     <article key={job.id} className={styles.nearCard}>
                       <Link
@@ -627,6 +643,11 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
                           <MapPinIcon size={13} /> {locationOf(job)} · {count}{" "}
                           {count === 1 ? "vaga" : "vagas"}
                         </span>
+                        {age && (
+                          <span className={age.tone === "new" ? styles.badgeNew : styles.badgeRecent}>
+                            {age.tone === "new" && <SparklesIcon size={10} />} {age.label}
+                          </span>
+                        )}
                         <span className={styles.nearPrice}>
                           {formatBRLShort(job.valueCents)}
                           <span className={styles.nearPriceUnit}> /dia</span>
@@ -649,13 +670,15 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
 
               {recent.length > 0 && (
                 <div className={styles.list}>
-                  {recent.map((job) => (
-                    <Link key={job.id} href={`/vaga/${job.id}`} className={styles.row}>
-                      <span
-                        className={styles.rowThumb}
-                        style={{ background: gradientFor(job.category) }}
-                        aria-hidden="true"
-                      >
+                  {recent.map((job) => {
+                    const age = formatJobAge(job.createdAt);
+                    return (
+                      <Link key={job.id} href={`/vaga/${job.id}`} className={styles.row}>
+                        <span
+                          className={styles.rowThumb}
+                          style={{ background: gradientFor(job.category) }}
+                          aria-hidden="true"
+                        >
                         <img
                           className={styles.rowThumbImage}
                           src={getCategoryImage(job.category)}
@@ -681,13 +704,19 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
                         </span>
                       </span>
                       <span className={styles.rowRight}>
+                        {age && (
+                          <span className={age.tone === "new" ? styles.badgeNew : styles.badgeRecent}>
+                            {age.label}
+                          </span>
+                        )}
                         <span className={styles.price}>{formatBRLShort(job.valueCents)}</span>
                         <span className={styles.chevron}>
                           <ChevronRightIcon size={16} />
                         </span>
                       </span>
                     </Link>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
