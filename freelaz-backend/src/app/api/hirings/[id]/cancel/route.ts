@@ -1,22 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireHiringParticipant } from "@/lib/hiringAccess";
+import { isAdmin, requireUser } from "@/lib/auth";
+import { sideOfHiring } from "@/lib/hiringAccess";
+import { prisma } from "@/lib/prisma";
 import { cancelHiring } from "@/services/matchService";
-import { getRetainedBalance } from "@/services/ledgerService";
+
+const CANCEL_ORIGINS = ["CONTRACTOR", "PROFESSIONAL", "SYSTEM", "FORCE_MAJEURE"] as const;
+type CancelOrigin = (typeof CANCEL_ORIGINS)[number];
 
 /**
  * POST /api/hirings/[id]/cancel — caminho ÚNICO de cancelamento (fluxograma
  * X6: desistência do profissional OU desacordo no chat). Toda origem passa
- * pela MESMA política em matchService.cancelHiring — aqui só validamos quem
- * pode chamar, em que estado, e calculamos o reembolso.
+ * pela MESMA política em matchService.cancelHiring — aqui validamos quem
+ * pode chamar e o estado permitido antes da conclusão.
  *
- * Reembolso: 100% do saldo retido (decisão de produto registrada em
- * findings.md — sem multa enquanto o produto não define faixas; o protocolo
- * proíbe inventar penalidades).
+ * Origin deduzida pelo papel: contratante→CONTRACTOR, profissional→PROFESSIONAL,
+ * admin→FORCE_MAJEURE (padrão). Apenas admin pode sobrescrever `body.origin`.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const access = await requireHiringParticipant(params.id);
-  if (access.error) return NextResponse.json(access.error.body, { status: access.error.status });
-  const { hiring, user } = access;
+  const auth = await requireUser();
+  if (auth.error) return NextResponse.json(auth.error.body, { status: auth.error.status });
+
+  const hiring = await prisma.hiring.findUnique({
+    where: { id: params.id },
+    select: { id: true, contractorId: true, professionalId: true, status: true },
+  });
+  if (!hiring) {
+    return NextResponse.json({ error: "Contratação não encontrada" }, { status: 404 });
+  }
+
+  const side = sideOfHiring(hiring, auth.user.id);
+  const admin = isAdmin(auth.user);
+  if (!side && !admin) {
+    return NextResponse.json({ error: "Você não participa desta contratação" }, { status: 403 });
+  }
 
   // Cancelar depois da conclusão não existe: de CONCLUIDO em diante o
   // caminho é a disputa (a conclusão já aconteceu e o dinheiro está retido).
@@ -38,17 +54,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
   const reasonNote = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : null;
 
-  const refundAmountCents = await getRetainedBalance(hiring.id);
+  let origin: CancelOrigin;
+  if (admin) {
+    const bodyOrigin = typeof body.origin === "string" ? body.origin : null;
+    origin =
+      bodyOrigin && (CANCEL_ORIGINS as readonly string[]).includes(bodyOrigin)
+        ? (bodyOrigin as CancelOrigin)
+        : "FORCE_MAJEURE";
+  } else {
+    origin = side === "PROFESSIONAL" ? "PROFESSIONAL" : "CONTRACTOR";
+  }
 
-  await cancelHiring({
+  const result = await cancelHiring({
     hiringId: hiring.id,
-    initiatedBy: user.id,
-    refundAmountCents, // 100% do saldo retido — decisão de produto
-    reasonNote: reasonNote ?? undefined,
+    origin,
+    reason: reasonNote ?? undefined,
   });
 
   return NextResponse.json({
     canceled: true,
-    refundAmountCents,
+    feeCents: result.feeCents,
+    refundCents: result.refundCents,
+    feePercent: result.feePercent,
   });
 }

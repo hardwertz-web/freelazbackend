@@ -432,7 +432,7 @@ $script:jar = $jarBruno
 Call-Api POST "/api/hirings/$hW2/cancel" '{}' 403
 $script:jar = $jarAna
 Call-Api POST "/api/hirings/$hW2/cancel" '{}' 200
-Assert-True ((Get-Json).refundAmountCents -eq 15000) "reembolso integral de 15000 (sem multa inventada)"
+Assert-True ((Get-Json).refundCents -eq 15000 -and (Get-Json).feeCents -eq 0 -and (Get-Json).feePercent -eq 0) "cancelamento profissional: reembolso integral 15000, sem multa (refundCents/feeCents/feePercent)"
 
 $script:jar = $jarAna
 Call-Api GET "/api/hirings/$hW2" "" 200

@@ -454,6 +454,12 @@ model Hiring {
   closingCodeUsedAt DateTime? // dispara a liberação da avaliação 2h depois
   disputeOpen      Boolean     @default(false)
   completedAt      DateTime?
+  // Política de cancelamento (etapa cancelamento): auditoria + multa calculada.
+  cancelReason            String?
+  cancelOrigin            String?   // CONTRACTOR | PROFESSIONAL | SYSTEM | FORCE_MAJEURE
+  canceledAt              DateTime?
+  cancellationFeeCents    Int?
+  cancellationFeePercent  Int?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -711,8 +717,11 @@ model Evaluation {
   // Avaliação cega (Fase 2.3b): null enquanto a outra parte ainda não avaliou.
   // A 2ª avaliação do mesmo hiring libera as duas; se ninguém avaliar, o job
   // diário libera em `closingCodeUsedAt + 30d`.
-  releasedAt DateTime?
-  createdAt DateTime @default(now())
+  releasedAt  DateTime?
+  // Nota automática (política de cancelamento: falta/não comparecimento). Não
+  // passa pela janela cega de createEvaluation; nasce já liberada.
+  isAutomatic Boolean   @default(false)
+  createdAt   DateTime  @default(now())
 
   @@unique([hiringId, authorId])
   @@index([targetId, createdAt])

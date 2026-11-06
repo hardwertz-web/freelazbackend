@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import type { Db } from "../lib/db";
 
 /**
  * Avaliação mútua CEGA (Fase 2.3b).
@@ -200,4 +201,60 @@ export async function listEvaluationsReceived(targetId: string, limit = 50) {
     },
   });
   return evaluations;
+}
+
+/**
+ * Nota automática por cancelamento do profissional (política de cancelamento).
+ * Insere DIRETO (não usa createEvaluation: contratação CANCELADA, sem janela cega).
+ * authorId = contratante; targetId = profissional; nasce já liberada (isAutomatic).
+ * Só aplica para PROFESSIONAL: <0h => 1 ("Falta não justificada"), 0..<24h => 3
+ * ("Cancelamento com menos de 24h de antecedência"), >=24h => não aplica.
+ * P2002 (contratante já avaliou) => skip com warn.
+ */
+export async function applyCancellationPenalty(
+  db: Db,
+  hiringId: string,
+  origin: "CONTRACTOR" | "PROFESSIONAL" | "SYSTEM" | "FORCE_MAJEURE",
+  hoursUntilStart: number
+): Promise<{ applied: boolean; rating?: number; reason?: string }> {
+  if (origin !== "PROFESSIONAL") return { applied: false, reason: "origin_not_professional" };
+
+  const hiring = await db.hiring.findUnique({
+    where: { id: hiringId },
+    select: { professionalId: true, contractorId: true },
+  });
+  if (!hiring) return { applied: false, reason: "hiring_not_found" };
+
+  let rating: number;
+  let comment: string;
+  if (hoursUntilStart < 0) {
+    rating = 1;
+    comment = "Falta não justificada";
+  } else if (hoursUntilStart < 24) {
+    rating = 3;
+    comment = "Cancelamento com menos de 24h de antecedência";
+  } else {
+    return { applied: false, reason: "advance_notice_ok" };
+  }
+
+  try {
+    await db.evaluation.create({
+      data: {
+        hiringId,
+        authorId: hiring.contractorId,
+        targetId: hiring.professionalId,
+        rating,
+        comment,
+        isAutomatic: true,
+        releasedAt: new Date(),
+      },
+    });
+    return { applied: true, rating, reason: comment };
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002") {
+      console.warn(`[penalty] contratante já tem avaliação no hiring ${hiringId}, skip`);
+      return { applied: false, reason: "already_evaluated" };
+    }
+    throw err;
+  }
 }
