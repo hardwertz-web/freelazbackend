@@ -62,3 +62,6 @@ build.out
 fix.js
 readlog*.js
 *.restored
+commitmsg*.txt
+fixenv.js
+tmp-*.js
