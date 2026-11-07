@@ -58,6 +58,7 @@ function SelfProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -284,9 +285,18 @@ function SelfProfileScreen() {
               )}
             </div>
             <Card>
-              <p className={styles.bio}>
+              <p className={`${styles.bio} ${!bioExpanded && profile.bio && profile.bio.length > 180 ? styles.bioTruncated : ""}`}>
                 {profile.bio?.trim() ? profile.bio : "Você ainda não escreveu uma apresentação."}
               </p>
+              {profile.bio && profile.bio.length > 180 && (
+                <button
+                  type="button"
+                  className={styles.bioToggle}
+                  onClick={() => setBioExpanded((v) => !v)}
+                >
+                  {bioExpanded ? "Ver menos" : "Ver mais"}
+                </button>
+              )}
             </Card>
           </section>
 
@@ -472,6 +482,7 @@ function PublicProfileScreen({
   const router = useRouter();
   const [hireOpen, setHireOpen] = useState(false);
   const [ratingsSummary, setRatingsSummary] = useState<{ total: number; average: number; distribution: Record<number, number> } | null>(null);
+  const [bioExpanded, setBioExpanded] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -599,7 +610,18 @@ function PublicProfileScreen({
             )}
           </div>
           <Card>
-            <p className={styles.bio}>{professional.bio}</p>
+            <p className={`${styles.bio} ${!bioExpanded && professional.bio && professional.bio.length > 180 ? styles.bioTruncated : ""}`}>
+              {professional.bio}
+            </p>
+            {professional.bio && professional.bio.length > 180 && (
+              <button
+                type="button"
+                className={styles.bioToggle}
+                onClick={() => setBioExpanded((v) => !v)}
+              >
+                {bioExpanded ? "Ver menos" : "Ver mais"}
+              </button>
+            )}
           </Card>
         </section>
       )}
