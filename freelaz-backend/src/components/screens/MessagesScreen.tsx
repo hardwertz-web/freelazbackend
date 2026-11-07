@@ -18,7 +18,7 @@ import { Chip } from "@/components/Chip";
 import { SearchIcon } from "@/components/Icons";
 import styles from "./MessagesScreen.module.css";
 
-type Filter = "TODAS" | "CONTRATANTES" | "PROFISSIONAIS" | "PROPOSTAS";
+type Filter = "TODAS" | "CONTRATANTES" | "PROFISSIONAIS" | "PROPOSTAS" | "NAO_LIDAS";
 
 type RespondResponse = {
   application: { hiring: { id: string } | null };
@@ -83,6 +83,7 @@ export function MessagesScreen() {
       contratantes: chats.filter((h) => h.side === "PROFESSIONAL").length,
       profissionais: chats.filter((h) => h.side === "CONTRACTOR").length,
       propostas: proposals.length,
+      naoLidas: chats.filter((h) => (h.chat?.unreadCount ?? 0) > 0).length,
     }),
     [chats, proposals]
   );
@@ -93,6 +94,7 @@ export function MessagesScreen() {
       .filter((hiring) => {
         if (filter === "CONTRATANTES" && hiring.side !== "PROFESSIONAL") return false;
         if (filter === "PROFISSIONAIS" && hiring.side !== "CONTRACTOR") return false;
+        if (filter === "NAO_LIDAS" && (hiring.chat?.unreadCount ?? 0) <= 0) return false;
         if (!term) return true;
         const haystack = `${hiring.counterpart.name} ${hiring.counterpart.tradeName ?? ""} ${hiring.jobTitle}`.toLowerCase();
         return haystack.includes(term);
@@ -201,6 +203,13 @@ export function MessagesScreen() {
           count={counts.propostas}
         >
           Propostas
+        </Chip>
+        <Chip
+          active={filter === "NAO_LIDAS"}
+          onClick={() => setFilter("NAO_LIDAS")}
+          count={counts.naoLidas}
+        >
+          Não lidas
         </Chip>
       </div>
 
@@ -409,7 +418,7 @@ export function MessagesScreen() {
             <Link
               key={hiring.id}
               href={`/mensagens/${hiring.id}`}
-              className={styles.row}
+              className={`${styles.row} ${(hiring.chat?.unreadCount ?? 0) > 0 ? styles.rowUnread : ""}`}
             >
               <span className={styles.avatar}>{initials(hiring.counterpart.tradeName || hiring.counterpart.name)}</span>
               <span className={styles.body}>
@@ -418,7 +427,7 @@ export function MessagesScreen() {
                     {hiring.counterpart.tradeName || hiring.counterpart.name}
                   </span>
                   {hiring.chat?.unreadCount && hiring.chat.unreadCount > 0 ? (
-                    <span style={{ marginLeft: 6, background: "#DC2626", color: "#fff", borderRadius: 9999, padding: "1px 6px", fontSize: 11 }}>
+                    <span className={styles.unreadBadge}>
                       {hiring.chat.unreadCount > 9 ? "9+" : hiring.chat.unreadCount}
                     </span>
                   ) : null}

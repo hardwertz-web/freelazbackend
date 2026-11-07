@@ -184,7 +184,7 @@
   }
 }
 
-/* ----- Propostas privadas ("Me contrate") — Fase 2.5 ----- */
+/* ----- Propostas privadas ("Me contrate") ï¿½ Fase 2.5 ----- */
 
 .actionError {
   border: 1px solid #fecaca;
@@ -335,4 +335,25 @@
 
 .modalActions > * {
   flex: 1;
+}
+
+.unreadBadge {
+  margin-left: 6px;
+  background: #DC2626;
+  color: #fff;
+  border-radius: 9999px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 16px;
+  text-align: center;
+  display: inline-block;
+}
+
+.rowUnread {
+  background: #FEF2F2;
+}
+
+.rowUnread:hover {
+  background: #FEE2E2;
 }
