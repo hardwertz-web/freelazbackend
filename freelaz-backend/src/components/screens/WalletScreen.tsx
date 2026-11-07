@@ -18,6 +18,14 @@ import {
 } from "@/components/Icons";
 import styles from "./WalletScreen.module.css";
 
+type WalletScreenProps = {
+  user: {
+    name: string;
+    tradeName: string | null;
+    verificationStatus: string;
+  };
+};
+
 const PAYOUT_LABEL: Record<string, string> = {
   PENDENTE: "Pendente",
   PROCESSANDO: "Em processamento",
@@ -39,7 +47,7 @@ function payoutTone(status?: string): "success" | "primary" | "danger" | "neutra
  * As ações rápidas (depositar/sacar/transferir) são Fase 2 — aparecem
  * desabilitadas, sem simular dinheiro.
  */
-export function WalletScreen() {
+export function WalletScreen({ user }: WalletScreenProps) {
   const [data, setData] = useState<WalletResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +136,16 @@ export function WalletScreen() {
 
   return (
     <div className={styles.screen}>
+      <div className={styles.welcome}>
+        <div className={styles.welcomeText}>
+          <span className={styles.welcomeTitle}>Olá, {user.tradeName ?? user.name}!</span>
+          <span className={styles.welcomeSubtitle}>Seu saldo e movimentações em um só lugar.</span>
+        </div>
+        {user.verificationStatus === "VERIFICADO" && (
+          <Badge tone="success">Conta verificada</Badge>
+        )}
+      </div>
+
       <div className={styles.head}>
         <h1 className={styles.title}>Carteira</h1>
         <p className={styles.subtitle}>Seu saldo e movimentações.</p>
