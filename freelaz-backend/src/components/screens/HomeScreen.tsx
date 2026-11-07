@@ -382,6 +382,9 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
             Ver vagas <span aria-hidden="true">→</span>
           </a>
         </div>
+        <span className={styles.heroBadge} aria-hidden="true">
+          Trabalho mais perto de você
+        </span>
         <span className={styles.heroCredit}>Foto: Deni Williams · CC BY 2.0</span>
       </section>
 
