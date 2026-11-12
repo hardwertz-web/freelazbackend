@@ -15,7 +15,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
-import { SearchIcon } from "@/components/Icons";
+import { SearchIcon, ShieldCheckIcon } from "@/components/Icons";
 import styles from "./MessagesScreen.module.css";
 
 type Filter = "TODAS" | "CONTRATANTES" | "PROFISSIONAIS" | "PROPOSTAS" | "NAO_LIDAS";
@@ -420,12 +420,28 @@ export function MessagesScreen() {
               href={`/mensagens/${hiring.id}`}
               className={`${styles.row} ${(hiring.chat?.unreadCount ?? 0) > 0 ? styles.rowUnread : ""}`}
             >
-              <span className={styles.avatar}>{initials(hiring.counterpart.tradeName || hiring.counterpart.name)}</span>
+              <span className={styles.avatar}>
+                {hiring.counterpart.avatarUrl ? (
+                  <img
+                    src={hiring.counterpart.avatarUrl}
+                    alt={hiring.counterpart.tradeName || hiring.counterpart.name}
+                    className={styles.avatarImg}
+                    loading="lazy"
+                  />
+                ) : (
+                  initials(hiring.counterpart.tradeName || hiring.counterpart.name)
+                )}
+              </span>
               <span className={styles.body}>
                 <span className={styles.nameRow}>
                   <span className={styles.name}>
                     {hiring.counterpart.tradeName || hiring.counterpart.name}
                   </span>
+                  {hiring.counterpart.verified && (
+                    <Badge tone="primary" icon={<ShieldCheckIcon size={10} />}>
+                      Verificado
+                    </Badge>
+                  )}
                   {hiring.chat?.unreadCount && hiring.chat.unreadCount > 0 ? (
                     <span className={styles.unreadBadge}>
                       {hiring.chat.unreadCount > 9 ? "9+" : hiring.chat.unreadCount}

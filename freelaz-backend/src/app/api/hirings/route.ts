@@ -54,8 +54,24 @@ export async function GET(req: NextRequest) {
         select: { id: true, title: true, category: true, startsAt: true, endsAt: true, status: true },
       },
       chat: { select: { id: true, status: true, lastMessageAt: true } },
-      contractor: { select: { id: true, name: true, tradeName: true } },
-      professional: { select: { id: true, name: true, tradeName: true } },
+      contractor: {
+        select: {
+          id: true,
+          name: true,
+          tradeName: true,
+          avatarUrl: true,
+          contractorProfile: { select: { verificationStatus: true } },
+        },
+      },
+      professional: {
+        select: {
+          id: true,
+          name: true,
+          tradeName: true,
+          avatarUrl: true,
+          professionalProfile: { select: { verificationStatus: true } },
+        },
+      },
     },
   });
 
@@ -103,11 +119,15 @@ export async function GET(req: NextRequest) {
                 id: hiring.professional.id,
                 name: hiring.professional.name,
                 tradeName: hiring.professional.tradeName,
+                avatarUrl: hiring.professional.avatarUrl ?? null,
+                verified: hiring.professional.professionalProfile?.verificationStatus === "VERIFICADO",
               }
             : {
                 id: hiring.contractor.id,
                 name: hiring.contractor.name,
                 tradeName: hiring.contractor.tradeName,
+                avatarUrl: hiring.contractor.avatarUrl ?? null,
+                verified: hiring.contractor.contractorProfile?.verificationStatus === "VERIFICADO",
               },
       };
     }),

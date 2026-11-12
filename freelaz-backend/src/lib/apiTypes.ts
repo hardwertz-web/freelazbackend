@@ -261,7 +261,13 @@ export type HiringSummary = {
     status: string;
   } | null;
   chat: ChatSummary | null;
-  counterpart: { id: string; name: string; tradeName: string | null };
+  counterpart: {
+    id: string;
+    name: string;
+    tradeName: string | null;
+    avatarUrl: string | null;
+    verified: boolean;
+  };
 };
 
 export type HiringsResponse = { hirings: HiringSummary[] };
