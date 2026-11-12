@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { listSubstitutes, selectCandidate } from "@/services/jobPostingService";
 import { requireUser, hasActiveRole } from "@/lib/auth";
+import { publicUser } from "@/lib/publicUser";
 
 /** Só o contratante dono da vaga enxerga e retoma a lista de suplentes. */
 async function requireJobOwner(jobId: string, userId: string) {
@@ -37,7 +38,12 @@ export async function GET(
   if (job.error) return NextResponse.json(job.error.body, { status: job.error.status });
 
   const substitutes = await listSubstitutes(params.id);
-  return NextResponse.json({ substitutes });
+  return NextResponse.json({
+    substitutes: substitutes.map((s) => ({
+      ...s,
+      professional: publicUser(s.professional),
+    })),
+  });
 }
 
 /**
