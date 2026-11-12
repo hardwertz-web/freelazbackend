@@ -6,7 +6,7 @@ import type { ComponentType } from "react";
 import { apiGet } from "@/lib/apiClient";
 import type { JobCard, JobsResponse } from "@/lib/apiTypes";
 import { getCategoryImage } from "@/lib/categoryImages";
-import { formatBRLShort, formatDay, formatShift } from "@/lib/format";
+import { formatBRLShort, formatDay, formatShift, humanizeCategory } from "@/lib/format";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
@@ -70,11 +70,6 @@ function normalize(value: string): string {
 }
 
 /** "EVENTOS" / "eventos" → "Eventos" (o backend grava as duas formas). */
-function categoryLabel(raw: string): string {
-  const clean = raw.trim().replace(/[-_]/g, " ");
-  return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
-}
-
 const CATEGORY_ICONS: Record<string, ComponentType<IconProps>> = {
   eventos: SparklesIcon,
   festa: SparklesIcon,
@@ -99,6 +94,10 @@ const CATEGORY_ICONS: Record<string, ComponentType<IconProps>> = {
   cozinha: ChefHatIcon,
   recepcionista: UserIcon,
   administracao: BriefcaseIcon,
+  adm: BriefcaseIcon,
+  administrativo: BriefcaseIcon,
+  "administração": BriefcaseIcon,
+  "segurança": ShieldCheckIcon,
 };
 
 function iconForCategory(key: string) {
@@ -245,7 +244,7 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
       if (current) {
         current.count += 1;
       } else {
-        map.set(key, { key, label: categoryLabel(job.category), count: 1 });
+        map.set(key, { key, label: humanizeCategory(job.category), count: 1 });
       }
     }
     return Array.from(map.values())
