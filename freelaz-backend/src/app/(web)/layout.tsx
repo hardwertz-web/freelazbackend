@@ -15,7 +15,7 @@ export default async function WebLayout({ children }: { children: React.ReactNod
 
   return (
     <div className={styles.shell}>
-      <ScreenHeader userName={user.name} />
+      <ScreenHeader userName={user.name} activeMode={(user as any).activeMode ?? "PROFISSIONAL"} />
       <main className={styles.main}>{children}</main>
       <BottomTabBar />
     </div>

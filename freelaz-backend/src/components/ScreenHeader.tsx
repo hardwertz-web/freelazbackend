@@ -1,25 +1,25 @@
 import Link from "next/link";
 import { BellIcon } from "./Icons";
 import { initials } from "@/lib/format";
+import { ModeToggle } from "./ModeToggle";
 import styles from "./ScreenHeader.module.css";
 
+type ActiveMode = "PROFISSIONAL" | "CONTRATANTE" | "BOTH";
+
 /**
- * Header persistente do app: logo + tagline (identidade fixa em todas as
- * telas, como nas referências) e atalho para o perfil.
- *
- * O sino de notificações é Fase 2 — fica visível (fidelidade ao protótipo)
- * mas desabilitado, sem inventar contador de não lidas.
+ * Header persistente do app: logo, modo ativo (toggle), notificações (Fase 2)
+ * e atalho para o perfil.
  */
-export function ScreenHeader({ userName }: { userName: string }) {
+export function ScreenHeader({ userName, activeMode }: { userName: string; activeMode?: ActiveMode }) {
   return (
     <header className={styles.header}>
       <div className={styles.brand}>
-        {/* Ícone oficial (public/logo_f-96.png, 96px com alfa para retina).
-            Sem wordmark/tagline — o símbolo já identifica a marca. */}
         <img src="/logo_f-96.png" alt="Freelaz" className={styles.logoImage} />
       </div>
 
       <span className={styles.spacer} />
+
+      <ModeToggle initialMode={activeMode ?? "PROFISSIONAL"} />
 
       <button
         type="button"

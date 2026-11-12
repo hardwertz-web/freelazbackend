@@ -66,6 +66,8 @@ export type WalletResponse = {
   statement: StatementItem[];
 };
 
+export type ActiveMode = "PROFISSIONAL" | "CONTRATANTE" | "BOTH";
+
 export type PublicUser = {
   id: string;
   name: string;
@@ -79,6 +81,7 @@ export type PublicUser = {
   state: string | null;
   termsAcceptedAt: string | null;
   emailConfirmedAt: string | null;
+  activeMode?: ActiveMode;
 };
 
 export type Role = { role: "PROFISSIONAL" | "CONTRATANTE" | "ADMIN"; status: string };
@@ -93,6 +96,7 @@ export type MeResponse = {
     headline: string | null;
   } | null;
   contractorProfile: { verificationStatus: string } | null;
+  activeMode?: ActiveMode;
 };
 
 export type PortfolioItem = { id: string; kind: "FOTO" | "VIDEO"; url: string; position: number };

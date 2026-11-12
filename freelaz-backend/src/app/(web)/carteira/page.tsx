@@ -19,6 +19,7 @@ export default async function CarteiraPage() {
         tradeName: user.tradeName ?? null,
         verificationStatus: profProfile?.verificationStatus ?? "NAO_VERIFICADO",
       }}
+      activeMode={(user as any).activeMode ?? "PROFISSIONAL"}
     />
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiGet } from "@/lib/apiClient";
+import { useRouter } from "next/navigation";
+import { apiGet, apiPost } from "@/lib/apiClient";
 import type { StatementItem, WalletResponse } from "@/lib/apiTypes";
 import { formatBRL, formatDay, formatListTime } from "@/lib/format";
 import { Badge } from "@/components/Badge";
@@ -24,6 +25,7 @@ type WalletScreenProps = {
     tradeName: string | null;
     verificationStatus: string;
   };
+  activeMode?: "PROFISSIONAL" | "CONTRATANTE" | "BOTH";
 };
 
 const PAYOUT_LABEL: Record<string, string> = {
@@ -47,13 +49,20 @@ function payoutTone(status?: string): "success" | "primary" | "danger" | "neutra
  * As ações rápidas (depositar/sacar/transferir) são Fase 2 — aparecem
  * desabilitadas, sem simular dinheiro.
  */
-export function WalletScreen({ user }: WalletScreenProps) {
+export function WalletScreen({ user, activeMode = "PROFISSIONAL" }: WalletScreenProps) {
+  const router = useRouter();
   const [data, setData] = useState<WalletResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleBlocked, setRoleBlocked] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (activeMode === "CONTRATANTE") {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     setRoleBlocked(false);
@@ -66,11 +75,47 @@ export function WalletScreen({ user }: WalletScreenProps) {
       setError(result.error);
     }
     setLoading(false);
-  }, []);
+  }, [activeMode]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function switchToProfessional() {
+    setSwitching(true);
+    setSwitchError(null);
+    const res = await apiPost<{ activeMode?: string; error?: string }>("/api/auth/toggle-mode", {});
+    if (!res.ok) {
+      setSwitchError((res as any).error || "Não foi possível alterar o modo.");
+      setSwitching(false);
+      return;
+    }
+    router.refresh();
+    setSwitching(false);
+  }
+
+  if (activeMode === "CONTRATANTE") {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.head}>
+          <h1 className={styles.title}>Carteira</h1>
+          <p className={styles.subtitle}>Seu saldo e movimentações.</p>
+        </div>
+        <Card>
+          <div className={styles.empty}>
+            <span className={styles.emptyTitle}>Modo Contratante ativo</span>
+            <span className={styles.emptyText}>
+              Ative o modo Profissional para ver sua carteira.
+            </span>
+            {switchError && <span className={styles.emptyText}>{switchError}</span>}
+            <Button size="sm" onClick={switchToProfessional} disabled={switching}>
+              {switching ? "Alterando..." : "Ativar modo Profissional"}
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

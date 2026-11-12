@@ -59,6 +59,25 @@ function SelfProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [bioExpanded, setBioExpanded] = useState(false);
+  const [switchingMode, setSwitchingMode] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
+
+  async function handleToggleMode() {
+    setSwitchingMode(true);
+    setModeError(null);
+    const res = await apiPost<{ activeMode?: string; error?: string }>("/api/auth/toggle-mode", {});
+    if (!res.ok) {
+      setModeError((res as any).error || "Não foi possível alterar o modo.");
+      setSwitchingMode(false);
+      return;
+    }
+    const next = (res.data as any).activeMode as "PROFISSIONAL" | "CONTRATANTE" | undefined;
+    if (next && me) {
+      setMe({ ...me, activeMode: next, user: { ...me.user, activeMode: next } as any });
+    }
+    setSwitchingMode(false);
+    router.refresh();
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -387,6 +406,43 @@ function SelfProfileScreen() {
           </section>
         </>
       )}
+
+      <section className={styles.section}>
+        <div className={styles.sectionHead}>
+          <h2 className={styles.sectionTitle}>Modo ativo</h2>
+        </div>
+        <Card>
+          <div className={styles.accountRow}>
+            <span className={styles.accountLabel}>Modo atual</span>
+            <span className={styles.accountValue}>
+              {((me.activeMode ?? me.user.activeMode) as string) === "CONTRATANTE"
+                ? "Contratante"
+                : (me.activeMode ?? me.user.activeMode) === "BOTH"
+                  ? "Ambos"
+                  : "Profissional"}
+            </span>
+          </div>
+          <div className={styles.accountRow}>
+            <span className={styles.accountLabel}>Trocar modo</span>
+            <span className={styles.accountValue}>
+              <button
+                type="button"
+                className={styles.link}
+                onClick={handleToggleMode}
+                disabled={switchingMode || (me.activeMode ?? me.user.activeMode) === "BOTH"}
+              >
+                {switchingMode ? "Alterando..." : "Alternar Profissional/Contratante"}
+              </button>
+            </span>
+          </div>
+          {modeError && (
+            <div className={styles.accountRow}>
+              <span className={styles.accountLabel}>Aviso</span>
+              <span className={styles.accountValue}>{modeError}</span>
+            </div>
+          )}
+        </Card>
+      </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>

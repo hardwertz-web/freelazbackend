@@ -14,6 +14,7 @@ type UserLike = {
   state: string | null;
   termsAcceptedAt: Date | null;
   emailConfirmedAt: Date | null;
+  activeMode?: "PROFISSIONAL" | "CONTRATANTE" | "BOTH" | null;
 };
 
 export function maskDocument(document: string): string {
@@ -40,5 +41,6 @@ export function publicUser(user: UserLike) {
     state: user.state,
     termsAcceptedAt: user.termsAcceptedAt,
     emailConfirmedAt: user.emailConfirmedAt,
+    activeMode: user.activeMode ?? "PROFISSIONAL",
   };
 }

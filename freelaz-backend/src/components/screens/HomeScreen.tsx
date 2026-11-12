@@ -151,7 +151,13 @@ function formatJobAge(createdAt: string): { label: string; tone: "new" | "recent
   return null; // > 7 dias: sem badge
 }
 
-export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
+export function HomeScreen({
+  canPublish = false,
+  activeMode = "PROFISSIONAL",
+}: {
+  canPublish?: boolean;
+  activeMode?: "PROFISSIONAL" | "CONTRATANTE" | "BOTH";
+}) {
   const [byModality, setByModality] = useState<Record<ModalityTab, ModalityData>>({
     FREELANCE: EMPTY_MODALITY,
     CLT: EMPTY_MODALITY,
@@ -386,6 +392,22 @@ export function HomeScreen({ canPublish = false }: { canPublish?: boolean }) {
         </span>
         <span className={styles.heroCredit}>Foto: Deni Williams · CC BY 2.0</span>
       </section>
+
+      {activeMode === "CONTRATANTE" && (
+        <div className={styles.publishCta}>
+          <div className={styles.publishCtaText}>
+            <strong>Modo Contratante</strong>
+            <span>Precisa de ajuda? Publique uma vaga para encontrar profissionais.</span>
+          </div>
+          {canPublish ? (
+            <Link href="/publicar" className={styles.publishCtaButton}>
+              Publicar vaga
+            </Link>
+          ) : (
+            <span className={styles.publishCtaHint}>Ative o papel Contratante para publicar.</span>
+          )}
+        </div>
+      )}
 
       <div className={styles.searchRow}>
         <div className={styles.searchBox}>

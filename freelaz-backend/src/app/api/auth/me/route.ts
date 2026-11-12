@@ -30,5 +30,6 @@ export async function GET() {
     roles: user.roles,
     professionalProfile,
     contractorProfile,
+    activeMode: (user as any).activeMode ?? "PROFISSIONAL",
   });
 }

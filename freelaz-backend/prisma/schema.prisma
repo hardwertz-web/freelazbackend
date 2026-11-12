@@ -41,6 +41,13 @@ enum UserRoleStatus {
   ATIVO
 }
 
+// Modo ativo da interface (Fase 2c). BOTH reservado (não exposto no toggle).
+enum ActiveMode {
+  PROFISSIONAL
+  CONTRATANTE
+  BOTH
+}
+
 // ---------- Identidade ----------
 
 model User {
@@ -60,6 +67,7 @@ model User {
   state        String?
   avatarUrl    String?
   pixKey       String? // chave Pix para receber repasses (papel Profissional)
+  activeMode   ActiveMode   @default(PROFISSIONAL)
 
   // Endereço e renda exigidos pelo POST /v3/accounts (subconta Asaas) —
   // Etapa 7.3b. Nullable porque a maioria dos usuários nunca cria subconta e
