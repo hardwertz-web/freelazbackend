@@ -96,10 +96,15 @@ export async function createHiringForApplication(
 
   const grossValueCents = application.agreedValueCents ?? application.jobPosting.valueCents;
 
-  // Fase 5b: comissão vem da configuração editável (mesmo `db` da transação).
-  // O valor fica CONGELADO no Hiring logo abaixo — mudanças futuras na config
-  // não reescrevem contratações existentes.
-  const commissionBps = await getCommissionBps(db);
+  // Fase 5c: comissão customizada da empresa tem prioridade sobre a global.
+  // O valor fica CONGELADO no Hiring logo abaixo — mudar a custom ou a global
+  // depois NÃO reescreve contratações existentes.
+  const contractorProfile = await db.contractorProfile.findUnique({
+    where: { userId: application.jobPosting.contractorId },
+    select: { customCommissionBps: true },
+  });
+  const commissionBps =
+    contractorProfile?.customCommissionBps ?? (await getCommissionBps(db));
 
   // Etapa 7.3d - modelo de taxa (flag off por padrao = historico intocado).
   //  LEGACY: profissional recebe o liquido (bruto - comissao).

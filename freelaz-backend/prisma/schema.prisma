@@ -254,6 +254,9 @@ model ContractorProfile {
   ratingAverage      Float?
   cltPlanId          String?
   cltPlan            CltPlan?           @relation(fields: [cltPlanId], references: [id])
+  /// Fase 5c: comissão customizada negociada (bps). NULL = usar global.
+  /// Congelada no Hiring na criação; mudar aqui não retroage.
+  customCommissionBps Int?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 }
@@ -874,6 +877,7 @@ enum AdminAuditAction {
   ADJUSTMENT_CREATED
   RECONCILIATION_RUN
   SETTING_CHANGED
+  COMPANY_COMMISSION_CHANGED
 }
 
 model AdminAuditLog {

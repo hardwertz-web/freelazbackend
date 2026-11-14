@@ -51,6 +51,7 @@ const TABS = [
   { key: "identidade", label: "Identidade" },
   { key: "financeiro", label: "Financeiro" },
   { key: "configuracoes", label: "Configurações" },
+  { key: "metricas", label: "Métricas" },
   { key: "auditoria", label: "Auditoria" },
 ] as const;
 
@@ -176,6 +177,32 @@ type SettingRow = {
   createdAt: string;
 };
 
+type MetricsPayload = {
+  period: { from: string; to: string };
+  gmvCents: number;
+  hiringCount: number;
+  pendingPaymentCount: number;
+  cancelledCount: number;
+  commissionRevenueCents: number;
+  platformFeeRevenueCents: number;
+  revenueCents: number;
+  ticketMedioCents: number;
+  jobPostingCount: number;
+};
+
+type DistributionRow = { value: string; count: number; gmvCents: number };
+
+type CompanyRow = {
+  id: string;
+  name: string;
+  tradeName: string | null;
+  document: string;
+  documentType: string;
+  city: string | null;
+  state: string | null;
+  contractorProfile: { customCommissionBps: number | null } | null;
+};
+
 // Faixas de validação no cliente — ESPELHAM `SETTING_VALIDATION` do backend
 // (settingsService). São só para feedback imediato: a autoridade é o servidor.
 const SETTING_RANGES: Record<string, { min: number; max: number }> = {
@@ -235,7 +262,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export default function AdminPage() {
   const [phase, setPhase] = useState<"loading" | "login" | "denied" | "ready">("loading");
   const [me, setMe] = useState<Me | null>(null);
-  const [tab, setTab] = useState<"disputas" | "denuncias" | "identidade" | "financeiro" | "configuracoes" | "auditoria">("disputas");
+  const [tab, setTab] = useState<"disputas" | "denuncias" | "identidade" | "financeiro" | "configuracoes" | "metricas" | "auditoria">("disputas");
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeError, setNoticeError] = useState(false);
 
@@ -313,6 +340,7 @@ export default function AdminPage() {
       {tab === "identidade" && <IdentidadeTab onMessage={flash} />}
       {tab === "financeiro" && <FinanceiroTab onMessage={flash} />}
       {tab === "configuracoes" && <ConfiguracoesTab onMessage={flash} />}
+      {tab === "metricas" && <MetricasTab onMessage={flash} />}
       {tab === "auditoria" && <AuditoriaTab onMessage={flash} />}
     </main>
   );
@@ -754,6 +782,60 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
     adjustedAfterCents: number;
   } | null>(null);
 
+  // Fase 5c — comissão por empresa. `globalCommissionBps` é lido de
+  // /api/admin/settings (commission_bps) para a tela mostrar o global REAL
+  // (editável desde a 5b), em vez de um 10% hardcoded que mentiria.
+  const [globalCommissionBps, setGlobalCommissionBps] = useState(1000);
+  const [companySearch, setCompanySearch] = useState("");
+  const [companyResults, setCompanyResults] = useState<CompanyRow[] | null>(null);
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<string | null>(null);
+  const [editBps, setEditBps] = useState("");
+  const [editUseCustom, setEditUseCustom] = useState(false);
+
+  async function searchCompanies() {
+    setCompanyLoading(true);
+    try {
+      const data = await api<{ companies: CompanyRow[] }>(
+        `/api/admin/companies?search=${encodeURIComponent(companySearch)}&limit=20`
+      );
+      setCompanyResults(data.companies);
+    } catch (err) {
+      onMessage(err instanceof Error ? err.message : "erro na busca", true);
+    } finally {
+      setCompanyLoading(false);
+    }
+  }
+
+  async function saveCompanyCommission(userId: string) {
+    try {
+      // `parsedBps` é number: validar ele (e não o union number|null) evita o
+      // TS18047 do strict mode ao comparar com < 0 / > 5000.
+      const parsedBps = Number.parseInt(editBps, 10);
+      if (
+        editUseCustom &&
+        (!Number.isInteger(parsedBps) || parsedBps < 0 || parsedBps > 5000)
+      ) {
+        onMessage("Comissão deve ser inteiro entre 0 e 5000 bps", true);
+        return;
+      }
+      const customCommissionBps = editUseCustom ? parsedBps : null;
+      await api(`/api/admin/companies/${userId}/commission`, {
+        method: "POST",
+        body: JSON.stringify({ customCommissionBps }),
+      });
+      onMessage(
+        customCommissionBps === null
+          ? "Comissão customizada removida (usa global)"
+          : `Comissão customizada definida para ${(customCommissionBps / 100).toFixed(2)}%`
+      );
+      setEditingCompany(null);
+      searchCompanies();
+    } catch (err) {
+      onMessage(err instanceof Error ? err.message : "erro ao salvar", true);
+    }
+  }
+
   const load = useCallback(async () => {
     try {
       const q = statusFilter ? `?status=${encodeURIComponent(statusFilter.toUpperCase())}` : "";
@@ -774,6 +856,21 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
   useEffect(() => {
     load();
   }, [load]);
+
+  // Comissão global real (commission_bps). Effect separado do `load` para não
+  // refazer a leitura de settings a cada troca de filtro de status.
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api<{ settings: SettingRow[] }>("/api/admin/settings");
+        const row = data.settings.find((s) => s.key === "commission_bps");
+        const parsed = row ? Number.parseInt(row.value, 10) : NaN;
+        if (Number.isFinite(parsed)) setGlobalCommissionBps(parsed);
+      } catch {
+        // painel continua útil com o fallback de 1000 bps (10%)
+      }
+    })();
+  }, []);
 
   return (
     <>
@@ -1096,6 +1193,131 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
           </tbody>
         </table>
       )}
+
+      <section style={S.card}>
+        <h2 style={{ fontSize: 16, marginTop: 0 }}>Comissão por empresa</h2>
+        <p style={S.muted}>
+          Empresa sem comissão customizada usa a global (
+          {(globalCommissionBps / 100).toFixed(2)}%). Mudar aqui só afeta NOVAS
+          contratações — a comissão de uma contratação já criada fica congelada.
+        </p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input
+            style={{ ...S.input, flex: 1 }}
+            placeholder="buscar por nome, nome fantasia ou documento"
+            value={companySearch}
+            onChange={(e) => setCompanySearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") searchCompanies();
+            }}
+          />
+          <button style={S.btn} onClick={searchCompanies} disabled={companyLoading}>
+            {companyLoading ? "Buscando…" : "Buscar"}
+          </button>
+        </div>
+
+        {companyResults === null ? (
+          <p style={S.muted}>Digite para buscar empresas contratantes.</p>
+        ) : companyResults.length === 0 ? (
+          <p style={S.muted}>Nenhuma empresa encontrada.</p>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={S.th}>Empresa</th>
+                <th style={S.th}>Documento</th>
+                <th style={S.th}>Comissão</th>
+                <th style={S.th}>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {companyResults.map((c) => {
+                const custom = c.contractorProfile?.customCommissionBps ?? null;
+                const isEditing = editingCompany === c.id;
+                return (
+                  <tr key={c.id}>
+                    <td style={S.td}>
+                      <strong>{c.tradeName ?? c.name}</strong>
+                      {c.city ? (
+                        <div style={S.muted}>
+                          {c.city}/{c.state}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td style={S.td}>{c.document}</td>
+                    <td style={S.td}>
+                      {custom != null ? (
+                        <span style={{ color: "#17603a", fontWeight: 700 }}>
+                          {(custom / 100).toFixed(2)}% (custom)
+                        </span>
+                      ) : (
+                        <span style={S.muted}>
+                          global ({(globalCommissionBps / 100).toFixed(2)}%)
+                        </span>
+                      )}
+                    </td>
+                    <td style={S.td}>
+                      {isEditing ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 4,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <label style={{ fontSize: 12 }}>
+                            <input
+                              type="checkbox"
+                              checked={editUseCustom}
+                              onChange={(e) => setEditUseCustom(e.target.checked)}
+                            />{" "}
+                            custom
+                          </label>
+                          {editUseCustom && (
+                            <input
+                              style={{ ...S.input, width: 90, fontSize: 12, padding: "4px 6px" }}
+                              type="number"
+                              min={0}
+                              max={5000}
+                              placeholder="bps"
+                              value={editBps}
+                              onChange={(e) => setEditBps(e.target.value)}
+                            />
+                          )}
+                          <button
+                            style={{ ...S.btn, padding: "4px 8px", fontSize: 12 }}
+                            onClick={() => saveCompanyCommission(c.id)}
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            style={{ ...S.btnGhost, padding: "4px 8px", fontSize: 12 }}
+                            onClick={() => setEditingCompany(null)}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          style={{ ...S.btnGhost, padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => {
+                            setEditingCompany(c.id);
+                            setEditUseCustom(custom != null);
+                            setEditBps(custom != null ? String(custom) : String(globalCommissionBps));
+                          }}
+                        >
+                          Editar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
     </>
   );
 }
@@ -1395,6 +1617,172 @@ function ConfiguracoesTab({ onMessage }: { onMessage: (m: string, e?: boolean) =
           );
         })
       )}
+    </>
+  );
+}
+
+// ----- métricas -----
+
+/**
+ * KPIs e distribuição (Fase 5c). Lê tudo em paralelo por período.
+ *
+ * GMV/receita/contagens ignoram CANCELADO e AGUARDANDO_PAGAMENTO — cobrança
+ * emitida e não paga não é volume. O que está aguardando aparece num card
+ * separado para não sumir da visão. As duas listas de distribuição usam o
+ * mesmo critério, então a soma delas conversa com o GMV do topo.
+ */
+function MetricasTab({ onMessage }: { onMessage: (m: string, e?: boolean) => void }) {
+  const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
+  const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
+  const [byCategory, setByCategory] = useState<DistributionRow[]>([]);
+  const [byCity, setByCity] = useState<DistributionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const days = period === "7d" ? 7 : period === "90d" ? 90 : 30;
+      const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const to = new Date().toISOString();
+      const [m, cat, city] = await Promise.all([
+        api<MetricsPayload>(
+          `/api/admin/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+        ),
+        api<{ rows: DistributionRow[] }>(
+          `/api/admin/metrics/distribution?from=${encodeURIComponent(
+            from
+          )}&to=${encodeURIComponent(to)}&groupBy=category`
+        ),
+        api<{ rows: DistributionRow[] }>(
+          `/api/admin/metrics/distribution?from=${encodeURIComponent(
+            from
+          )}&to=${encodeURIComponent(to)}&groupBy=city`
+        ),
+      ]);
+      setMetrics(m);
+      setByCategory(cat.rows);
+      setByCity(city.rows);
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "erro ao carregar métricas";
+      setError(msg);
+      onMessage(msg, true);
+    } finally {
+      setLoading(false);
+    }
+  }, [period, onMessage]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) return <p>Carregando métricas…</p>;
+  if (error) return <p style={S.err}>{error}</p>;
+  if (!metrics) return null;
+
+  const kpi = (label: string, value: string, hint?: string) => (
+    <div style={S.card}>
+      <div style={S.muted}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
+      {hint && <div style={{ ...S.muted, fontSize: 11 }}>{hint}</div>}
+    </div>
+  );
+
+  const bars = (rows: DistributionRow[]) =>
+    rows.length === 0 ? (
+      <p style={S.muted}>Sem dados no período.</p>
+    ) : (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((row) => {
+          const max = rows[0].count;
+          const pct = max > 0 ? (row.count / max) * 100 : 0;
+          return (
+            <div key={row.value} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 170, fontSize: 12 }}>{row.value}</span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 8,
+                  background: "#eee",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                }}
+              >
+                <div style={{ width: `${pct}%`, height: "100%", background: "#222" }} />
+              </div>
+              <span style={{ width: 110, textAlign: "right", fontSize: 12 }}>
+                {row.count} · {brl(row.gmvCents)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+
+  return (
+    <>
+      <section style={S.card}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {(["7d", "30d", "90d"] as const).map((p) => (
+            <button
+              key={p}
+              style={period === p ? S.tabOn : S.tabOff}
+              onClick={() => setPeriod(p)}
+            >
+              {p === "7d" ? "7 dias" : p === "30d" ? "30 dias" : "90 dias"}
+            </button>
+          ))}
+          <button style={S.btnGhost} onClick={load} disabled={loading}>
+            Atualizar
+          </button>
+        </div>
+        <p style={{ ...S.muted, margin: 0 }}>
+          Período: {dt(metrics.period.from)} — {dt(metrics.period.to)}. GMV e
+          receita contam contratações efetivadas (exclui canceladas e aguardando
+          pagamento).
+        </p>
+      </section>
+
+      <section style={S.card}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 12,
+          }}
+        >
+          {kpi("GMV", brl(metrics.gmvCents))}
+          {kpi(
+            "Receita da plataforma",
+            brl(metrics.revenueCents),
+            `Comissão ${brl(metrics.commissionRevenueCents)} + Taxas ${brl(
+              metrics.platformFeeRevenueCents
+            )}`
+          )}
+          {kpi("Ticket médio", brl(metrics.ticketMedioCents))}
+          {kpi(
+            "Contratações",
+            String(metrics.hiringCount),
+            `${metrics.cancelledCount} canceladas · ${metrics.jobPostingCount} vagas`
+          )}
+          {kpi(
+            "Aguardando pagamento",
+            String(metrics.pendingPaymentCount),
+            "cobrança emitida, ainda não paga"
+          )}
+        </div>
+      </section>
+
+      <section style={S.card}>
+        <h2 style={{ fontSize: 16, marginTop: 0 }}>Top 5 categorias</h2>
+        {bars(byCategory)}
+      </section>
+
+      <section style={S.card}>
+        <h2 style={{ fontSize: 16, marginTop: 0 }}>Top 5 cidades</h2>
+        {bars(byCity)}
+      </section>
     </>
   );
 }
