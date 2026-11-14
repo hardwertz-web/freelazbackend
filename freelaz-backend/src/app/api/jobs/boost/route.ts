@@ -2,14 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPixQrCode } from "@/lib/asaas";
 import { requireUser, hasActiveRole } from "@/lib/auth";
-import { DEFAULT_BOOST_PRICE_CENTS } from "@/lib/commission";
+import { getBoostPriceCents } from "@/lib/commission";
 import {
   checkPersistedCharge,
   ensureAsaasCustomerForUser,
   ensureCharge,
 } from "@/services/chargeService";
-
-const BOOST_PRICE_CENTS = DEFAULT_BOOST_PRICE_CENTS; // fonte única: lib/commission.ts
 
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -42,6 +40,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Papel Contratante necessário" }, { status: 403 });
   }
 
+  // Fase 5b: preço do boost vem da configuração editável (fallback de fábrica
+  // se a config não existir). O valor é gravado em JobBoost.amountCents no
+  // momento da criação — o preço da cobrança e o do registro são os mesmos.
+  const boostPriceCents = await getBoostPriceCents();
+
   const { jobPostingId } = await req.json();
   if (!jobPostingId) {
     return NextResponse.json({ error: "jobPostingId é obrigatório" }, { status: 400 });
@@ -71,7 +74,7 @@ export async function POST(req: NextRequest) {
   if (!boost) {
     try {
       boost = await prisma.jobBoost.create({
-        data: { jobPostingId, amountCents: BOOST_PRICE_CENTS },
+        data: { jobPostingId, amountCents: boostPriceCents },
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
@@ -110,7 +113,7 @@ export async function POST(req: NextRequest) {
   const charge = await ensureCharge({
     entity: "BOOST",
     entityId: boost.id,
-    valueCents: BOOST_PRICE_CENTS,
+    valueCents: boostPriceCents,
     description: `Freelaz — Destaque de urgência: ${jobPosting.title}`,
     customerId: customer.customerId,
   });

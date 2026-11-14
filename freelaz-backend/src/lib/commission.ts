@@ -57,3 +57,16 @@ export function estimateWithdrawalFeeCents(grossValueCents: number): number {
  * torna isso editável nas Configurações Financeiras.
  */
 export const DEFAULT_BOOST_PRICE_CENTS = 1000;
+
+/**
+ * Fase 5b — getters assíncronos das configurações financeiras editáveis.
+ *
+ * As constantes acima continuam sendo o FALLBACK estático (banco fora do ar,
+ * linha ausente). Quem cobra/repassa dinheiro deve usar os getters; o valor
+ * congelado em Hiring.commissionBps nunca é reescrito.
+ */
+export {
+  getCommissionBps,
+  getBoostPriceCents,
+  getWithdrawalFeeBps,
+} from "../services/settingsService";

@@ -50,6 +50,7 @@ const TABS = [
   { key: "denuncias", label: "Denúncias" },
   { key: "identidade", label: "Identidade" },
   { key: "financeiro", label: "Financeiro" },
+  { key: "configuracoes", label: "Configurações" },
   { key: "auditoria", label: "Auditoria" },
 ] as const;
 
@@ -165,6 +166,41 @@ type AuditRow = {
   createdAt: string;
 };
 
+type SettingRow = {
+  key: string;
+  value: string;
+  type: string;
+  description: string | null;
+  updatedById: string | null;
+  updatedAt: string;
+  createdAt: string;
+};
+
+// Faixas de validação no cliente — ESPELHAM `SETTING_VALIDATION` do backend
+// (settingsService). São só para feedback imediato: a autoridade é o servidor.
+const SETTING_RANGES: Record<string, { min: number; max: number }> = {
+  commission_bps: { min: 0, max: 5000 },
+  boost_price_cents: { min: 100, max: 10000 },
+  withdrawal_fee_bps: { min: 0, max: 1000 },
+};
+
+const SETTING_LABELS: Record<string, string> = {
+  commission_bps: "Comissão da plataforma",
+  boost_price_cents: "Preço do impulsionamento",
+  withdrawal_fee_bps: "Taxa do saque instantâneo",
+};
+
+/** Formata o valor cru (string do banco) para leitura humana. */
+const formatSettingValue = (key: string, raw: string): string => {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return raw;
+  if (key === "commission_bps" || key === "withdrawal_fee_bps") {
+    return `${(parsed / 100).toFixed(2)}%`;
+  }
+  if (key === "boost_price_cents") return brl(parsed);
+  return String(parsed);
+};
+
 // ----- estilos (neutros; nada de identidade visual inventada) -----
 
 const S: Record<string, CSSProperties> = {
@@ -199,7 +235,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export default function AdminPage() {
   const [phase, setPhase] = useState<"loading" | "login" | "denied" | "ready">("loading");
   const [me, setMe] = useState<Me | null>(null);
-  const [tab, setTab] = useState<"disputas" | "denuncias" | "identidade" | "financeiro" | "auditoria">("disputas");
+  const [tab, setTab] = useState<"disputas" | "denuncias" | "identidade" | "financeiro" | "configuracoes" | "auditoria">("disputas");
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeError, setNoticeError] = useState(false);
 
@@ -276,6 +312,7 @@ export default function AdminPage() {
       {tab === "denuncias" && <DenunciasTab onMessage={flash} />}
       {tab === "identidade" && <IdentidadeTab onMessage={flash} />}
       {tab === "financeiro" && <FinanceiroTab onMessage={flash} />}
+      {tab === "configuracoes" && <ConfiguracoesTab onMessage={flash} />}
       {tab === "auditoria" && <AuditoriaTab onMessage={flash} />}
     </main>
   );
@@ -1211,6 +1248,152 @@ function AuditoriaTab({ onMessage }: { onMessage: (m: string, e?: boolean) => vo
             ))}
           </tbody>
         </table>
+      )}
+    </>
+  );
+}
+
+// ----- configurações financeiras -----
+
+/**
+ * Configurações financeiras editáveis (Fase 5b).
+ *
+ * Cada card mostra a chave, a descrição, o valor atual formatado e um input
+ * inteiro para editar. "Salvar" manda POST /api/admin/settings/{key}; o backend
+ * valida a faixa (autoridade), audita (SETTING_CHANGED) e invalida o cache.
+ * A tela manda `previousValue` só como metadado de auditoria.
+ */
+function ConfiguracoesTab({ onMessage }: { onMessage: (m: string, e?: boolean) => void }) {
+  const [settings, setSettings] = useState<SettingRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api<{ settings: SettingRow[] }>("/api/admin/settings");
+      setSettings(data.settings);
+      setEdits({});
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "erro ao carregar configurações";
+      setError(msg);
+      onMessage(msg, true);
+    }
+  }, [onMessage]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <>
+      <section style={S.card}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+          <p style={{ margin: 0 }}>
+            <strong>Configurações financeiras</strong>
+          </p>
+          <button style={S.btnGhost} onClick={load}>
+            Atualizar
+          </button>
+        </div>
+        <p style={S.muted}>
+          Mudanças afetam apenas NOVAS operações: comissão já congelada em uma
+          contratação e cobranças já emitidas não mudam. O cache do servidor é
+          invalidado na hora; outras instâncias podem levar até 60s.
+        </p>
+        {error && <p style={S.err}>{error}</p>}
+      </section>
+
+      {settings === null ? (
+        <p>Carregando…</p>
+      ) : settings.length === 0 ? (
+        <p style={S.muted}>Nenhuma configuração cadastrada.</p>
+      ) : (
+        settings.map((s) => {
+          const range = SETTING_RANGES[s.key];
+          const editValue = edits[s.key] ?? s.value;
+          const parsed = Number.parseInt(editValue, 10);
+          const invalid =
+            !!range &&
+            (!Number.isInteger(parsed) || parsed < range.min || parsed > range.max);
+          const dirty = editValue !== s.value;
+
+          return (
+            <section key={s.key} style={S.card}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                <div>
+                  <strong>{SETTING_LABELS[s.key] ?? s.key}</strong>{" "}
+                  <code style={S.muted}>{s.key}</code>
+                  {s.description && <div style={S.muted}>{s.description}</div>}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 18 }}>{formatSettingValue(s.key, s.value)}</div>
+                  <div style={S.muted}>({s.value})</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                <input
+                  style={S.input}
+                  type="number"
+                  step={1}
+                  min={range?.min}
+                  max={range?.max}
+                  value={editValue}
+                  onChange={(e) => setEdits((cur) => ({ ...cur, [s.key]: e.target.value }))}
+                />
+                {range && (
+                  <span style={S.muted}>
+                    {range.min}–{range.max} {s.key.endsWith("_bps") ? "(bps)" : "(centavos)"}
+                  </span>
+                )}
+                <button
+                  style={invalid || !dirty ? S.btnGhost : S.btn}
+                  disabled={saving === s.key || invalid || !dirty}
+                  onClick={async () => {
+                    setSaving(s.key);
+                    try {
+                      const data = await api<{ setting: SettingRow }>(
+                        `/api/admin/settings/${encodeURIComponent(s.key)}`,
+                        {
+                          method: "POST",
+                          body: JSON.stringify({
+                            value: editValue,
+                            previousValue: s.value,
+                          }),
+                        }
+                      );
+                      onMessage(
+                        `${SETTING_LABELS[s.key] ?? s.key}: ${formatSettingValue(
+                          s.key,
+                          s.value
+                        )} → ${formatSettingValue(s.key, data.setting.value)}`
+                      );
+                      await load();
+                    } catch (err) {
+                      onMessage(err instanceof Error ? err.message : "erro ao salvar", true);
+                    } finally {
+                      setSaving(null);
+                    }
+                  }}
+                >
+                  {saving === s.key ? "Salvando…" : "Salvar"}
+                </button>
+                {invalid && range && (
+                  <span style={S.err}>
+                    valor deve ser inteiro entre {range.min} e {range.max}
+                  </span>
+                )}
+              </div>
+
+              <p style={{ ...S.muted, margin: "8px 0 0" }}>
+                Atualizado em {dt(s.updatedAt)}
+                {s.updatedById ? ` por ${s.updatedById}` : ""}
+              </p>
+            </section>
+          );
+        })
       )}
     </>
   );

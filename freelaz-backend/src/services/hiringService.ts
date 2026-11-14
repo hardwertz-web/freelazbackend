@@ -1,6 +1,6 @@
 import type { Hiring } from "@prisma/client";
 import type { Db } from "../lib/db";
-import { PLATFORM_COMMISSION_BPS, netCentsFor, estimateWithdrawalFeeCents } from "../lib/commission";
+import { netCentsFor, estimateWithdrawalFeeCents, getCommissionBps } from "../lib/commission";
 import { chatStatusForHiring, syncChatToHiringStatus } from "./chatService";
 import { refreshProfessionalReliability } from "./reliabilityService";
 
@@ -96,8 +96,13 @@ export async function createHiringForApplication(
 
   const grossValueCents = application.agreedValueCents ?? application.jobPosting.valueCents;
 
+  // Fase 5b: comissão vem da configuração editável (mesmo `db` da transação).
+  // O valor fica CONGELADO no Hiring logo abaixo — mudanças futuras na config
+  // não reescrevem contratações existentes.
+  const commissionBps = await getCommissionBps(db);
+
   // Etapa 7.3d - modelo de taxa (flag off por padrao = historico intocado).
-  //  LEGACY: profissional recebe o liquido (bruto - comissao de 10%).
+  //  LEGACY: profissional recebe o liquido (bruto - comissao).
   //  NEW:    profissional recebe 100% do bruto; a empresa paga tambem a
   //          comissao (serviceFee) e a taxa de saque estimada. O dinheiro
   //          fica em custodia na conta principal do Freelaz (sem split).
@@ -108,7 +113,7 @@ export async function createHiringForApplication(
   let totalChargedCents: number | null = null;
 
   if (taxModel === "NEW") {
-    serviceFeeCents = Math.round(grossValueCents * 0.1);
+    serviceFeeCents = Math.round((grossValueCents * commissionBps) / 10000);
     estimatedWithdrawalFeeCents = estimateWithdrawalFeeCents(grossValueCents);
     totalChargedCents = grossValueCents + serviceFeeCents + estimatedWithdrawalFeeCents;
     netValueCents = grossValueCents;
@@ -116,7 +121,7 @@ export async function createHiringForApplication(
       `[hiring] taxModel=NEW gross=${grossValueCents} fee=${serviceFeeCents} withdrawal=${estimatedWithdrawalFeeCents} total=${totalChargedCents}`
     );
   } else {
-    netValueCents = netCentsFor(grossValueCents);
+    netValueCents = netCentsFor(grossValueCents, commissionBps);
   }
 
   return db.hiring.create({
@@ -128,7 +133,7 @@ export async function createHiringForApplication(
       contractorId: application.jobPosting.contractorId,
       grossValueCents,
       netValueCents,
-      commissionBps: PLATFORM_COMMISSION_BPS,
+      commissionBps,
       taxModel,
       serviceFeeCents,
       estimatedWithdrawalFeeCents,

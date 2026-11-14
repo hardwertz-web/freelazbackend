@@ -873,6 +873,7 @@ enum AdminAuditAction {
   PAYOUT_BATCH_TRIGGERED
   ADJUSTMENT_CREATED
   RECONCILIATION_RUN
+  SETTING_CHANGED
 }
 
 model AdminAuditLog {
@@ -890,6 +891,20 @@ model AdminAuditLog {
   @@index([adminId, createdAt])
   @@index([action, createdAt])
   @@index([targetType, targetId])
+}
+
+/// Configuração financeira editável em runtime (Fase 5b).
+/// Chave-valor tipado, somente strings. `type` define como parsear.
+/// Mudanças afetam apenas NOVAS operações: o valor congelado em
+/// Hiring.commissionBps nunca é reescrito.
+model PlatformSetting {
+  key         String   @id
+  value       String
+  type        String   @default("int") // "int" | "string"
+  description String?
+  updatedById String? // id do admin que atualizou por último
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
 }
 
 // ==========================================================================

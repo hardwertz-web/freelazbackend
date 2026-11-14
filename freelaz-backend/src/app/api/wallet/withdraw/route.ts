@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, hasActiveRole } from "@/lib/auth";
 import { instantWithdrawalFeeCents } from "@/lib/fees";
+import { getWithdrawalFeeBps } from "@/lib/commission";
 import { releasePayout } from "@/services/payoutService";
 
 /**
@@ -52,7 +53,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Este repasse já foi solicitado" }, { status: 409 });
   }
 
-  const feeCents = instantWithdrawalFeeCents(hiring.netValueCents);
+  // Fase 5b: taxa do saque vem da configuração editável (bps sobre o líquido).
+  const feeBps = await getWithdrawalFeeBps();
+  const feeCents = instantWithdrawalFeeCents(hiring.netValueCents, feeBps);
 
   try {
     const payout = await releasePayout(hiring.id, { feeCents, reason: "saque_instantaneo" });
