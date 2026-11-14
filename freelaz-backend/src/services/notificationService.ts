@@ -10,6 +10,7 @@ import {
   counterProposalTemplate,
   openingCodeTemplate,
   proposalTemplate,
+  reportReceivedTemplate,
   type EmailContent,
 } from "../lib/emailTemplates";
 
@@ -19,6 +20,10 @@ import {
  * 4 eventos do MVP (decisão humana), canais ATIVOS: IN_APP + EMAIL.
  * WHATSAPP está MODELADO no enum mas sem provider — o dispatch o marca como
  * SKIPPED (nunca tenta enviar).
+ *
+ * Nota pós-4b: REPORT_RECEIVED entrou como 5º tipo (backlog). Ele usa o mesmo
+ * pipeline; a UI in-app do sino ainda é placeholder, então hoje o canal
+ * efetivo para o denunciado é o e-mail.
  *
  * Idempotência: toda emissão traz um `dedupeKey` (@unique em Notification).
  * Reemissão do mesmo evento devolve a notificação existente e **não**
@@ -114,8 +119,14 @@ function emailContentFor(
       return proposalTemplate({ jobTitle, contractorName });
     case NotificationType.COUNTER_PROPOSAL_RECEIVED:
       return counterProposalTemplate({ jobTitle, valueCents });
+    case NotificationType.REPORT_RECEIVED:
+      return reportReceivedTemplate({
+        categoryLabel:
+          typeof payload?.categoryLabel === "string" ? payload.categoryLabel : "Denúncia",
+        hiringTitle: typeof payload?.hiringTitle === "string" ? payload.hiringTitle : null,
+      });
     default:
-      // Fallback neutro — não deve acontecer com os 4 tipos modelados.
+      // Fallback neutro — não deve acontecer com os tipos modelados.
       return { subject: title, html: `<p>${title}</p>`, text: title };
   }
 }

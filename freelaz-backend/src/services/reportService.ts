@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { ReportCategory } from "@prisma/client";
+import { notifyAndDispatch } from "./notificationService";
 
 /**
  * Denúncia de comportamento — fila SEPARADA das disputas e PRIORITÁRIA para
@@ -14,6 +15,17 @@ import { ReportCategory } from "@prisma/client";
 
 const MAX_DESCRIPTION_LENGTH = 1000;
 const MAX_NOTE_LENGTH = 1000;
+
+/**
+ * Rótulos humanos por categoria. O corpo da notificação/e-mail não deve
+ * expor o token do enum ("NAO_COMPARECEU"), e a UI ainda não tem um mapa.
+ */
+const REPORT_CATEGORY_LABELS: Record<ReportCategory, string> = {
+  ABUSO: "Abuso",
+  FRAUDE: "Fraude",
+  NAO_COMPARECEU: "Não compareceu",
+  OUTRO: "Outro",
+};
 
 /**
  * Registra uma denúncia. Anti-spam: no máximo 5 denúncias por denunciante em
@@ -44,8 +56,15 @@ export async function createReport(params: {
   const reported = await prisma.user.findUnique({ where: { id: params.reportedId } });
   if (!reported) throw new Error("Usuário denunciado não encontrado");
 
+  // Guarda o jobTitle da validação para reaproveitar na notificação — uma única
+  // query de hiring por denúncia (o jobTitle não muda entre os dois pontos).
+  let hiringForNotification: { jobTitle: string } | null = null;
+
   if (params.hiringId) {
-    const hiring = await prisma.hiring.findUnique({ where: { id: params.hiringId } });
+    const hiring = await prisma.hiring.findUnique({
+      where: { id: params.hiringId },
+      select: { contractorId: true, professionalId: true, jobTitle: true },
+    });
     if (!hiring) throw new Error("Contratação não encontrada");
     const involvesReported =
       hiring.contractorId === params.reportedId || hiring.professionalId === params.reportedId;
@@ -54,6 +73,7 @@ export async function createReport(params: {
     if (!involvesReported || !involvesReporter) {
       throw new Error("A contratação precisa envolver quem denuncia e quem é denunciado");
     }
+    hiringForNotification = hiring;
   }
 
   // Anti-spam: máximo 5 denúncias por reporter em 24h.
@@ -86,7 +106,7 @@ export async function createReport(params: {
     );
   }
 
-  return prisma.report.create({
+  const report = await prisma.report.create({
     data: {
       reporterId: params.reporterId,
       reportedId: params.reportedId,
@@ -96,6 +116,42 @@ export async function createReport(params: {
       description,
     },
   });
+
+  // Backlog pós-4b: notifica o denunciado SEMPRE, exceto ABUSO (para não
+  // expor o denunciante a retaliação). Em ABUSO, só o admin vê a fila.
+  // notifyAndDispatch garante e-mail (a UI in-app do sino ainda não existe).
+  if (category !== "ABUSO") {
+    try {
+      // Contexto: o título da contratação já veio da validação acima.
+      const hiringTitle = hiringForNotification?.jobTitle ?? null;
+
+      const categoryLabel = REPORT_CATEGORY_LABELS[category];
+      await notifyAndDispatch({
+        userId: params.reportedId,
+        type: "REPORT_RECEIVED",
+        title: "Você recebeu uma denúncia no Freelaz",
+        body: `Categoria: ${categoryLabel}. ${
+          hiringTitle ? `Referente à contratação "${hiringTitle}". ` : ""
+        }Um administrador vai analisar em breve. Para se defender, contate freelaz.conecta@gmail.com.`,
+        payload: {
+          reportId: report.id,
+          category,
+          categoryLabel,
+          hiringId: params.hiringId ?? null,
+          hiringTitle,
+        },
+        dedupeKey: `report:${report.id}:received`,
+      });
+    } catch (err) {
+      // Notificação é observabilidade: falha não deve reverter a denúncia.
+      console.warn(
+        `[reportService] falha ao notificar denunciado (report ${report.id}):`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  return report;
 }
 
 /** Fila administrativa: ALTA primeiro; empate por ordem de chegada. */

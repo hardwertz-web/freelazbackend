@@ -1,7 +1,8 @@
 /**
  * Templates de e-mail — Etapa 7 (Fase B).
  *
- * HTML mínimo + texto plano para os 4 eventos do MVP. **Sem PII extra** além
+ * HTML mínimo + texto plano para os eventos do MVP (4 originais + denúncia
+ * recebida, backlog pós-4b). **Sem PII extra** além
  * do que já está na notificação (título, corpo, código de turno, nome da vaga,
  * valor proposto). Sem imagens, sem rastreamento, sem links externos.
  */
@@ -78,5 +79,24 @@ export function counterProposalTemplate(params: {
   return wrap("Nova contraproposta", [
     `Você recebeu uma contraproposta${valor} para a vaga "${params.jobTitle}".`,
     `Abra o Freelaz para responder.`,
+  ]);
+}
+
+/**
+ * Denúncia recebida (destinatário: o denunciado). Cumpre o direito de defesa
+ * antes de decisão administrativa, SEM identificar quem denunciou — só a
+ * categoria e o contexto (título da contratação, quando houver).
+ */
+export function reportReceivedTemplate(params: {
+  categoryLabel: string;
+  hiringTitle?: string | null;
+}): EmailContent {
+  const context = params.hiringTitle
+    ? `referente à contratação "${params.hiringTitle}"`
+    : "em um contexto recente";
+  return wrap("Você recebeu uma denúncia no Freelaz", [
+    `Foi registrada uma denúncia ${context} com a categoria: ${params.categoryLabel}.`,
+    "Um administrador vai analisar em breve.",
+    "Se você precisar se defender, responda este e-mail ou entre em contato pelo endereço freelaz.conecta@gmail.com.",
   ]);
 }

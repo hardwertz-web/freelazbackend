@@ -914,8 +914,10 @@ model PlatformSetting {
 // ==========================================================================
 // Etapa 7 (Fase B) — Notificações multi-canal
 //
-// 4 eventos do MVP (decisão humana): código de abertura gerado, código de
+// Eventos do MVP (decisão humana): código de abertura gerado, código de
 // fechamento gerado, proposta/convite recebido e contraproposta recebida.
+// REPORT_RECEIVED é o 5º valor, adicionado no backlog pós-4b: o denunciado é
+// avisado da denúncia (sem identificar o denunciante) para exercer defesa.
 // Canais ATIVOS hoje: IN_APP + EMAIL. WHATSAPP fica MODELADO (enum) mas sem
 // provider — o dispatch marca as entregas desse canal como SKIPPED.
 // ==========================================================================
@@ -925,6 +927,7 @@ enum NotificationType {
   CLOSING_CODE_GENERATED
   PROPOSAL_RECEIVED
   COUNTER_PROPOSAL_RECEIVED
+  REPORT_RECEIVED
 }
 
 enum NotificationChannel {
