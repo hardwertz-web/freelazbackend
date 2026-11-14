@@ -249,6 +249,9 @@ export async function applyCancellationPenalty(
         releasedAt: new Date(),
       },
     });
+    // Atualiza ratingAverage IMEDIATAMENTE — a penalidade é pública e deve
+    // refletir no perfil na hora, não só na próxima avaliação/release.
+    await recalculateRating(hiring.professionalId, db);
     return { applied: true, rating, reason: comment };
   } catch (err) {
     if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002") {
