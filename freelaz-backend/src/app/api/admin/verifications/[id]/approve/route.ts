@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkAdminAccess } from "@/lib/internalAuth";
+import { logAdminAction } from "@/services/adminAuditService";
 
 /**
  * POST /api/admin/verifications/[id]/approve
@@ -80,6 +81,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       { status: 409 }
     );
   }
+
+  await logAdminAction({
+    adminAccess: { userId: access.userId, via: access.via },
+    action: "VERIFICATION_APPROVED",
+    targetType: "IdentityVerification",
+    targetId: verification.id,
+    metadata: {
+      userId: verification.userId,
+      role: verification.role,
+      adminId,
+    },
+    request: req,
+  });
 
   return NextResponse.json({ approved: true, decidedById: adminId });
 }

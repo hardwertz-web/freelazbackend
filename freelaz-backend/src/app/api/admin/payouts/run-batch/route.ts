@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/internalAuth";
+import { logAdminAction } from "@/services/adminAuditService";
 import { processPendingPayouts } from "@/services/payoutService";
 
 /**
@@ -18,5 +19,19 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await processPendingPayouts();
+  await logAdminAction({
+    adminAccess: { userId: access.userId, via: access.via },
+    action: "PAYOUT_BATCH_TRIGGERED",
+    targetType: "Platform",
+    targetId: null,
+    metadata: {
+      eligible: result.eligible,
+      released: result.released.length,
+      failed: result.failed.length,
+      releasedHiringIds: result.released,
+      failedHiringIds: result.failed.map((f) => f.hiringId),
+    },
+    request: req,
+  });
   return NextResponse.json({ result });
 }

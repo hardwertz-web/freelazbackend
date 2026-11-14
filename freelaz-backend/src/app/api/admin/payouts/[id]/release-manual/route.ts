@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { checkAdminAccess } from "@/lib/internalAuth";
+import { logAdminAction } from "@/services/adminAuditService";
 import { releasePayoutManually } from "@/services/payoutService";
 
 /**
@@ -44,11 +46,37 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   try {
     await releasePayoutManually(params.id, adminId);
-    return NextResponse.json({ released: true });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "erro desconhecido" },
       { status: 422 }
     );
   }
+
+  // Pós-commit: falha aqui não pode transformar um repasse já confirmado em
+  // erro (o admin reenviaria achando que falhou). A auditoria engole o próprio
+  // erro; o unique read é só metadado.
+  try {
+    const payout = await prisma.payout.findUnique({
+      where: { hiringId: params.id },
+      select: { id: true, amountCents: true, status: true },
+    });
+    await logAdminAction({
+      adminAccess: { userId: access.userId, via: access.via },
+      action: "PAYOUT_RELEASED_MANUAL",
+      targetType: "Payout",
+      targetId: payout?.id ?? params.id,
+      metadata: {
+        hiringId: params.id,
+        amountCents: payout?.amountCents ?? null,
+        payoutStatus: payout?.status ?? null,
+        adminId,
+      },
+      request: req,
+    });
+  } catch (err) {
+    console.error("[admin] falha ao auditar release-manual:", err);
+  }
+
+  return NextResponse.json({ released: true });
 }

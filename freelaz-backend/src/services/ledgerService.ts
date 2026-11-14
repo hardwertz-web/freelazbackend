@@ -90,6 +90,41 @@ export async function recordPlatformRevenue(
 }
 
 /**
+ * AJUSTE manual — correção auditada de divergência de reconciliação.
+ * amountCents é SEMPRE positivo (nunca negativo). direction/reason carregam o
+ * contexto (release ao profissional vs refund à empresa) e vão na `reason`.
+ * createdBy é SEMPRE o id do admin — "system" é proibido aqui: sem revisão
+ * humana identificada, não existe ajuste.
+ *
+ * O AJUSTE NÃO entra em `computeRetainedBalance` (saldo operacional, usado
+ * para mover dinheiro). Ele só aparece em `computeAdjustedBalance`, que é
+ * contábil e serve à reconciliação/painel.
+ */
+export async function recordAdjustment(
+  hiringId: string,
+  amountCents: number,
+  reason: string,
+  createdBy: string,
+  db: Db = prisma
+) {
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    throw new Error("amountCents do AJUSTE deve ser inteiro positivo");
+  }
+  if (createdBy === "system" || !createdBy.trim()) {
+    throw new Error("AJUSTE exige admin identificado (createdBy não pode ser 'system')");
+  }
+  return db.ledgerEntry.create({
+    data: {
+      hiringId,
+      type: LedgerEntryType.AJUSTE,
+      amountCents,
+      reason,
+      createdBy,
+    },
+  });
+}
+
+/**
  * REGRA ÚNICA de saldo de um conjunto de lançamentos: RETENCAO soma,
  * LIBERACAO e REEMBOLSO subtraem, AJUSTE não entra automaticamente (exige
  * revisão humana) e RECEITA_PLATAFORMA também não (é receita da empresa no
@@ -114,6 +149,35 @@ export function computeRetainedBalance(
 export async function getRetainedBalance(hiringId: string, db: Db = prisma): Promise<number> {
   const entries = await db.ledgerEntry.findMany({ where: { hiringId } });
   return computeRetainedBalance(entries);
+}
+
+/**
+ * Saldo AJUSTADO = operacional - sum(AJUSTE). Uso EXCLUSIVO em
+ * reconciliação/dashboard (leitura contábil). NUNCA usar em fluxo que move
+ * dinheiro (disputeService, webhooks do Asaas) — esses usam
+ * `computeRetainedBalance`, o saldo operacional.
+ *
+ * A distinção existe porque o AJUSTE é uma correção de registro, não dinheiro
+ * novo na conta: se entrasse no saldo operacional, uma disputa futura
+ * devolveria/liberaria um valor que a plataforma nunca reteve de fato.
+ */
+export function computeAdjustedBalance(
+  entries: { type: string; amountCents: number }[]
+): number {
+  const operational = computeRetainedBalance(entries);
+  const adjustments = entries
+    .filter((entry) => entry.type === "AJUSTE")
+    .reduce((sum, entry) => sum + entry.amountCents, 0);
+  return operational - adjustments;
+}
+
+/** Saldo ajustado (operacional - AJUSTE) de uma contratação. Só leitura contábil. */
+export async function getAdjustedBalance(
+  hiringId: string,
+  db: Db = prisma
+): Promise<number> {
+  const entries = await db.ledgerEntry.findMany({ where: { hiringId } });
+  return computeAdjustedBalance(entries);
 }
 
 /** Soma de TODO saldo retido na plataforma — usado na reconciliação diária. */

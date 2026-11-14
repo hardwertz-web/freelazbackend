@@ -1,5 +1,9 @@
 import { prisma } from "../lib/prisma";
-import { computeRetainedBalance, getTotalRetainedOnPlatform } from "./ledgerService";
+import {
+  computeRetainedBalance,
+  computeAdjustedBalance,
+  getTotalRetainedOnPlatform,
+} from "./ledgerService";
 
 /**
  * Reconciliação diária — a rede de segurança do dinheiro (Governança
@@ -12,7 +16,8 @@ import { computeRetainedBalance, getTotalRetainedOnPlatform } from "./ledgerServ
  *  3. Payout CONCLUIDO tem lançamento de LIBERACAO de igual valor no ledger;
  *  4. pagamento confirmado (status além de AGUARDANDO_PAGAMENTO) tem
  *     RETENCAO igual ao valor bruto;
- *  5. Payout CONCLUIDO implica contratação LIBERADO.
+ *  5. Payout CONCLUIDO implica contratação LIBERADO;
+ *  6. nenhum saldo AJUSTADO (operacional - AJUSTE) negativo.
  *
  * A comparação com o extrato REAL do Asaas ainda não é possível sem
  * credencial/sandbox — fica marcada como `external.skipped`.
@@ -25,6 +30,8 @@ export type ReconciliationReport = {
   generatedAt: string;
   totals: {
     retainedCents: number;
+    adjustedCents: number;
+    pendingAdjustmentCents: number;
     hiringCount: number;
     payoutCount: number;
     releasedCount: number;
@@ -124,11 +131,34 @@ export async function runReconciliation(): Promise<ReconciliationReport> {
       : payoutConcluidoNaoLiberado.map((p) => p.id).join(", ")
   );
 
+  // Check 6 (Fase 5): o saldo AJUSTADO (operacional - AJUSTE) não pode ficar
+  // negativo. É o saldo contábil, distinto do operacional: um AJUSTE corrige
+  // registro e não pode "comer" mais do que o saldo que deveria existir.
+  // A rota de ajuste tem o mesmo guard (409) — este check pega dados legados
+  // ou inserção manual direto no ledger.
+  const negativeAdjusted = hirings
+    .map((h) => ({ id: h.id, balance: computeAdjustedBalance(h.ledgerEntries) }))
+    .filter((x) => x.balance < 0);
+  check(
+    "saldo_ajustado_nao_negativo",
+    negativeAdjusted.length === 0,
+    negativeAdjusted.length === 0
+      ? "nenhum saldo ajustado negativo (operacional - AJUSTE >= 0)"
+      : negativeAdjusted.map((x) => `${x.id} = ${x.balance}`).join(", ")
+  );
+
+  const adjustedCents = hirings.reduce(
+    (sum, h) => sum + computeAdjustedBalance(h.ledgerEntries),
+    0
+  );
+
   return {
     ok: discrepancies.length === 0,
     generatedAt: new Date().toISOString(),
     totals: {
       retainedCents,
+      adjustedCents,
+      pendingAdjustmentCents: retainedCents - adjustedCents,
       hiringCount: hirings.length,
       payoutCount: payouts.length,
       releasedCount: payouts.filter((p) => p.status === "CONCLUIDO").length,

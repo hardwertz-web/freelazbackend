@@ -28,6 +28,31 @@ const brl = (cents: number) =>
 const dt = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString("pt-BR") : "—";
 
+/**
+ * Espelho de leitura do ledger no cliente: saldo operacional (o que move
+ * dinheiro) e ajustado (operacional - AJUSTE, contábil). Espelha
+ * `computeRetainedBalance`/`computeAdjustedBalance` do backend — se divergir
+ * da reconciliação, o painel mostra X !== Y e libera o ajuste.
+ */
+const balancesOf = (entries: { type: string; amountCents: number }[]) => {
+  let operational = 0;
+  let adjustments = 0;
+  for (const entry of entries) {
+    if (entry.type === "RETENCAO") operational += entry.amountCents;
+    else if (entry.type === "LIBERACAO" || entry.type === "REEMBOLSO") operational -= entry.amountCents;
+    else if (entry.type === "AJUSTE") adjustments += entry.amountCents;
+  }
+  return { operational, adjusted: operational - adjustments };
+};
+
+const TABS = [
+  { key: "disputas", label: "Disputas" },
+  { key: "denuncias", label: "Denúncias" },
+  { key: "identidade", label: "Identidade" },
+  { key: "financeiro", label: "Financeiro" },
+  { key: "auditoria", label: "Auditoria" },
+] as const;
+
 type Me = { id: string; name: string; email: string };
 
 type DisputeRow = {
@@ -112,12 +137,32 @@ type ReconciliationPayload = {
   report: {
     ok: boolean;
     generatedAt: string;
-    totals: { retainedCents: number; hiringCount: number; payoutCount: number; releasedCount: number };
+    totals: {
+      retainedCents: number;
+      adjustedCents: number;
+      pendingAdjustmentCents: number;
+      hiringCount: number;
+      payoutCount: number;
+      releasedCount: number;
+    };
     checks: { name: string; passed: boolean; detail: string }[];
     discrepancies: string[];
   };
   failedPayouts: { id: string; hiringId: string; amountCents: number; failureReason: string | null; updatedAt: string }[];
   adjustments: { id: string; hiringId: string; amountCents: number; reason: string; createdBy: string; createdAt: string }[];
+};
+
+type AuditRow = {
+  id: string;
+  adminId: string;
+  adminVia: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  metadata: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
 };
 
 // ----- estilos (neutros; nada de identidade visual inventada) -----
@@ -154,7 +199,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export default function AdminPage() {
   const [phase, setPhase] = useState<"loading" | "login" | "denied" | "ready">("loading");
   const [me, setMe] = useState<Me | null>(null);
-  const [tab, setTab] = useState<"disputas" | "denuncias" | "identidade" | "financeiro">("disputas");
+  const [tab, setTab] = useState<"disputas" | "denuncias" | "identidade" | "financeiro" | "auditoria">("disputas");
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeError, setNoticeError] = useState(false);
 
@@ -214,9 +259,9 @@ export default function AdminPage() {
       </header>
 
       <nav style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {(["disputas", "denuncias", "identidade", "financeiro"] as const).map((t) => (
-          <button key={t} style={tab === t ? S.tabOn : S.tabOff} onClick={() => setTab(t)}>
-            {t === "disputas" ? "Disputas" : t === "denuncias" ? "Denúncias" : t === "identidade" ? "Identidade" : "Financeiro"}
+        {TABS.map((t) => (
+          <button key={t.key} style={tab === t.key ? S.tabOn : S.tabOff} onClick={() => setTab(t.key)}>
+            {t.label}
           </button>
         ))}
       </nav>
@@ -231,6 +276,7 @@ export default function AdminPage() {
       {tab === "denuncias" && <DenunciasTab onMessage={flash} />}
       {tab === "identidade" && <IdentidadeTab onMessage={flash} />}
       {tab === "financeiro" && <FinanceiroTab onMessage={flash} />}
+      {tab === "auditoria" && <AuditoriaTab onMessage={flash} />}
     </main>
   );
 }
@@ -655,6 +701,22 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
   const [statusFilter, setStatusFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Formulário de AJUSTE manual (correção de divergência de reconciliação).
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjHiringId, setAdjHiringId] = useState("");
+  const [adjDirection, setAdjDirection] = useState<"RELEASE_TO_PROFESSIONAL" | "REFUND_TO_COMPANY">(
+    "RELEASE_TO_PROFESSIONAL"
+  );
+  const [adjAmount, setAdjAmount] = useState("");
+  const [adjReason, setAdjReason] = useState("");
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjResult, setAdjResult] = useState<{
+    operationalBeforeCents: number;
+    operationalAfterCents: number;
+    adjustedBeforeCents: number;
+    adjustedAfterCents: number;
+  } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const q = statusFilter ? `?status=${encodeURIComponent(statusFilter.toUpperCase())}` : "";
@@ -759,6 +821,130 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
               AJUSTES manuais: {recon.adjustments.map((a) => `${a.hiringId} ${brl(a.amountCents)} por ${a.createdBy}`).join("; ")}
             </p>
           )}
+
+          <p style={{ margin: "0 0 6px" }}>
+            Saldo operacional: <strong>{brl(recon.report.totals.retainedCents)}</strong> (ledger)
+            <br />
+            Saldo ajustado: <strong>{brl(recon.report.totals.adjustedCents)}</strong> (com AJUSTE)
+            <br />
+            Pendente de reconciliação:{" "}
+            <strong>{brl(recon.report.totals.pendingAdjustmentCents)}</strong>
+          </p>
+
+          {(() => {
+            const canAdjust =
+              recon.report.totals.retainedCents !== recon.report.totals.adjustedCents ||
+              recon.report.discrepancies.length > 0;
+            return (
+              <>
+                <button
+                  style={canAdjust ? S.btn : S.btnGhost}
+                  disabled={!canAdjust}
+                  onClick={() => setAdjustOpen((v) => !v)}
+                  title={
+                    canAdjust
+                      ? "Registrar correção auditada no ledger"
+                      : "Sem divergência: operacional e ajustado batem"
+                  }
+                >
+                  {adjustOpen ? "Fechar ajuste" : "Criar ajuste"}
+                </button>
+
+                {adjustOpen && (
+                  <div style={{ ...S.card, marginTop: 8, background: "#fafafa" }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input
+                        style={S.input}
+                        placeholder="hiringId"
+                        value={adjHiringId}
+                        onChange={(e) => setAdjHiringId(e.target.value)}
+                      />
+                      <select
+                        style={S.input}
+                        value={adjDirection}
+                        onChange={(e) =>
+                          setAdjDirection(e.target.value as typeof adjDirection)
+                        }
+                      >
+                        <option value="RELEASE_TO_PROFESSIONAL">RELEASE_TO_PROFESSIONAL</option>
+                        <option value="REFUND_TO_COMPANY">REFUND_TO_COMPANY</option>
+                      </select>
+                      <input
+                        style={S.input}
+                        type="number"
+                        min={1}
+                        step={1}
+                        placeholder="amountCents"
+                        value={adjAmount}
+                        onChange={(e) => setAdjAmount(e.target.value)}
+                      />
+                    </div>
+                    <textarea
+                      style={{ ...S.input, width: "100%", marginTop: 8, minHeight: 60 }}
+                      placeholder="Motivo do ajuste (mín. 10 caracteres)"
+                      value={adjReason}
+                      onChange={(e) => setAdjReason(e.target.value)}
+                    />
+                    <p style={S.muted}>
+                      O valor é sempre positivo; a direção é metadado e compõe o
+                      motivo. Ambos reduzem o saldo ajustado. O ajuste exige
+                      admin identificado e entra na trilha de auditoria.
+                    </p>
+                    <button
+                      style={S.btn}
+                      disabled={adjusting}
+                      onClick={async () => {
+                        setAdjusting(true);
+                        try {
+                          const data = await api<{
+                            operationalBeforeCents: number;
+                            operationalAfterCents: number;
+                            adjustedBeforeCents: number;
+                            adjustedAfterCents: number;
+                          }>("/api/admin/ledger/adjust", {
+                            method: "POST",
+                            body: JSON.stringify({
+                              hiringId: adjHiringId.trim(),
+                              amountCents: Number(adjAmount),
+                              direction: adjDirection,
+                              reason: adjReason.trim(),
+                            }),
+                          });
+                          setAdjResult(data);
+                          onMessage(
+                            `Ajuste registrado. Operacional ${brl(data.operationalBeforeCents)} → ${brl(
+                              data.operationalAfterCents
+                            )} · ajustado ${brl(data.adjustedBeforeCents)} → ${brl(data.adjustedAfterCents)}`
+                          );
+                          setAdjHiringId("");
+                          setAdjAmount("");
+                          setAdjReason("");
+                          setAdjustOpen(false);
+                          const fresh = await api<ReconciliationPayload>("/api/admin/reconciliation");
+                          setRecon(fresh);
+                          load();
+                        } catch (err) {
+                          onMessage(err instanceof Error ? err.message : "erro ao criar ajuste", true);
+                        } finally {
+                          setAdjusting(false);
+                        }
+                      }}
+                    >
+                      {adjusting ? "Registrando…" : "Registrar ajuste"}
+                    </button>
+                    {adjResult && (
+                      <p style={S.ok}>
+                        Antes: operacional {brl(adjResult.operationalBeforeCents)} / ajustado{" "}
+                        {brl(adjResult.adjustedBeforeCents)} — depois: operacional{" "}
+                        {brl(adjResult.operationalAfterCents)} / ajustado{" "}
+                        {brl(adjResult.adjustedAfterCents)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </section>
       )}
 
@@ -772,6 +958,7 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
               <th style={S.th}>Vaga</th>
               <th style={S.th}>Status</th>
               <th style={S.th}>Bruto / Líq.</th>
+              <th style={S.th}>Saldo op. / aj.</th>
               <th style={S.th}>Papel</th>
               <th style={S.th}>Contratação</th>
               <th style={S.th}>Payout</th>
@@ -784,6 +971,18 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
                 <td style={S.td}>{h.status}</td>
                 <td style={S.td}>
                   {brl(h.grossValueCents)} / {brl(h.netValueCents)}
+                </td>
+                <td style={S.td}>
+                  {(() => {
+                    const b = balancesOf(h.ledgerEntries);
+                    return b.operational === b.adjusted ? (
+                      brl(b.operational)
+                    ) : (
+                      <>
+                        {brl(b.operational)} / <span style={S.err}>{brl(b.adjusted)}</span>
+                      </>
+                    );
+                  })()}
                 </td>
                 <td style={S.td}>
                   {h.contractor.name} ({h.contractor.documentMasked})
@@ -855,6 +1054,159 @@ function FinanceiroTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
                 <td style={S.td}>{brl(l.amountCents)}</td>
                 <td style={S.td}>{l.reason}</td>
                 <td style={S.td}>{l.createdBy}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}
+
+// ----- auditoria -----
+
+/**
+ * Trilha de auditoria administrativa (append-only). Só leitura: mostra quem
+ * (adminId + via) fez o quê (action), em qual alvo (targetType/targetId) e
+ * quando, com o `metadata` contextual colapsável (amountCents, before/after,
+ * motivo). Filtros ajudam a investigar um alvo específico (ex.: um hiringId).
+ */
+function AuditoriaTab({ onMessage }: { onMessage: (m: string, e?: boolean) => void }) {
+  const [rows, setRows] = useState<AuditRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [action, setAction] = useState("");
+  const [targetType, setTargetType] = useState("");
+  const [adminId, setAdminId] = useState("");
+  const [targetId, setTargetId] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams();
+      if (action.trim()) qs.set("action", action.trim().toUpperCase());
+      if (targetType.trim()) qs.set("targetType", targetType.trim());
+      if (adminId.trim()) qs.set("adminId", adminId.trim());
+      if (targetId.trim()) qs.set("targetId", targetId.trim());
+      qs.set("limit", "200");
+      const data = await api<{ entries: AuditRow[] }>(`/api/admin/audit?${qs.toString()}`);
+      setRows(data.entries);
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "erro ao carregar auditoria";
+      setError(msg);
+      onMessage(msg, true);
+    }
+  }, [action, targetType, adminId, targetId, onMessage]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <>
+      <section style={S.card}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select style={S.input} value={action} onChange={(e) => setAction(e.target.value)}>
+            <option value="">todas as ações</option>
+            <option value="DISPUTE_RESOLVED">DISPUTE_RESOLVED</option>
+            <option value="REPORT_RESOLVED">REPORT_RESOLVED</option>
+            <option value="VERIFICATION_APPROVED">VERIFICATION_APPROVED</option>
+            <option value="VERIFICATION_REJECTED">VERIFICATION_REJECTED</option>
+            <option value="PAYOUT_RELEASED_MANUAL">PAYOUT_RELEASED_MANUAL</option>
+            <option value="PAYOUT_BATCH_TRIGGERED">PAYOUT_BATCH_TRIGGERED</option>
+            <option value="ADJUSTMENT_CREATED">ADJUSTMENT_CREATED</option>
+            <option value="RECONCILIATION_RUN">RECONCILIATION_RUN</option>
+          </select>
+          <input
+            style={S.input}
+            placeholder="targetType (ex.: Hiring)"
+            value={targetType}
+            onChange={(e) => setTargetType(e.target.value)}
+          />
+          <input
+            style={S.input}
+            placeholder="adminId"
+            value={adminId}
+            onChange={(e) => setAdminId(e.target.value)}
+          />
+          <input
+            style={S.input}
+            placeholder="targetId (ex.: hiringId)"
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+          />
+          <button style={S.btnGhost} onClick={load}>
+            Atualizar
+          </button>
+        </div>
+        <p style={S.muted}>
+          Somente leitura. Quem age via <code>x-internal-secret</code> aparece como{" "}
+          <code>system</code> em <code>adminVia=secret</code>.
+        </p>
+        {error && <p style={S.err}>{error}</p>}
+      </section>
+
+      {rows === null ? (
+        <p>Carregando…</p>
+      ) : rows.length === 0 ? (
+        <p style={S.muted}>Nenhum registro de auditoria para os filtros atuais.</p>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={S.th}>Quando</th>
+              <th style={S.th}>Admin</th>
+              <th style={S.th}>Via</th>
+              <th style={S.th}>Ação</th>
+              <th style={S.th}>Alvo</th>
+              <th style={S.th}>Detalhes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td style={S.td}>{dt(r.createdAt)}</td>
+                <td style={S.td}>{r.adminId}</td>
+                <td style={S.td}>{r.adminVia}</td>
+                <td style={S.td}>{r.action}</td>
+                <td style={S.td}>
+                  {r.targetType}
+                  {r.targetId ? (
+                    <>
+                      <br />
+                      <span style={S.muted}>{r.targetId}</span>
+                    </>
+                  ) : null}
+                </td>
+                <td style={S.td}>
+                  {r.metadata ? (
+                    <>
+                      <button
+                        style={S.btnGhost}
+                        onClick={() => setExpanded((cur) => (cur === r.id ? null : r.id))}
+                      >
+                        {expanded === r.id ? "ocultar" : "ver"}
+                      </button>
+                      {expanded === r.id && (
+                        <pre
+                          style={{
+                            margin: "6px 0 0",
+                            padding: 8,
+                            background: "#f5f5f5",
+                            borderRadius: 6,
+                            fontSize: 12,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {JSON.stringify(r.metadata, null, 2)}
+                        </pre>
+                      )}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

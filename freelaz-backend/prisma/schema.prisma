@@ -857,6 +857,42 @@ model Report {
 }
 
 // ==========================================================================
+// Fase 5 — Auditoria administrativa
+// ==========================================================================
+
+/// Trilha de auditoria administrativa (Fase 5).
+/// Registra TODA ação sensível executada por admin/secret interno:
+/// decisões financeiras, mudanças de estado e ações de infraestrutura.
+/// Denormaliza adminId (String, não FK) para sobreviver à exclusão do User.
+enum AdminAuditAction {
+  DISPUTE_RESOLVED
+  REPORT_RESOLVED
+  VERIFICATION_APPROVED
+  VERIFICATION_REJECTED
+  PAYOUT_RELEASED_MANUAL
+  PAYOUT_BATCH_TRIGGERED
+  ADJUSTMENT_CREATED
+  RECONCILIATION_RUN
+}
+
+model AdminAuditLog {
+  id           String           @id @default(cuid())
+  adminId      String           // "system" quando via x-internal-secret (userId=null)
+  adminVia     String           // "session" | "secret"
+  action       AdminAuditAction
+  targetType   String           // "Hiring" | "Dispute" | "Report" | "Payout" | "IdentityVerification"
+  targetId     String?
+  metadata     Json?            // payload contextual (amountCents, reason, before/after)
+  ipAddress    String?          // opcional, via header x-forwarded-for
+  userAgent    String?          // opcional
+  createdAt    DateTime         @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+}
+
+// ==========================================================================
 // Etapa 7 (Fase B) — Notificações multi-canal
 //
 // 4 eventos do MVP (decisão humana): código de abertura gerado, código de

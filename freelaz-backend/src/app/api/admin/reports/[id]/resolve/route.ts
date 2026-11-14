@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/internalAuth";
+import { logAdminAction } from "@/services/adminAuditService";
 import { resolveReport } from "@/services/reportService";
 
 /**
@@ -38,6 +39,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       decidedById: adminId,
       outcome: body.outcome as "ACAO_TOMADA" | "ARQUIVADA",
       decisionNote: typeof body.decisionNote === "string" ? body.decisionNote : "",
+    });
+    await logAdminAction({
+      adminAccess: { userId: access.userId, via: access.via },
+      action: "REPORT_RESOLVED",
+      targetType: "Report",
+      targetId: report.id,
+      metadata: {
+        outcome: body.outcome,
+        decisionNote: typeof body.decisionNote === "string" ? body.decisionNote : "",
+        adminId,
+      },
+      request: req,
     });
     return NextResponse.json({ report });
   } catch (err) {

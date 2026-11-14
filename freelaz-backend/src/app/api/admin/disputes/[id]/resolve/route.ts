@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/internalAuth";
+import { logAdminAction } from "@/services/adminAuditService";
 import { resolveDispute, type ResolveDisputeParams } from "@/services/disputeService";
 
 /**
@@ -49,6 +50,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           ? body.splitPercentToProfessional
           : null,
       decisionNote: typeof body.decisionNote === "string" ? body.decisionNote : "",
+    });
+    await logAdminAction({
+      adminAccess: { userId: access.userId, via: access.via },
+      action: "DISPUTE_RESOLVED",
+      targetType: "Dispute",
+      targetId: params.id,
+      metadata: {
+        resolution: body.resolution,
+        splitPercentToProfessional:
+          typeof body.splitPercentToProfessional === "number"
+            ? body.splitPercentToProfessional
+            : null,
+        decisionNote: typeof body.decisionNote === "string" ? body.decisionNote : "",
+        adminId,
+        payoutId: result.payout?.id ?? null,
+      },
+      request: req,
     });
     return NextResponse.json({ dispute: result.dispute, payout: result.payout });
   } catch (err) {
