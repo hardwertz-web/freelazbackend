@@ -15,6 +15,10 @@ import { ReportCategory } from "@prisma/client";
 const MAX_DESCRIPTION_LENGTH = 1000;
 const MAX_NOTE_LENGTH = 1000;
 
+/**
+ * Registra uma denúncia. Anti-spam: no máximo 5 denúncias por denunciante em
+ * 24h, e o mesmo alvo+contexto não pode repetir dentro de 7 dias.
+ */
 export async function createReport(params: {
   reporterId: string;
   reportedId: string;
@@ -50,6 +54,36 @@ export async function createReport(params: {
     if (!involvesReported || !involvesReporter) {
       throw new Error("A contratação precisa envolver quem denuncia e quem é denunciado");
     }
+  }
+
+  // Anti-spam: máximo 5 denúncias por reporter em 24h.
+  // (Fila admin vira ruído se um único usuário floodar.)
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const recentCount = await prisma.report.count({
+    where: {
+      reporterId: params.reporterId,
+      createdAt: { gte: new Date(Date.now() - DAY_MS) },
+    },
+  });
+  if (recentCount >= 5) {
+    throw new Error("Limite de 5 denúncias por 24h atingido. Aguarde ou contate o suporte.");
+  }
+
+  // Anti-duplicidade: mesmo alvo + mesmo contexto nos últimos 7 dias.
+  const DUPLICATE_WINDOW_MS = 7 * DAY_MS;
+  const duplicate = await prisma.report.findFirst({
+    where: {
+      reporterId: params.reporterId,
+      reportedId: params.reportedId,
+      hiringId: params.hiringId ?? null,
+      createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+  if (duplicate) {
+    throw new Error(
+      "Você já denunciou este usuário por este contexto nos últimos 7 dias."
+    );
   }
 
   return prisma.report.create({
