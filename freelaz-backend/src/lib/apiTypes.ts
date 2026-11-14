@@ -232,6 +232,15 @@ export type HiringDetailResponse = {
       openedAt: string | null;
       closedAt: string | null;
     } | null;
+    /** Evidência de presença (null enquanto o profissional não fez check-in). */
+    checkIn: {
+      id: string;
+      latitude: number;
+      longitude: number;
+      accuracyMeters: number | null;
+      note: string | null;
+      recordedAt: string;
+    } | null;
   };
 };
 

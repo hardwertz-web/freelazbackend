@@ -9,6 +9,10 @@ import { prisma } from "../lib/prisma";
  * A vaga hoje não tem coordenadas/endereço, então NÃO há checagem de
  * distância até o local — o que fica registrado é a posição do profissional
  * na hora do início, com a precisão relatada pelo dispositivo.
+ *
+ * Janela de horário: o check-in só é aceito de 2h antes até 30min depois de
+ * `JobPosting.startsAt` (início do turno). Fora disso, o registro não provaria
+ * presença no turno e é recusado (VLAEG exige evidência temporal).
  */
 
 const EARTH_RADIUS_METERS = 6371000;
@@ -66,8 +70,31 @@ export async function createCheckIn(params: {
     );
   }
 
+  // Idempotência primeiro: se o check-in JÁ existe, devolvê-lo é sempre
+  // correto — a evidência foi registrada dentro da janela e uma chamada
+  // posterior (fora dela) não pode invalidar o fato.
   const existing = await prisma.checkIn.findUnique({ where: { hiringId } });
   if (existing) return { checkIn: existing, created: false };
+
+  const jobPosting = await prisma.jobPosting.findUnique({
+    where: { id: hiring.jobPostingId },
+    select: { startsAt: true },
+  });
+  if (!jobPosting) throw new Error("Vaga não encontrada");
+
+  // Janela de check-in: 2h antes do início até 30min depois.
+  // Fora disso, não prova presença no turno (VLAEG exige evidência temporal).
+  const WINDOW_BEFORE_MS = 2 * 60 * 60 * 1000;
+  const WINDOW_AFTER_MS = 30 * 60 * 1000;
+  const now = new Date();
+  const windowStart = new Date(jobPosting.startsAt.getTime() - WINDOW_BEFORE_MS);
+  const windowEnd = new Date(jobPosting.startsAt.getTime() + WINDOW_AFTER_MS);
+
+  if (now < windowStart || now > windowEnd) {
+    throw new Error(
+      `Check-in disponível de ${windowStart.toLocaleString("pt-BR")} a ${windowEnd.toLocaleString("pt-BR")} (2h antes a 30min depois do início do turno)`
+    );
+  }
 
   try {
     const checkIn = await prisma.checkIn.create({

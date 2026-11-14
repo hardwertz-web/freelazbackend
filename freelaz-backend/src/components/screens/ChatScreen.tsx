@@ -10,6 +10,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ChevronLeftIcon, SendIcon } from "@/components/Icons";
 import { ShiftCodeCard } from "@/components/ShiftCodeCard";
+import { CheckInCard } from "@/components/CheckInCard";
 import { EvaluationCard } from "@/components/EvaluationCard";
 import styles from "./ChatScreen.module.css";
 
@@ -250,6 +251,12 @@ export function ChatScreen({ hiringId }: { hiringId: string }) {
             void refresh();
           }}
         />
+      )}
+
+      {/* Check-in por geolocalização (Fase 4a): só o profissional vê o botão,
+          e só dentro da janela de 2h antes a 30min depois do início. */}
+      {hiring && (
+        <CheckInCard hiring={hiring} onCheckedIn={() => void refresh()} />
       )}
 
       {/* Avaliação cega (Fase 2.3b): só depois da conclusão. O próprio card
