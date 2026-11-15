@@ -1,0 +1,306 @@
+/* Backlog #3 — "Minhas vagas" (contratante).
+   Espelha o padrão de MessagesScreen (chipRow/head) e HomeScreen (cards de
+   vaga); tudo com os tokens de globals.css. */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 16px 16px 8px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.headTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.back {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--title);
+  box-shadow: var(--shadow-card);
+}
+
+.back:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.headText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  color: var(--title);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.publish {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 102, 255, 0.24);
+}
+
+.publish:hover {
+  background: var(--primary-dark);
+}
+
+/* Tabs pill — mesma estrutura de MessagesScreen.module.css `.chipRow`. */
+.chipRow {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+}
+
+/* Avisos de ação (erro/sucesso). */
+.banner {
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: #fef2f2;
+  border: 1px solid #fbd5d5;
+  color: var(--danger);
+}
+
+.bannerOk {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+  color: #047857;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.cardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  margin: 0;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--title);
+  overflow-wrap: anywhere;
+}
+
+/* Badge de status (pill) — paleta fixa por status, independente do tema. */
+.status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.statusAberta {
+  background: #eff6ff;
+  color: var(--primary);
+}
+
+.statusPreenchida {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.statusCancelada {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.statusExpirada {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.meta svg {
+  flex: none;
+  color: #8a94a6;
+}
+
+.priceRow {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.price {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--title);
+}
+
+.priceUnit {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.cardActions > * {
+  flex: 1 1 auto;
+}
+
+/* ---------------------------------------------------------------- *
+ * Estados (loading / empty / erro) — padrão HomeScreen
+ * ---------------------------------------------------------------- */
+
+.skeleton {
+  height: 158px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #f0f2f5 25%, #e7eaef 37%, #f0f2f5 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.2s ease infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 18px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+.emptyIcon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--selected);
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
+.emptyTitle {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--title);
+}
+
+.emptyText {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 280px;
+}
+
+.emptyCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  margin-top: 6px;
+  padding: 0 16px;
+  border-radius: var(--radius-btn);
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.emptyCta:hover {
+  background: var(--primary-dark);
+}

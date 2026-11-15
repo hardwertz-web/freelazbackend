@@ -19,6 +19,7 @@ import {
   BriefcaseIcon,
   CheckIcon,
   ChevronLeftIcon,
+  ChevronRightIcon,
   LogoutIcon,
   MapPinIcon,
   ShieldCheckIcon,
@@ -405,6 +406,31 @@ function SelfProfileScreen() {
             )}
           </section>
         </>
+      )}
+
+      {/* Backlog #3: atalho para a tela de gestão de vagas. Só para quem tem o
+          papel Contratante ATIVO (um usuário BOTH em modo Profissional também
+          gerencia as vagas que publicou). */}
+      {roles.some((r) => r.role === "CONTRATANTE" && r.status === "ATIVO") && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Minhas vagas</h2>
+          </div>
+          <Card>
+            <button
+              onClick={() => router.push("/minhas-vagas")}
+              className={styles.accountRow}
+              style={{ width: "100%", textAlign: "left", cursor: "pointer", background: "none", border: "none" }}
+            >
+              <span className={styles.accountLabel} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <BriefcaseIcon size={16} /> Minhas vagas
+              </span>
+              <span className={styles.accountValue} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                Gerenciar <ChevronRightIcon size={14} />
+              </span>
+            </button>
+          </Card>
+        </section>
       )}
 
       <section className={styles.section}>

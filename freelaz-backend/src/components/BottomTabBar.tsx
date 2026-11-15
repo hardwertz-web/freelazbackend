@@ -18,7 +18,7 @@ const TABS = [
   { href: "/profissionais", label: "Profissionais", Icon: UsersIcon, match: (path: string) => path.startsWith("/profissionais") || path.startsWith("/profissional/") },
   { href: "/mensagens", label: "Mensagens", Icon: ChatIcon, match: (path: string) => path.startsWith("/mensagens") },
   { href: "/carteira", label: "Carteira", Icon: WalletIcon, match: (path: string) => path.startsWith("/carteira") },
-  { href: "/perfil", label: "Perfil", Icon: UserIcon, match: (path: string) => path.startsWith("/perfil") },
+  { href: "/perfil", label: "Perfil", Icon: UserIcon, match: (path: string) => path.startsWith("/perfil") || path.startsWith("/minhas-vagas") },
 ] as const;
 
 export function BottomTabBar() {
