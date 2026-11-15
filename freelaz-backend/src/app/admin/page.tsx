@@ -185,6 +185,8 @@ type MetricsPayload = {
   cancelledCount: number;
   commissionRevenueCents: number;
   platformFeeRevenueCents: number;
+  serviceFeeRevenueCents: number;
+  withdrawalFeeRevenueCents: number;
   revenueCents: number;
   ticketMedioCents: number;
   jobPostingCount: number;
@@ -1758,7 +1760,9 @@ function MetricasTab({ onMessage }: { onMessage: (m: string, e?: boolean) => voi
             brl(metrics.revenueCents),
             `Comissão ${brl(metrics.commissionRevenueCents)} + Taxas ${brl(
               metrics.platformFeeRevenueCents
-            )}`
+            )} (serviço ${brl(metrics.serviceFeeRevenueCents)} / saque ${brl(
+              metrics.withdrawalFeeRevenueCents
+            )})`
           )}
           {kpi("Ticket médio", brl(metrics.ticketMedioCents))}
           {kpi(

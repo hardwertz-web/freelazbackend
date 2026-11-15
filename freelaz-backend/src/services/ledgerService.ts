@@ -72,6 +72,10 @@ export async function recordRefund(
  * Etapa 7.3d — receita da plataforma no modelo NEW: a comissão e a taxa de
  * saque estimada que a EMPRESA pagou a mais. Não é saldo retido (não entra em
  * `computeRetainedBalance`), por isso nunca é repassado ao profissional.
+ *
+ * @deprecated (backlog #2) — não usar em código novo.
+ * Modelo NEW agora emite SERVICE_FEE + WITHDRAWAL_FEE separados.
+ * Mantido para compatibilidade e para scripts legados.
  */
 export async function recordPlatformRevenue(
   hiringId: string,
@@ -84,6 +88,49 @@ export async function recordPlatformRevenue(
       type: LedgerEntryType.RECEITA_PLATAFORMA,
       amountCents,
       reason: "taxa_empresa_paga",
+      createdBy: "system",
+    },
+  });
+}
+
+/**
+ * Backlog #2 — comissão da plataforma no modelo NEW (empresa paga por cima).
+ * Separado de WITHDRAWAL_FEE para o painel Métricas distinguir "comissão de
+ * serviço" de "taxa de saque estimada".
+ */
+export async function recordServiceFee(
+  hiringId: string,
+  amountCents: number,
+  db: Db = prisma
+) {
+  return db.ledgerEntry.create({
+    data: {
+      hiringId,
+      type: LedgerEntryType.SERVICE_FEE,
+      amountCents,
+      reason: "service_fee_empresa_paga",
+      createdBy: "system",
+    },
+  });
+}
+
+/**
+ * Backlog #2 — taxa de saque estimada que a empresa paga a mais no modelo NEW.
+ * O valor real da taxa do saque só é conhecido no saque; esta é a estimativa
+ * do momento da cobrança. Diferenças são conciliadas em WITHDRAWAL_FEE real
+ * quando o saque acontece (fora do escopo deste backlog).
+ */
+export async function recordWithdrawalFee(
+  hiringId: string,
+  amountCents: number,
+  db: Db = prisma
+) {
+  return db.ledgerEntry.create({
+    data: {
+      hiringId,
+      type: LedgerEntryType.WITHDRAWAL_FEE,
+      amountCents,
+      reason: "withdrawal_fee_estimada",
       createdBy: "system",
     },
   });

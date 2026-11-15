@@ -492,7 +492,13 @@ enum LedgerEntryType {
   LIBERACAO // repasse liberado ao profissional
   REEMBOLSO // devolvido à empresa (cancelamento/disputa)
   AJUSTE // correção manual — exige revisão humana, nunca entra automático nos totais
-  RECEITA_PLATAFORMA // Etapa 7.3d: taxas do modelo empresa-paga (não é saldo retido)
+  /// @deprecated (backlog #2): substituído por SERVICE_FEE + WITHDRAWAL_FEE.
+  /// Mantido para leitura histórica. NÃO criar novas entries com este tipo.
+  RECEITA_PLATAFORMA
+  /// Backlog #2: comissão da plataforma no modelo NEW (empresa paga por cima).
+  SERVICE_FEE
+  /// Backlog #2: taxa de saque estimada que a empresa paga a mais no modelo NEW.
+  WITHDRAWAL_FEE
 }
 
 // Livro-razão interno: TODA movimentação de saldo retido passa por aqui.

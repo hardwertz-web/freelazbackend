@@ -10,7 +10,7 @@
 //                           ?4 (releasePayout paga o liquido),
 //                           ?5 (carteira disponivel = liquido)
 //   TAX_MODEL_PHASE=on  -> ?2 (NEW: net = bruto, taxas, cobranca = total),
-//                           ?3 (webhook NEW: RETENCAO + RECEITA_PLATAFORMA),
+//                           ?3 (webhook NEW: RETENCAO + SERVICE_FEE + WITHDRAWAL_FEE),
 //                           ?4 (releasePayout paga o bruto),
 //                           ?5 (carteira disponivel = bruto)
 //
@@ -413,7 +413,7 @@ async function phaseOn() {
   check(pay2?.value === 882, `cobranca NEW = total (R$ ${pay2?.value})`);
   check(pay2?.split === null, "sem split (subcontas off)");
 
-  section("?3. Webhook NEW -> RETENCAO + RECEITA_PLATAFORMA");
+  section("?3. Webhook NEW -> RETENCAO + SERVICE_FEE + WITHDRAWAL_FEE");
   const charged2 = await prisma.hiring.findUnique({ where: { id: h2.id } });
   if (!charged2?.providerPaymentId) throw new Error("providerPaymentId ausente na cobranca NEW");
   await mockSetPaymentStatus(charged2.providerPaymentId, "CONFIRMED");
@@ -436,11 +436,16 @@ async function phaseOn() {
     where: { hiringId: h2.id },
     orderBy: { type: "asc" },
   });
-  check(entries.length === 2, `lancamentos = 2 (${entries.length})`);
+  check(entries.length === 3, `lancamentos = 3 (${entries.length})`);
   const retention = entries.find((e) => e.type === "RETENCAO");
-  const revenue = entries.find((e) => e.type === "RECEITA_PLATAFORMA");
+  const serviceFee = entries.find((e) => e.type === "SERVICE_FEE");
+  const withdrawalFee = entries.find((e) => e.type === "WITHDRAWAL_FEE");
   check(retention?.amountCents === 80000, `RETENCAO = bruto (${retention?.amountCents})`);
-  check(revenue?.amountCents === 8200, `RECEITA_PLATAFORMA = taxas (${revenue?.amountCents})`);
+  check(serviceFee?.amountCents === 8000, `SERVICE_FEE = comissao (${serviceFee?.amountCents})`);
+  check(
+    withdrawalFee?.amountCents === 200,
+    `WITHDRAWAL_FEE = taxa de saque (${withdrawalFee?.amountCents})`
+  );
 
   section("?4. NEW: releasePayout transfere o bruto");
   await markConcluded(h2.id);

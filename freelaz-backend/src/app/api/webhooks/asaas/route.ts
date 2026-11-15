@@ -6,7 +6,13 @@ import {
   type AsaasPayment,
   type AsaasWebhookEvent,
 } from "@/lib/asaas";
-import { recordRetention, recordRefund, recordPlatformRevenue, getRetainedBalance } from "@/services/ledgerService";
+import {
+  recordRetention,
+  recordRefund,
+  recordServiceFee,
+  recordWithdrawalFee,
+  getRetainedBalance,
+} from "@/services/ledgerService";
 import { setHiringStatus, lockHiringForUpdate } from "@/services/hiringService";
 import {
   persistAsaasEvent,
@@ -285,13 +291,16 @@ async function routeEvent(
       });
       await setHiringStatus(tx, hiring.id, "RETIDO", { providerPaymentId: paymentId });
       await recordRetention(hiring.id, locked.grossValueCents, tx);
-      // Etapa 7.3d: no modelo NEW as taxas pagas pela empresa sao receita da
+      // Backlog #2: no modelo NEW as taxas pagas pela empresa sao receita da
       // plataforma. Nao entram no saldo retido (nunca vao para o profissional).
+      // Separadas em 2 lancamentos para o painel Metricas distinguir comissao
+      // de servico de taxa de saque estimada.
       if (locked.taxModel === "NEW") {
-        const platformRevenueCents =
-          (locked.serviceFeeCents ?? 0) + (locked.estimatedWithdrawalFeeCents ?? 0);
-        if (platformRevenueCents > 0) {
-          await recordPlatformRevenue(hiring.id, platformRevenueCents, tx);
+        if ((locked.serviceFeeCents ?? 0) > 0) {
+          await recordServiceFee(hiring.id, locked.serviceFeeCents!, tx);
+        }
+        if ((locked.estimatedWithdrawalFeeCents ?? 0) > 0) {
+          await recordWithdrawalFee(hiring.id, locked.estimatedWithdrawalFeeCents!, tx);
         }
       }
       return { ok: true as const, cbOutcome };

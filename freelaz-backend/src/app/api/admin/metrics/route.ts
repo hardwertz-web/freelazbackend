@@ -13,7 +13,11 @@ import { checkAdminAccess } from "@/lib/internalAuth";
  *   para o painel mostrar o que está "no forno" sem inflar o GMV)
  * - cancelledCount: hirings CANCELADO
  * - commissionRevenueCents: comissão LEGACY (gross - net) dos efetivados
- * - platformFeeRevenueCents: sum(RECEITA_PLATAFORMA) do ledger
+ * - platformFeeRevenueCents: sum(RECEITA_PLATAFORMA + SERVICE_FEE +
+ *   WITHDRAWAL_FEE) do ledger — soma dos 3 tipos, para não perder o histórico
+ *   anterior ao backlog #2
+ * - serviceFeeRevenueCents: sum(SERVICE_FEE) — só comissão de serviço NEW
+ * - withdrawalFeeRevenueCents: sum(WITHDRAWAL_FEE) — só taxa de saque estimada
  * - revenueCents: commissionRevenueCents + platformFeeRevenueCents
  * - ticketMedioCents: gmvCents / hiringCount
  */
@@ -46,6 +50,8 @@ export async function GET(req: NextRequest) {
     pendingPaymentCount,
     cancelledCount,
     platformFeeAgg,
+    serviceFeeAgg,
+    withdrawalFeeAgg,
     jobPostingCount,
   ] = await Promise.all([
     prisma.hiring.aggregate({
@@ -61,8 +67,21 @@ export async function GET(req: NextRequest) {
     prisma.hiring.count({
       where: { createdAt: range, status: "CANCELADO" },
     }),
+    // Backward-compat: soma os 3 tipos (RECEITA_PLATAFORMA histórica + os 2 novos)
     prisma.ledgerEntry.aggregate({
-      where: { type: "RECEITA_PLATAFORMA", createdAt: range },
+      where: {
+        type: { in: ["RECEITA_PLATAFORMA", "SERVICE_FEE", "WITHDRAWAL_FEE"] },
+        createdAt: range,
+      },
+      _sum: { amountCents: true },
+    }),
+    // Breakdown novo
+    prisma.ledgerEntry.aggregate({
+      where: { type: "SERVICE_FEE", createdAt: range },
+      _sum: { amountCents: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { type: "WITHDRAWAL_FEE", createdAt: range },
       _sum: { amountCents: true },
     }),
     prisma.jobPosting.count({
@@ -74,6 +93,8 @@ export async function GET(req: NextRequest) {
   const totalNet = activeAgg._sum.netValueCents ?? 0;
   const commissionRevenueCents = Math.max(0, gmvCents - totalNet);
   const platformFeeRevenueCents = platformFeeAgg._sum.amountCents ?? 0;
+  const serviceFeeRevenueCents = serviceFeeAgg._sum.amountCents ?? 0;
+  const withdrawalFeeRevenueCents = withdrawalFeeAgg._sum.amountCents ?? 0;
   const revenueCents = commissionRevenueCents + platformFeeRevenueCents;
   const ticketMedioCents = activeCount > 0 ? Math.round(gmvCents / activeCount) : 0;
 
@@ -85,6 +106,8 @@ export async function GET(req: NextRequest) {
     cancelledCount,
     commissionRevenueCents,
     platformFeeRevenueCents,
+    serviceFeeRevenueCents,
+    withdrawalFeeRevenueCents,
     revenueCents,
     ticketMedioCents,
     jobPostingCount,
