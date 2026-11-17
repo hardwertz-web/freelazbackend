@@ -13,6 +13,7 @@ import {
   recordWithdrawalFee,
   getRetainedBalance,
 } from "@/services/ledgerService";
+import { recordRefundCredit } from "@/services/companyWalletService";
 import { setHiringStatus, lockHiringForUpdate } from "@/services/hiringService";
 import {
   persistAsaasEvent,
@@ -360,6 +361,13 @@ async function routeEvent(
       if (!locked) return;
       if (refundCents > 0) {
         await recordRefund(hiring.id, refundCents, "estorno_externo_provedor", "system", tx);
+        await recordRefundCredit(
+          locked.contractorId,
+          hiring.id,
+          refundCents,
+          "estorno_externo_provedor",
+          tx
+        );
       }
       if (locked.status === "CONCLUIDO") {
         await setHiringStatus(tx, hiring.id, "EM_DISPUTA", { closeReason: "estorno_detectado" });

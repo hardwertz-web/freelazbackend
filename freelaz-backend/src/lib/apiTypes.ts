@@ -66,6 +66,21 @@ export type WalletResponse = {
   statement: StatementItem[];
 };
 
+/** GET /api/wallet/company — carteira interna da empresa (saldo = SUM do ledger). */
+export type CompanyWalletResponse = {
+  availableCents: number;
+  creditedCents: number;
+  debitedCents: number;
+  entries: Array<{
+    id: string;
+    type: "REFUND_CREDIT" | "HIRING_DEBIT" | "WITHDRAWAL_DEBIT" | "ADJUSTMENT";
+    amountCents: number;
+    reason: string;
+    createdAt: string;
+    hiring: { id: string; jobTitle: string } | null;
+  }>;
+};
+
 export type ActiveMode = "PROFISSIONAL" | "CONTRATANTE" | "BOTH";
 
 export type PublicUser = {

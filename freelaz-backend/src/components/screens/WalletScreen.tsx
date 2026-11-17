@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { apiGet, apiPost } from "@/lib/apiClient";
-import type { StatementItem, WalletResponse } from "@/lib/apiTypes";
+import { apiGet } from "@/lib/apiClient";
+import type { CompanyWalletResponse, StatementItem, WalletResponse } from "@/lib/apiTypes";
 import { formatBRL, formatDay, formatListTime } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -50,13 +49,10 @@ function payoutTone(status?: string): "success" | "primary" | "danger" | "neutra
  * desabilitadas, sem simular dinheiro.
  */
 export function WalletScreen({ user, activeMode = "PROFISSIONAL" }: WalletScreenProps) {
-  const router = useRouter();
   const [data, setData] = useState<WalletResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleBlocked, setRoleBlocked] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const [switchError, setSwitchError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (activeMode === "CONTRATANTE") {
@@ -81,40 +77,9 @@ export function WalletScreen({ user, activeMode = "PROFISSIONAL" }: WalletScreen
     void load();
   }, [load]);
 
-  async function switchToProfessional() {
-    setSwitching(true);
-    setSwitchError(null);
-    const res = await apiPost<{ activeMode?: string; error?: string }>("/api/auth/toggle-mode", {});
-    if (!res.ok) {
-      setSwitchError((res as any).error || "Não foi possível alterar o modo.");
-      setSwitching(false);
-      return;
-    }
-    router.refresh();
-    setSwitching(false);
-  }
-
+  // Carteira da empresa: saldo de reembolsos e extrato (Fase 1/2).
   if (activeMode === "CONTRATANTE") {
-    return (
-      <div className={styles.screen}>
-        <div className={styles.head}>
-          <h1 className={styles.title}>Carteira</h1>
-          <p className={styles.subtitle}>Seu saldo e movimentações.</p>
-        </div>
-        <Card>
-          <div className={styles.empty}>
-            <span className={styles.emptyTitle}>Modo Contratante ativo</span>
-            <span className={styles.emptyText}>
-              Ative o modo Profissional para ver sua carteira.
-            </span>
-            {switchError && <span className={styles.emptyText}>{switchError}</span>}
-            <Button size="sm" onClick={switchToProfessional} disabled={switching}>
-              {switching ? "Alterando..." : "Ativar modo Profissional"}
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
+    return <CompanyWalletView />;
   }
 
   if (loading) {
@@ -340,6 +305,146 @@ function StatementRow({ item }: { item: StatementItem }) {
         )}
         <span className={styles.statementMeta}>{formatListTime(item.date)}</span>
       </span>
+    </div>
+  );
+}
+
+const COMPANY_ENTRY_LABEL: Record<
+  CompanyWalletResponse["entries"][number]["type"],
+  string
+> = {
+  REFUND_CREDIT: "Reembolso",
+  HIRING_DEBIT: "Pagamento de vaga",
+  WITHDRAWAL_DEBIT: "Saque",
+  ADJUSTMENT: "Ajuste",
+};
+
+function isCompanyCredit(entry: CompanyWalletResponse["entries"][number]): boolean {
+  return entry.type === "REFUND_CREDIT" || (entry.type === "ADJUSTMENT" && entry.amountCents > 0);
+}
+
+/** Carteira da empresa (Fase 1/2): saldo de reembolsos + extrato. Sem ações de saque/depósito. */
+function CompanyWalletView() {
+  const [data, setData] = useState<CompanyWalletResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const result = await apiGet<CompanyWalletResponse>("/api/wallet/company?limit=50");
+    if (result.ok) {
+      setData(result.data);
+    } else {
+      setError(result.error);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.head}>
+          <h1 className={styles.title}>Carteira</h1>
+          <p className={styles.subtitle}>Seu saldo para contratações.</p>
+        </div>
+        <div className={styles.skeleton} />
+        <div className={styles.skeletonRow} />
+        <div className={styles.skeletonRow} />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.head}>
+          <h1 className={styles.title}>Carteira</h1>
+        </div>
+        <Card>
+          <div className={styles.empty}>
+            <span className={styles.emptyTitle}>Não foi possível carregar a carteira</span>
+            <span className={styles.emptyText}>{error ?? "Resposta inesperada do servidor"}</span>
+            <Button size="sm" onClick={() => void load()}>
+              Tentar de novo
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.screen}>
+      <div className={styles.head}>
+        <h1 className={styles.title}>Carteira</h1>
+        <p className={styles.subtitle}>Seu saldo para contratações.</p>
+      </div>
+
+      <section className={styles.balance}>
+        <div className={styles.balanceTop}>
+          <WalletIcon size={16} /> Saldo disponível
+        </div>
+        <div className={styles.balanceValue}>{formatBRL(data.availableCents)}</div>
+        <div className={styles.balanceMeta}>
+          Créditos {formatBRL(data.creditedCents)} · Débitos {formatBRL(data.debitedCents)}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHead}>
+          <h2 className={styles.sectionTitle}>Movimentações</h2>
+          <span className={styles.sectionHint}>{data.entries.length} lançamento(s)</span>
+        </div>
+
+        {data.entries.length === 0 ? (
+          <Card>
+            <div className={styles.empty}>
+              <span className={styles.emptyTitle}>Nenhuma movimentação ainda</span>
+              <span className={styles.emptyText}>
+                Quando uma contratação for cancelada, o reembolso aparece aqui como saldo.
+              </span>
+            </div>
+          </Card>
+        ) : (
+          <div className={styles.list}>
+            {data.entries.map((entry) => {
+              const credit = isCompanyCredit(entry);
+              return (
+                <div key={entry.id} className={styles.statementRow}>
+                  <span
+                    className={[styles.statementIcon, credit ? styles.credit : styles.debit].join(" ")}
+                  >
+                    {credit ? <ArrowDownLeftIcon size={16} /> : <BanknoteIcon size={16} />}
+                  </span>
+                  <span className={styles.statementBody}>
+                    <span className={styles.statementLabel}>{COMPANY_ENTRY_LABEL[entry.type]}</span>
+                    <span className={styles.statementMeta}>
+                      {formatListTime(entry.createdAt)}
+                      {entry.hiring?.jobTitle ? ` · ${entry.hiring.jobTitle}` : ""}
+                    </span>
+                    <span className={styles.statementMeta}>{entry.reason}</span>
+                  </span>
+                  <span className={styles.statementRight}>
+                    <span className={credit ? styles.amountIn : styles.amountOut}>
+                      {credit ? "+" : "−"} {formatBRL(Math.abs(entry.amountCents))}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <div className={styles.footerNote}>
+        O saldo será usado para pagar novas contratações na próxima etapa. O saque para sua conta
+        bancária estará disponível em breve.
+      </div>
     </div>
   );
 }

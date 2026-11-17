@@ -128,6 +128,7 @@ model User {
   reportsReceived       Report[]      @relation("ReportReported")
   notifications         Notification[]
   notificationPreferences NotificationPreference[]
+  companyWalletEntries  CompanyWalletEntry[] @relation("CompanyWalletContractor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -483,6 +484,7 @@ model Hiring {
   disputes      Dispute[]
   reports       Report[]
   chargebacks   ChargebackEvent[]
+  companyWalletEntries CompanyWalletEntry[]
 }
 
 // ---------- Financeiro ----------
@@ -514,6 +516,36 @@ model LedgerEntry {
   reason      String
   createdBy   String // "system" ou o id do admin que registrou um ajuste/decisão de disputa
   createdAt   DateTime        @default(now())
+}
+
+/// Carteira da empresa (Fase 1 — backlog carteira).
+/// Append-only, como o LedgerEntry. Saldo = SUM(amountCents com sinal).
+/// Diferente do LedgerEntry: hiringId é opcional, porque saque e ajuste
+/// não têm contratação vinculada.
+enum CompanyWalletEntryType {
+  REFUND_CREDIT       // reembolso por cancelamento/disputa
+  HIRING_DEBIT        // pagamento de contratação com saldo (Fase 3)
+  WITHDRAWAL_DEBIT    // saque para conta bancária (Fase 4)
+  ADJUSTMENT          // ajuste manual do admin
+}
+
+model CompanyWalletEntry {
+  id             String                    @id @default(cuid())
+  contractorId   String
+  contractor     User                      @relation("CompanyWalletContractor", fields: [contractorId], references: [id])
+  hiringId       String?
+  hiring         Hiring?                   @relation(fields: [hiringId], references: [id])
+  type           CompanyWalletEntryType
+  amountCents    Int
+  reason         String
+  createdBy      String                    // "system" ou id do admin
+  /// Para HIRING_DEBIT: garante 1 débito por contratação (idempotência a retry).
+  /// NULL para REFUND_CREDIT/WITHDRAWAL_DEBIT/ADJUSTMENT (múltiplas entradas OK).
+  idempotencyKey String?                   @unique
+  createdAt      DateTime                  @default(now())
+
+  @@index([contractorId, createdAt])
+  @@index([hiringId])
 }
 
 enum PayoutStatus {

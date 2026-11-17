@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { recordRefund, recordRelease } from "./ledgerService";
+import { recordRefundCredit } from "./companyWalletService";
 import { reopenJobPosting } from "./jobPostingService";
 import { setHiringStatus } from "./hiringService";
 import { hasActiveChargeback } from "./asaasEventService";
@@ -41,8 +42,10 @@ function calculateCancellationFee(
  * Hiring e registra os lançamentos no ledger (append-only):
  * - 100% multa (contratante <2h): LIBERACAO = gross, sem REEMBOLSO
  * - 30% multa: REEMBOLSO = gross-fee, LIBERACAO = fee
- * - 0%: REEMBOLSO = gross
+ * - 0%: REEMBOLSO = gross (+ estimatedWithdrawalFee no modelo NEW — Fase 2)
  * Usa LIBERACAO (reason "multa de cancelamento: <percent>%") para a multa — não AJUSTE.
+ * Fase 2: todo REEMBOLSO gera na MESMA transação um REFUND_CREDIT na carteira
+ * da empresa (append-only), para os dois caminhos não divergirem.
  *
  * Nota automática (cancelamento do profissional): aplicada APÓS a transação
  * (falha não reverte o cancelamento já persistido).
@@ -71,7 +74,12 @@ export async function cancelHiring(params: {
     origin,
     hoursUntilStart
   );
-  const refundCents = hiring.grossValueCents - feeCents;
+  // Fase 2: no modelo NEW, a estimativa de saque que a empresa pagou também
+  // é devolvida (o saque não vai acontecer). SERVICE_FEE fica como receita
+  // (matchmaking prestado, mesmo com cancelamento).
+  const extraRefundForNew =
+    hiring.taxModel === "NEW" ? (hiring.estimatedWithdrawalFeeCents ?? 0) : 0;
+  const refundCents = hiring.grossValueCents - feeCents + extraRefundForNew;
   const reasonNote = reason?.trim() ? reason.trim().slice(0, 500) : "Cancelamento";
 
   await prisma.$transaction(async (tx) => {
@@ -100,6 +108,13 @@ export async function cancelHiring(params: {
       );
     } else if (feePercent === 30) {
       await recordRefund(hiringId, refundCents, reasonNote, "system", tx);
+      await recordRefundCredit(
+        hiring.contractorId,
+        hiringId,
+        refundCents,
+        `cancelamento: ${reasonNote}`,
+        tx
+      );
       await recordRelease(
         hiringId,
         feeCents,
@@ -108,8 +123,15 @@ export async function cancelHiring(params: {
         tx
       );
     } else {
-      // 0%: reembolso integral (comportamento histórico)
-      await recordRefund(hiringId, hiring.grossValueCents, reasonNote, "system", tx);
+      // 0%: reembolso integral (+ estimativa de saque no modelo NEW)
+      await recordRefund(hiringId, refundCents, reasonNote, "system", tx);
+      await recordRefundCredit(
+        hiring.contractorId,
+        hiringId,
+        refundCents,
+        `cancelamento: ${reasonNote}`,
+        tx
+      );
     }
 
     await tx.application.update({

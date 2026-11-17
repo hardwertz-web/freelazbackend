@@ -1243,3 +1243,23 @@ modalidade.
 **Nao alterados:** checkout, codigo de turno, mensagens (so o card novo),
 carteira, contratacao, nenhum dado mock.
 
+---
+
+## Carteira da empresa — Fase 1 + Fase 2 (pendente de revisao)
+
+Migration `20261117193604_company_wallet_entries` aditiva (`CompanyWalletEntryType` +
+`CompanyWalletEntry`, 2 FKs, 3 indexes). Nenhuma coluna de saldo: saldo = SUM.
+
+**Retrofit historico — OBRIGATORIO, UMA UNICA VEZ, apos o deploy da Fase 2:**
+
+```powershell
+npx tsx scripts/retrofit-company-wallet.ts
+```
+
+- Credita na carteira todos os `LedgerEntry` do tipo `REEMBOLSO` que ainda nao
+  tem `CompanyWalletEntry` `REFUND_CREDIT` para o mesmo `hiringId`.
+- Idempotente: reexecutar apenas pula os ja creditados.
+- **NAO** colocar no build do Render (`package.json build`) — rodaria a cada
+  deploy e poderia duplicar credito em caso de reembolso parcial futuro.
+- `tsx` nao e dependencia do projeto; usar via `npx` no momento da execucao.
+
