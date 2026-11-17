@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireUser, hasActiveRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -21,6 +21,18 @@ export async function POST() {
     return NextResponse.json(
       { error: "Não é possível alternar o modo neste momento." },
       { status: 400 }
+    );
+  }
+
+  // Não permitir trocar para um modo cujo papel não está ATIVO.
+  // Sem isso, o banco fica com activeMode inválido (ex: PROFISSIONAL puro
+  // em modo CONTRATANTE) e a carteira renderiza a view errada.
+  if (!hasActiveRole(auth.user, next)) {
+    return NextResponse.json(
+      {
+        error: `Ative o papel ${next === "PROFISSIONAL" ? "Profissional" : "Contratante"} primeiro para alternar para esse modo.`,
+      },
+      { status: 403 }
     );
   }
 

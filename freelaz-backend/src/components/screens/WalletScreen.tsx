@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiGet } from "@/lib/apiClient";
 import type { CompanyWalletResponse, StatementItem, WalletResponse } from "@/lib/apiTypes";
 import { formatBRL, formatDay, formatListTime } from "@/lib/format";
@@ -25,6 +26,8 @@ type WalletScreenProps = {
     verificationStatus: string;
   };
   activeMode?: "PROFISSIONAL" | "CONTRATANTE" | "BOTH";
+  hasProfessionalRole?: boolean;
+  hasContractorRole?: boolean;
 };
 
 const PAYOUT_LABEL: Record<string, string> = {
@@ -48,7 +51,13 @@ function payoutTone(status?: string): "success" | "primary" | "danger" | "neutra
  * As ações rápidas (depositar/sacar/transferir) são Fase 2 — aparecem
  * desabilitadas, sem simular dinheiro.
  */
-export function WalletScreen({ user, activeMode = "PROFISSIONAL" }: WalletScreenProps) {
+export function WalletScreen({
+  user,
+  activeMode = "PROFISSIONAL",
+  hasProfessionalRole = false,
+  hasContractorRole = false,
+}: WalletScreenProps) {
+  const router = useRouter();
   const [data, setData] = useState<WalletResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +86,31 @@ export function WalletScreen({ user, activeMode = "PROFISSIONAL" }: WalletScreen
     void load();
   }, [load]);
 
+  // Guard: modo CONTRATANTE sem o papel ativo cai aqui (em vez de chamar
+  // /api/wallet/company e receber 403 genérico).
+  if (activeMode === "CONTRATANTE" && !hasContractorRole) {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.head}>
+          <h1 className={styles.title}>Carteira</h1>
+          <p className={styles.subtitle}>Seu saldo e movimentações.</p>
+        </div>
+        <Card>
+          <div className={styles.empty}>
+            <span className={styles.emptyTitle}>Papel Contratante não está ativo</span>
+            <span className={styles.emptyText}>
+              A carteira empresarial existe apenas para contas com o papel Contratante ativo.
+              Ative o papel para pagar e receber reembolsos.
+            </span>
+            <Button size="sm" onClick={() => router.push("/perfil")}>
+              Ir para o perfil
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   // Carteira da empresa: saldo de reembolsos e extrato (Fase 1/2).
   if (activeMode === "CONTRATANTE") {
     return <CompanyWalletView />;
@@ -100,7 +134,7 @@ export function WalletScreen({ user, activeMode = "PROFISSIONAL" }: WalletScreen
     );
   }
 
-  if (roleBlocked) {
+  if (roleBlocked || !hasProfessionalRole) {
     return (
       <div className={styles.screen}>
         <div className={styles.head}>
@@ -111,9 +145,12 @@ export function WalletScreen({ user, activeMode = "PROFISSIONAL" }: WalletScreen
           <div className={styles.empty}>
             <span className={styles.emptyTitle}>Papel Profissional não está ativo</span>
             <span className={styles.emptyText}>
-              A carteira existe apenas para contas com o papel Profissional ativo. Ative o
-              papel (verificação de documento) para receber pelos serviços.
+              A carteira existe apenas para contas com o papel Profissional ativo. Envie
+              seus documentos para ativar.
             </span>
+            <Button size="sm" onClick={() => router.push("/perfil/editar")}>
+              Enviar documentos
+            </Button>
           </div>
         </Card>
       </div>

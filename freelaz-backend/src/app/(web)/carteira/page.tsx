@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, hasActiveRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { WalletScreen } from "@/components/screens/WalletScreen";
@@ -20,6 +20,8 @@ export default async function CarteiraPage() {
         verificationStatus: profProfile?.verificationStatus ?? "NAO_VERIFICADO",
       }}
       activeMode={(user as any).activeMode ?? "PROFISSIONAL"}
+      hasProfessionalRole={hasActiveRole(user, "PROFISSIONAL")}
+      hasContractorRole={hasActiveRole(user, "CONTRATANTE")}
     />
   );
 }
