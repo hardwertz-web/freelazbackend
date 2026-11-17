@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireHiringParticipant } from "@/lib/hiringAccess";
 import { commissionCentsFor } from "@/lib/commission";
 import { evaluationDeadlineAt } from "@/services/evaluationService";
+import { getCompanyBalance } from "@/services/companyWalletService";
 
 /**
  * GET /api/hirings/:id — detalhe de uma contratação (só as partes).
@@ -61,6 +62,23 @@ export async function GET(
     ? evaluationDeadlineAt(hiring.closingCodeUsedAt).toISOString()
     : null;
 
+  // Fase 3 — checkout com saldo da carteira. Só a empresa contratante, enquanto
+  // a contratação aguarda pagamento, recebe os dados da carteira. No modelo NEW
+  // a empresa paga gross + fees, então o "valor total" não é o grossValueCents.
+  const chargeAmountCents =
+    hiring.taxModel === "NEW"
+      ? hiring.totalChargedCents ?? hiring.grossValueCents
+      : hiring.grossValueCents;
+  const canPayWithWallet =
+    side === "CONTRACTOR" && hiring.status === "AGUARDANDO_PAGAMENTO";
+  const companyBalanceCents = canPayWithWallet
+    ? await getCompanyBalance(hiring.contractorId)
+    : null;
+  const walletCoversFullAmount =
+    canPayWithWallet &&
+    companyBalanceCents !== null &&
+    companyBalanceCents >= chargeAmountCents;
+
   return NextResponse.json({
     hiring: {
       id: hiring.id,
@@ -69,6 +87,10 @@ export async function GET(
       side,
       grossValueCents: hiring.grossValueCents,
       netValueCents: hiring.netValueCents,
+      chargeAmountCents,
+      canPayWithWallet,
+      companyBalanceCents,
+      walletCoversFullAmount,
       commissionCents: commissionCentsFor(hiring.grossValueCents, hiring.commissionBps),
       commissionBps: hiring.commissionBps,
       createdAt: hiring.createdAt,

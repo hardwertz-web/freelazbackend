@@ -7,6 +7,7 @@ import {
   ensureAsaasCustomerForUser,
   ensureCharge,
 } from "@/services/chargeService";
+import { payHiringWithWallet } from "@/services/walletPaymentService";
 
 /**
  * POST /api/payments/create
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
   const user = auth.user;
 
   const body = await req.json();
-  const { hiringId } = body;
+  const { hiringId, useWallet } = body;
 
   if (!hiringId) {
     return NextResponse.json({ error: "hiringId é obrigatório" }, { status: 400 });
@@ -53,6 +54,39 @@ export async function POST(req: NextRequest) {
       { error: `Contratação não está aguardando pagamento (status atual: ${hiring.status})` },
       { status: 409 }
     );
+  }
+
+  // Fase 3 — pagamento com saldo interno. Antes do Asaas (inclusive da checagem
+  // de ASAAS_API_KEY): carteira não depende do provedor externo.
+  if (useWallet === true) {
+    const outcome = await payHiringWithWallet({
+      hiringId,
+      contractorId: user.id,
+    });
+    if (outcome.kind === "ok") {
+      return NextResponse.json({
+        paidWithWallet: true,
+        alreadyPaid: outcome.alreadyPaid,
+      });
+    }
+    if (outcome.kind === "insufficient") {
+      return NextResponse.json(
+        {
+          error: `Saldo insuficiente. Faltam R$ ${(outcome.missingCents / 100).toFixed(2)}.`,
+          availableCents: outcome.availableCents,
+          requiredCents: outcome.requiredCents,
+          missingCents: outcome.missingCents,
+        },
+        { status: 409 }
+      );
+    }
+    if (outcome.kind === "wrong_status") {
+      return NextResponse.json(
+        { error: `Contratação não está AGUARDANDO_PAGAMENTO (status: ${outcome.status})` },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: "Contratação não encontrada" }, { status: 404 });
   }
 
   if (!process.env.ASAAS_API_KEY) {
