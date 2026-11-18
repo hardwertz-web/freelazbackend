@@ -1,0 +1,40 @@
+/* Dimensões copiadas literalmente de .iconButton (ScreenHeader.module.css). */
+.bellButton {
+  position: relative;
+  box-sizing: border-box;
+  width: 34px;
+  height: 34px;
+  text-decoration: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.bellButton:hover {
+  opacity: 1;
+}
+
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--danger);
+  color: var(--surface);
+}

@@ -268,7 +268,15 @@ export async function listNotifications(
     where: { userId, ...(opts.unreadOnly ? { readAt: null } : {}) },
     orderBy: { createdAt: "desc" },
     take: opts.limit ?? 100,
-    include: { deliveries: true },
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      body: true,
+      payload: true,
+      readAt: true,
+      createdAt: true,
+    },
   });
   const unreadCount = await prisma.notification.count({
     where: { userId, readAt: null },

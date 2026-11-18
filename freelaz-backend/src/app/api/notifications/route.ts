@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { mapNotification } from "@/lib/notificationView";
 import { listNotifications } from "@/services/notificationService";
 
 /**
@@ -15,6 +16,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const unreadOnly = searchParams.get("unreadOnly") === "1";
 
-  const result = await listNotifications(auth.user.id, { unreadOnly });
-  return NextResponse.json(result);
+  const rawLimit = searchParams.get("limit");
+  const parsedLimit = rawLimit ? Number(rawLimit) : NaN;
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.min(100, Math.max(1, Math.floor(parsedLimit)))
+    : undefined;
+
+  const result = await listNotifications(auth.user.id, { unreadOnly, limit });
+  return NextResponse.json({
+    notifications: result.notifications.map(mapNotification),
+    unreadCount: result.unreadCount,
+  });
 }
