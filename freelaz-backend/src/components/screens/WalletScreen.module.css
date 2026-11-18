@@ -99,6 +99,11 @@
   padding: 8px 12px;
 }
 
+.balanceButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -376,4 +381,119 @@
   font-size: 11.5px;
   line-height: 1.45;
   background: var(--surface);
+}
+
+/* Saque via Pix (Fase 4) — bottom sheet no mobile, centralizado no desktop. */
+.withdrawModal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(11, 31, 68, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.withdrawForm {
+  width: 100%;
+  max-width: var(--maxw);
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 -12px 40px rgba(11, 31, 68, 0.22);
+}
+
+@media (min-width: 520px) {
+  .withdrawModal {
+    align-items: center;
+    padding: 20px;
+  }
+
+  .withdrawForm {
+    border-radius: 20px;
+  }
+}
+
+.modalTitle {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--title);
+}
+
+.modalText {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.withdrawFields {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.withdrawError {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.withdrawField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.withdrawLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--title);
+}
+
+.withdrawInput {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--title);
+  font-size: 13px;
+  padding: 10px 12px;
+  font-family: inherit;
+}
+
+.withdrawInput:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.12);
+}
+
+.withdrawHint {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.withdrawPreview {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--selected);
+  color: var(--title);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.withdrawActions {
+  display: flex;
+  gap: 9px;
+}
+
+.withdrawActions > * {
+  flex: 1;
 }

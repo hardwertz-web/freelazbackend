@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiGet } from "@/lib/apiClient";
-import type { CompanyWalletResponse, StatementItem, WalletResponse } from "@/lib/apiTypes";
+import { apiGet, apiPost } from "@/lib/apiClient";
+import type {
+  CompanyWalletResponse,
+  CompanyWithdrawalRow,
+  StatementItem,
+  WalletResponse,
+} from "@/lib/apiTypes";
 import { formatBRL, formatDay, formatListTime } from "@/lib/format";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -30,12 +35,26 @@ type WalletScreenProps = {
   hasContractorRole?: boolean;
 };
 
+const MIN_WITHDRAWAL_CENTS = 2000; // R$ 20,00
+
 const PAYOUT_LABEL: Record<string, string> = {
   PENDENTE: "Pendente",
   PROCESSANDO: "Em processamento",
   CONCLUIDO: "Concluído",
   FALHOU: "Falhou",
 };
+
+const WITHDRAWAL_LABEL: Record<CompanyWithdrawalRow["status"], string> = {
+  PROCESSING: "Em processamento",
+  COMPLETED: "Concluído",
+  FAILED: "Falhou",
+};
+
+function withdrawalTone(status: CompanyWithdrawalRow["status"]): "success" | "primary" | "danger" {
+  if (status === "COMPLETED") return "success";
+  if (status === "FAILED") return "danger";
+  return "primary";
+}
 
 function payoutTone(status?: string): "success" | "primary" | "danger" | "neutral" {
   if (status === "CONCLUIDO") return "success";
@@ -360,11 +379,16 @@ function isCompanyCredit(entry: CompanyWalletResponse["entries"][number]): boole
   return entry.type === "REFUND_CREDIT" || (entry.type === "ADJUSTMENT" && entry.amountCents > 0);
 }
 
-/** Carteira da empresa (Fase 1/2): saldo de reembolsos + extrato. Sem ações de saque/depósito. */
+/** Carteira da empresa: saldo de reembolsos, extrato e saque via Pix (Fase 4). */
 function CompanyWalletView() {
   const [data, setData] = useState<CompanyWalletResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawPixKey, setWithdrawPixKey] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -381,6 +405,30 @@ function CompanyWalletView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleWithdraw(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amountReais = Number(withdrawAmount.replace(",", "."));
+    const amountCents = Math.round(amountReais * 100);
+    if (withdrawing || !Number.isInteger(amountCents) || amountCents < MIN_WITHDRAWAL_CENTS) {
+      return;
+    }
+    setWithdrawing(true);
+    setWithdrawError(null);
+    const result = await apiPost<{ withdrawalId: string; providerTransferId: string | null }>(
+      "/api/wallet/company/withdraw",
+      { amountCents, pixKey: withdrawPixKey }
+    );
+    if (result.ok) {
+      setShowWithdrawModal(false);
+      setWithdrawAmount("");
+      setWithdrawPixKey("");
+      await load();
+    } else {
+      setWithdrawError(result.error);
+    }
+    setWithdrawing(false);
+  }
 
   if (loading) {
     return (
@@ -430,6 +478,21 @@ function CompanyWalletView() {
         <div className={styles.balanceMeta}>
           Créditos {formatBRL(data.creditedCents)} · Débitos {formatBRL(data.debitedCents)}
         </div>
+        <button
+          type="button"
+          className={styles.balanceButton}
+          onClick={() => {
+            setWithdrawError(null);
+            setShowWithdrawModal(true);
+          }}
+          disabled={data.availableCents < MIN_WITHDRAWAL_CENTS}
+          title={data.availableCents < MIN_WITHDRAWAL_CENTS ? "Mínimo R$ 20,00" : "Sacar via Pix"}
+        >
+          <ArrowUpRightIcon size={13} /> Sacar
+        </button>
+        {data.availableCents < MIN_WITHDRAWAL_CENTS && (
+          <div className={styles.balanceMeta}>Mínimo R$ 20,00 para sacar</div>
+        )}
       </section>
 
       <section className={styles.section}>
@@ -478,10 +541,125 @@ function CompanyWalletView() {
         )}
       </section>
 
+      {(data.withdrawals?.length ?? 0) > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Saques</h2>
+            <span className={styles.sectionHint}>{data.withdrawals?.length} saque(s)</span>
+          </div>
+          <div className={styles.list}>
+            {data.withdrawals?.map((withdrawal) => (
+              <div key={withdrawal.id} className={styles.statementRow}>
+                <span className={[styles.statementIcon, styles.debit].join(" ")}>
+                  <ArrowUpRightIcon size={16} />
+                </span>
+                <span className={styles.statementBody}>
+                  <span className={styles.statementLabel}>{formatBRL(withdrawal.amountCents)}</span>
+                  <span className={styles.statementMeta}>{withdrawal.pixKey}</span>
+                  {withdrawal.failureReason && (
+                    <span className={styles.statementMeta}>{withdrawal.failureReason}</span>
+                  )}
+                </span>
+                <span className={styles.statementRight}>
+                  <Badge tone={withdrawalTone(withdrawal.status)}>
+                    {WITHDRAWAL_LABEL[withdrawal.status]}
+                  </Badge>
+                  <span className={styles.statementMeta}>{formatListTime(withdrawal.createdAt)}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className={styles.footerNote}>
-        O saldo será usado para pagar novas contratações na próxima etapa. O saque para sua conta
-        bancária estará disponível em breve.
+        O saldo pode ser usado para pagar novas contratações ou sacado via Pix para a chave
+        informada. Saques abaixo de R$ 20,00 não são permitidos.
       </div>
+
+      {showWithdrawModal && (
+        <div
+          className={styles.withdrawModal}
+          role="presentation"
+          onMouseDown={() => !withdrawing && setShowWithdrawModal(false)}
+        >
+          <div
+            className={styles.withdrawForm}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="withdraw-modal-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="withdraw-modal-title" className={styles.modalTitle}>
+              Sacar via Pix
+            </h2>
+            <p className={styles.modalText}>
+              Sem taxa de saque nesta etapa: o valor debitado é o valor que você recebe.
+            </p>
+
+            <form className={styles.withdrawFields} onSubmit={handleWithdraw}>
+              {withdrawError && (
+                <div className={styles.withdrawError} role="alert">
+                  {withdrawError}
+                </div>
+              )}
+              <label className={styles.withdrawField}>
+                <span className={styles.withdrawLabel}>Valor do saque (R$)</span>
+                <input
+                  className={styles.withdrawInput}
+                  type="number"
+                  min={20}
+                  step="0.01"
+                  value={withdrawAmount}
+                  onChange={(event) => setWithdrawAmount(event.target.value)}
+                  placeholder="20,00"
+                  autoFocus
+                  required
+                />
+                <span className={styles.withdrawHint}>
+                  Mínimo R$ 20,00 · Disponível {formatBRL(data.availableCents)}
+                </span>
+              </label>
+              <label className={styles.withdrawField}>
+                <span className={styles.withdrawLabel}>Chave Pix</span>
+                <input
+                  className={styles.withdrawInput}
+                  type="text"
+                  value={withdrawPixKey}
+                  onChange={(event) => setWithdrawPixKey(event.target.value)}
+                  placeholder="CPF/CNPJ, e-mail, telefone ou chave aleatória"
+                  required
+                />
+              </label>
+              <div className={styles.withdrawPreview}>
+                Você recebe: {formatBRL(Math.round(Number(withdrawAmount.replace(",", ".")) * 100) || 0)}
+              </div>
+              <div className={styles.withdrawActions}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setShowWithdrawModal(false)}
+                  disabled={withdrawing}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    withdrawing ||
+                    !Number.isFinite(Number(withdrawAmount.replace(",", "."))) ||
+                    Math.round(Number(withdrawAmount.replace(",", ".")) * 100) < MIN_WITHDRAWAL_CENTS ||
+                    Math.round(Number(withdrawAmount.replace(",", ".")) * 100) > data.availableCents ||
+                    withdrawPixKey.trim().length < 5
+                  }
+                >
+                  {withdrawing ? "Sacando..." : "Confirmar saque"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

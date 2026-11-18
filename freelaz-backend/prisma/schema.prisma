@@ -129,6 +129,7 @@ model User {
   notifications         Notification[]
   notificationPreferences NotificationPreference[]
   companyWalletEntries  CompanyWalletEntry[] @relation("CompanyWalletContractor")
+  companyWithdrawals    CompanyWithdrawal[]  @relation("CompanyWithdrawalContractor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -546,6 +547,33 @@ model CompanyWalletEntry {
 
   @@index([contractorId, createdAt])
   @@index([hiringId])
+}
+
+enum CompanyWithdrawalStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Saque da carteira da empresa via Pix (Fase 4).
+/// Registro de auditoria + idempotência. A transferência real é feita pelo
+/// asaas.transferPix via pixProvider. Se falhar, um ADJUSTMENT positivo
+/// devolve o valor para a carteira.
+model CompanyWithdrawal {
+  id                 String                  @id @default(cuid())
+  contractorId       String
+  contractor         User                    @relation("CompanyWithdrawalContractor", fields: [contractorId], references: [id])
+  amountCents        Int
+  pixKey             String
+  status             CompanyWithdrawalStatus @default(PROCESSING)
+  providerTransferId String?                 @unique
+  failureReason      String?
+  idempotencyKey     String                  @unique
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@index([contractorId, createdAt])
+  @@index([contractorId, status])
 }
 
 enum PayoutStatus {

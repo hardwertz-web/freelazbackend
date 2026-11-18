@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, hasActiveRole } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getCompanyStatement } from "@/services/companyWalletService";
 
 /**
@@ -17,11 +18,20 @@ export async function GET(req: NextRequest) {
   const rawLimit = Number(url.searchParams.get("limit") ?? "30");
   const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 30;
 
-  const result = await getCompanyStatement(auth.user.id, limit);
+  const [statement, withdrawals] = await Promise.all([
+    getCompanyStatement(auth.user.id, limit),
+    prisma.companyWithdrawal.findMany({
+      where: { contractorId: auth.user.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
+
   return NextResponse.json({
-    availableCents: result.availableCents,
-    creditedCents: result.creditedCents,
-    debitedCents: result.debitedCents,
-    entries: result.entries,
+    availableCents: statement.availableCents,
+    creditedCents: statement.creditedCents,
+    debitedCents: statement.debitedCents,
+    entries: statement.entries,
+    withdrawals,
   });
 }

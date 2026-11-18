@@ -66,6 +66,16 @@ export type WalletResponse = {
   statement: StatementItem[];
 };
 
+/** Saque da carteira da empresa via Pix (Fase 4). */
+export type CompanyWithdrawalRow = {
+  id: string;
+  amountCents: number;
+  pixKey: string;
+  status: "PROCESSING" | "COMPLETED" | "FAILED";
+  failureReason: string | null;
+  createdAt: string;
+};
+
 /** GET /api/wallet/company — carteira interna da empresa (saldo = SUM do ledger). */
 export type CompanyWalletResponse = {
   availableCents: number;
@@ -79,6 +89,7 @@ export type CompanyWalletResponse = {
     createdAt: string;
     hiring: { id: string; jobTitle: string } | null;
   }>;
+  withdrawals?: CompanyWithdrawalRow[];
 };
 
 export type ActiveMode = "PROFISSIONAL" | "CONTRATANTE" | "BOTH";
