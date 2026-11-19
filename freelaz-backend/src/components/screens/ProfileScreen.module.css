@@ -461,3 +461,7 @@
   outline: 2px solid var(--selected);
   outline-offset: 2px;
 }
+
+.papeisAnchor {
+  scroll-margin-top: 80px;
+}

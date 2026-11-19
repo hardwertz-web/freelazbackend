@@ -72,7 +72,12 @@ export default function CadastroPage() {
     });
 
     if (result.ok) {
-      router.replace("/");
+      const next = result.data.nextStep;
+      if (next === "VERIFICACAO_PROFISSIONAL") {
+        router.replace("/perfil#papeis");
+      } else {
+        router.replace("/");
+      }
       router.refresh();
       return;
     }

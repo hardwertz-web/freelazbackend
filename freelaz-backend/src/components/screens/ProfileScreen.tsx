@@ -163,20 +163,40 @@ function SelfProfileScreen() {
 
   const { user, roles } = me;
 
-  function getProfessionalRoleState():
-    | "no-role"
-    | "needs-verification-cpf"
-    | "needs-verification-cnpj"
-    | "in-analysis"
-    | "active" {
+  function getRoleStates(): {
+    professional:
+      | "no-role"
+      | "needs-verification-cpf"
+      | "needs-verification-cnpj"
+      | "in-analysis"
+      | "active";
+    contractor: "no-role" | "active";
+  } {
     const prof = roles.find((r) => r.role === "PROFISSIONAL");
-    if (!prof) return "no-role";
-    if (prof.status === "ATIVO") return "active";
-    const verificationStatus = (me?.professionalProfile as
-      { verificationStatus?: string } | undefined)?.verificationStatus;
-    if (verificationStatus === "EM_ANALISE") return "in-analysis";
-    if (me?.user.documentType === "CPF") return "needs-verification-cpf";
-    return "needs-verification-cnpj";
+    let professional:
+      | "no-role"
+      | "needs-verification-cpf"
+      | "needs-verification-cnpj"
+      | "in-analysis"
+      | "active" = "no-role";
+    if (!prof) {
+      professional = "no-role";
+    } else if (prof.status === "ATIVO") {
+      professional = "active";
+    } else {
+      const verificationStatus = (me?.professionalProfile as
+        { verificationStatus?: string } | undefined)?.verificationStatus;
+      if (verificationStatus === "EM_ANALISE") professional = "in-analysis";
+      else if (me?.user.documentType === "CPF")
+        professional = "needs-verification-cpf";
+      else professional = "needs-verification-cnpj";
+    }
+
+    const cont = roles.find((r) => r.role === "CONTRATANTE");
+    const contractor =
+      !cont || cont.status !== "ATIVO" ? "no-role" : "active";
+
+    return { professional, contractor };
   }
 
   async function refreshMe() {
@@ -189,6 +209,18 @@ function SelfProfileScreen() {
     setRoleActionPending(true);
     try {
       const res = await apiPost("/api/auth/roles", { role: "PROFISSIONAL" });
+      if (!res.ok) { setRoleActionError(res.error); return; }
+      await refreshMe();
+    } finally {
+      setRoleActionPending(false);
+    }
+  }
+
+  async function handleActivateContractor() {
+    setRoleActionError(null);
+    setRoleActionPending(true);
+    try {
+      const res = await apiPost("/api/auth/roles", { role: "CONTRATANTE" });
       if (!res.ok) { setRoleActionError(res.error); return; }
       await refreshMe();
     } finally {
@@ -548,7 +580,7 @@ function SelfProfileScreen() {
         </Card>
       </section>
 
-      <section className={styles.section}>
+      <section id="papeis" className={`${styles.section} ${styles.papeisAnchor}`}>
         <div className={styles.sectionHead}>
           <h2 className={styles.sectionTitle}>Conta</h2>
         </div>
@@ -583,12 +615,12 @@ function SelfProfileScreen() {
           </div>
 
           {(() => {
-            const state = getProfessionalRoleState();
-            if (state === "active") return null;
+            const { professional, contractor } = getRoleStates();
+            if (professional === "active" && contractor === "active") return null;
 
             return (
               <div className={styles.roleAction}>
-                {state === "no-role" && (
+                {professional === "no-role" && (
                   <>
                     <p className={styles.roleHint}>
                       Ative o papel Profissional para receber pagamentos e ser
@@ -604,7 +636,7 @@ function SelfProfileScreen() {
                   </>
                 )}
 
-                {state === "needs-verification-cpf" && (
+                {professional === "needs-verification-cpf" && (
                   <>
                     <p className={styles.roleHint}>
                       Envie um documento com foto (RG ou CNH) e uma selfie para
@@ -638,7 +670,7 @@ function SelfProfileScreen() {
                   </>
                 )}
 
-                {state === "needs-verification-cnpj" && (
+                {professional === "needs-verification-cnpj" && (
                   <>
                     <p className={styles.roleHint}>
                       Seu CNPJ já foi validado no cadastro. Falta só enviar a
@@ -654,11 +686,27 @@ function SelfProfileScreen() {
                   </>
                 )}
 
-                {state === "in-analysis" && (
+                {professional === "in-analysis" && (
                   <p className={styles.roleHint}>
                     Sua verificação está em análise. Você será notificado quando for
                     aprovada.
                   </p>
+                )}
+
+                {contractor === "no-role" && (
+                  <>
+                    <p className={styles.roleHint}>
+                      Ative o papel Contratante para publicar vagas e contratar
+                      profissionais. A verificação é automática.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => void handleActivateContractor()}
+                      disabled={roleActionPending}
+                    >
+                      {roleActionPending ? "Ativando..." : "Ativar papel Contratante"}
+                    </Button>
+                  </>
                 )}
 
                 {roleActionError && (
