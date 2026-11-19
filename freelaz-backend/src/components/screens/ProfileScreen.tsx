@@ -10,6 +10,7 @@ import type {
   Role,
 } from "@/lib/apiTypes";
 import { formatBRLShort, humanizeCategory, humanizeCode, initials } from "@/lib/format";
+import { fileToDataUrl } from "@/lib/clientFiles";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -62,6 +63,10 @@ function SelfProfileScreen() {
   const [bioExpanded, setBioExpanded] = useState(false);
   const [switchingMode, setSwitchingMode] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
+  const [roleActionPending, setRoleActionPending] = useState(false);
+  const [roleActionError, setRoleActionError] = useState<string | null>(null);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
 
   async function handleToggleMode() {
     setSwitchingMode(true);
@@ -157,6 +162,79 @@ function SelfProfileScreen() {
   }
 
   const { user, roles } = me;
+
+  function getProfessionalRoleState():
+    | "no-role"
+    | "needs-verification-cpf"
+    | "needs-verification-cnpj"
+    | "in-analysis"
+    | "active" {
+    const prof = roles.find((r) => r.role === "PROFISSIONAL");
+    if (!prof) return "no-role";
+    if (prof.status === "ATIVO") return "active";
+    const verificationStatus = (me?.professionalProfile as
+      { verificationStatus?: string } | undefined)?.verificationStatus;
+    if (verificationStatus === "EM_ANALISE") return "in-analysis";
+    if (me?.user.documentType === "CPF") return "needs-verification-cpf";
+    return "needs-verification-cnpj";
+  }
+
+  async function refreshMe() {
+    const res = await apiGet<MeResponse>("/api/auth/me");
+    if (res.ok) setMe(res.data);
+  }
+
+  async function handleActivateProfessional() {
+    setRoleActionError(null);
+    setRoleActionPending(true);
+    try {
+      const res = await apiPost("/api/auth/roles", { role: "PROFISSIONAL" });
+      if (!res.ok) { setRoleActionError(res.error); return; }
+      await refreshMe();
+    } finally {
+      setRoleActionPending(false);
+    }
+  }
+
+  async function handleSubmitVerification() {
+    setRoleActionError(null);
+
+    const isCpf = me?.user.documentType === "CPF";
+    if (isCpf && (!docFile || !selfieFile)) {
+      setRoleActionError("Envie o documento com foto e a selfie.");
+      return;
+    }
+
+    // Validação client-side de tamanho (backend limita ~2.5MB de dataURL)
+    const LIMIT = Math.round(2.5 * 1024 * 1024);
+    for (const [label, file] of [
+      ["Documento", docFile],
+      ["Selfie", selfieFile],
+    ] as const) {
+      if (file && file.size * 1.4 > LIMIT) {
+        setRoleActionError(`${label} muito grande (máximo ~1,8 MB).`);
+        return;
+      }
+    }
+
+    setRoleActionPending(true);
+    try {
+      const body = isCpf
+        ? {
+            documentUrl: docFile ? await fileToDataUrl(docFile) : undefined,
+            selfieUrl: selfieFile ? await fileToDataUrl(selfieFile) : undefined,
+          }
+        : {};
+      const res = await apiPost("/api/verification/professional", body);
+      if (!res.ok) { setRoleActionError(res.error); return; }
+      setDocFile(null);
+      setSelfieFile(null);
+      await refreshMe();
+    } finally {
+      setRoleActionPending(false);
+    }
+  }
+
   const profile = profileData?.profile ?? null;
   const strength = profileData?.profileStrength ?? 0;
   const displayName = user.tradeName || user.name;
@@ -503,6 +581,92 @@ function SelfProfileScreen() {
                 : roles.map((role: Role) => `${ROLE_LABEL[role.role] ?? role.role}: ${ROLE_STATUS[role.status] ?? role.status}`).join(" · ")}
             </span>
           </div>
+
+          {(() => {
+            const state = getProfessionalRoleState();
+            if (state === "active") return null;
+
+            return (
+              <div className={styles.roleAction}>
+                {state === "no-role" && (
+                  <>
+                    <p className={styles.roleHint}>
+                      Ative o papel Profissional para receber pagamentos e ser
+                      encontrado por contratantes.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => void handleActivateProfessional()}
+                      disabled={roleActionPending}
+                    >
+                      {roleActionPending ? "Ativando..." : "Ativar papel Profissional"}
+                    </Button>
+                  </>
+                )}
+
+                {state === "needs-verification-cpf" && (
+                  <>
+                    <p className={styles.roleHint}>
+                      Envie um documento com foto (RG ou CNH) e uma selfie para
+                      concluir a verificação.
+                    </p>
+                    <label className={styles.fileLabel}>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                        hidden
+                        onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                      />
+                      <span>{docFile ? docFile.name : "Escolher documento"}</span>
+                    </label>
+                    <label className={styles.fileLabel}>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        hidden
+                        onChange={(e) => setSelfieFile(e.target.files?.[0] ?? null)}
+                      />
+                      <span>{selfieFile ? selfieFile.name : "Escolher selfie"}</span>
+                    </label>
+                    <Button
+                      size="sm"
+                      onClick={() => void handleSubmitVerification()}
+                      disabled={roleActionPending || !docFile || !selfieFile}
+                    >
+                      {roleActionPending ? "Enviando..." : "Enviar verificação"}
+                    </Button>
+                  </>
+                )}
+
+                {state === "needs-verification-cnpj" && (
+                  <>
+                    <p className={styles.roleHint}>
+                      Seu CNPJ já foi validado no cadastro. Falta só enviar a
+                      verificação para análise.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => void handleSubmitVerification()}
+                      disabled={roleActionPending}
+                    >
+                      {roleActionPending ? "Enviando..." : "Enviar verificação (CNPJ)"}
+                    </Button>
+                  </>
+                )}
+
+                {state === "in-analysis" && (
+                  <p className={styles.roleHint}>
+                    Sua verificação está em análise. Você será notificado quando for
+                    aprovada.
+                  </p>
+                )}
+
+                {roleActionError && (
+                  <p className={styles.roleError}>{roleActionError}</p>
+                )}
+              </div>
+            );
+          })()}
         </Card>
       </section>
 

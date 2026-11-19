@@ -7,16 +7,8 @@ import type { MeResponse, ProfileResponse } from "@/lib/apiTypes";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ChevronLeftIcon } from "@/components/Icons";
+import { fileToDataUrl } from "@/lib/clientFiles";
 import styles from "./EditProfileScreen.module.css";
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Erro ao ler arquivo"));
-    reader.readAsDataURL(file);
-  });
-}
 
 export function EditProfileScreen() {
   const router = useRouter();
