@@ -121,6 +121,24 @@ function SelfProfileScreen() {
     void load();
   }, [load]);
 
+  // Next.js App Router não faz scroll automático em router.replace com hash.
+  // Sem isso, /perfil#papeis carrega no topo e o Card "Papéis" fica fora
+  // da viewport em /cadastro e /login redirects.
+  // Roda quando `loading` vira false: é nesse momento que o <section> existe.
+  useEffect(() => {
+    if (loading) return;
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#papeis") return;
+
+    // O efeito roda depois do commit que monta o <section>, então o elemento
+    // já existe. Evitamos requestAnimationFrame porque ele pode ficar
+    // suspenso em abas em segundo plano, deixando o scroll sem acontecer.
+    document.getElementById("papeis")?.scrollIntoView({
+      behavior: "auto",
+      block: "start",
+    });
+  }, [loading]);
+
   async function handleLogout() {
     setLoggingOut(true);
     await apiPost("/api/auth/logout", {});

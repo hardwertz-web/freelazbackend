@@ -4,13 +4,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost } from "@/lib/apiClient";
+import type { MeResponse } from "@/lib/apiTypes";
 import { AuthShell, authStyles } from "@/components/AuthShell";
 import { Button } from "@/components/Button";
 
-// Só aceita caminho interno: `//evil.com` e URLs absolutas caem na Home.
-function redirectTarget(): string {
-  const raw = new URLSearchParams(window.location.search).get("redirect") ?? "";
-  return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+/**
+ * Destino pós-login. Ordem de prioridade:
+ *  1) ?redirect= interno (valida // e URLs absolutas)
+ *  2) /perfil#papeis se PROFISSIONAL estiver PENDENTE
+ *  3) / (HOME)
+ *
+ * Recebe o MeResponse já carregado para evitar requests duplicados.
+ */
+function resolveFromMe(me: MeResponse): string {
+  const raw =
+    new URLSearchParams(window.location.search).get("redirect") ?? "";
+  if (raw.startsWith("/") && !raw.startsWith("//")) return raw;
+  const prof = me.roles?.find((r) => r.role === "PROFISSIONAL");
+  return prof?.status === "PENDENTE" ? "/perfil#papeis" : "/";
 }
 
 /** POST /api/auth/login → cookie de sessão httpOnly → Home (ou `?redirect=`). */
@@ -25,8 +36,8 @@ export default function LoginPage() {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const result = await apiGet<unknown>("/api/auth/me");
-      if (alive && result.ok) router.replace(redirectTarget());
+      const me = await apiGet<MeResponse>("/api/auth/me");
+      if (alive && me.ok) router.replace(resolveFromMe(me.data));
     })();
     return () => {
       alive = false;
@@ -44,7 +55,9 @@ export default function LoginPage() {
     });
 
     if (result.ok) {
-      router.replace(redirectTarget());
+      const meRes = await apiGet<MeResponse>("/api/auth/me");
+      const target = meRes.ok ? resolveFromMe(meRes.data) : "/";
+      router.replace(target);
       router.refresh();
       return;
     }
