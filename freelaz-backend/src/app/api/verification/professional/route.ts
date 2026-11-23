@@ -5,13 +5,13 @@ import { saveDataUrlFile } from "@/lib/uploads";
 
 /**
  * POST /api/verification/professional
- * Body: { documentUrl: dataUrl, selfieUrl: dataUrl }   (contas CPF)
- *       {}                                             (contas CNPJ)
+ * Body: { documentUrl: dataUrl, selfieUrl: dataUrl }
  *
- * Envia a verificação do papel Profissional:
- * - CPF: documento com foto (RG/CNH) + selfie — obrigatórios os dois
- * - CNPJ: sem documento/selfie; a validação do CNPJ (feita já no cadastro)
- *   basta para a submissão — aprovação final é humana (EM_ANALISE)
+ * - CPF: documento com foto (RG/CNH) + selfie
+ * - CNPJ: Cartão CNPJ (Comprovante de Inscrição) + selfie
+ *
+ * A verificação de CNPJ via Receita Federal está fora do MVP —
+ * o Cartão CNPJ é evidência manual. Backlog P1.
  *
  * Aprovação muda o status para VERIFICADO e ativa o papel (vira ATIVO).
  * Enquanto não houver painel admin (Fase 5), a aprovação é feita no
@@ -46,23 +46,27 @@ export async function POST(req: NextRequest) {
   let documentUrl: string | null = null;
   let selfieUrl: string | null = null;
 
-  if (user.documentType === "CPF") {
-    if (!body.documentUrl || !body.selfieUrl) {
-      return NextResponse.json(
-        { error: "Envie o documento com foto (RG/CNH) e a selfie" },
-        { status: 422 }
-      );
-    }
-    const [doc, selfie] = await Promise.all([
-      saveDataUrlFile(body.documentUrl, `verifications/${user.id}`),
-      saveDataUrlFile(body.selfieUrl, `verifications/${user.id}`),
-    ]);
-    if ("error" in doc) return NextResponse.json({ error: `Documento: ${doc.error}` }, { status: 422 });
-    if ("error" in selfie) return NextResponse.json({ error: `Selfie: ${selfie.error}` }, { status: 422 });
-    documentUrl = doc.url;
-    selfieUrl = selfie.url;
+  if (!body.documentUrl || !body.selfieUrl) {
+    const docLabel =
+      user.documentType === "CNPJ"
+        ? "o Cartão CNPJ (Comprovante de Inscrição)"
+        : "o documento com foto (RG ou CNH)";
+    return NextResponse.json(
+      { error: `Envie ${docLabel} e uma selfie para concluir a verificação` },
+      { status: 422 }
+    );
   }
-  // CNPJ: o documento já foi validado no cadastro — nada a anexar aqui.
+
+  const [doc, selfie] = await Promise.all([
+    saveDataUrlFile(body.documentUrl, `verifications/${user.id}`),
+    saveDataUrlFile(body.selfieUrl, `verifications/${user.id}`),
+  ]);
+  if ("error" in doc)
+    return NextResponse.json({ error: `Documento: ${doc.error}` }, { status: 422 });
+  if ("error" in selfie)
+    return NextResponse.json({ error: `Selfie: ${selfie.error}` }, { status: 422 });
+  documentUrl = doc.url;
+  selfieUrl = selfie.url;
 
   const existing = await prisma.identityVerification.findFirst({
     where: { userId: user.id, role: "PROFISSIONAL", status: { not: "NAO_VERIFICADO" } },

@@ -119,7 +119,7 @@ export default function CadastroPage() {
               onClick={() => setDocumentType("CPF")}
               aria-pressed={documentType === "CPF"}
             >
-              CPF (pessoa)
+              CPF
             </button>
             <button
               type="button"
@@ -129,7 +129,7 @@ export default function CadastroPage() {
               onClick={() => setDocumentType("CNPJ")}
               aria-pressed={documentType === "CNPJ"}
             >
-              CNPJ (empresa)
+              CNPJ
             </button>
           </div>
         </div>

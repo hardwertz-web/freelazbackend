@@ -35,3 +35,15 @@
 ## Notas históricas
 
 - Versões anteriores deste documento e do código referenciam "Mercado Pago" como gateway. A migração para **Asaas** foi concluída antes da Fase 3. Todo código e infraestrutura atuais usam Asaas. Se encontrar "Mercado Pago" em comentários antigos, ignore — não é a arquitetura vigente.
+
+## Verificação
+
+- Profissional: documento (RG/CNH para CPF, Cartão CNPJ para CNPJ) + selfie. Status: não verificado / em análise / verificado.
+- CPF e CNPJ são tratados como **documentos de identificação**, não como tipos de perfil diferentes. Qualquer documento pode ter os papéis Profissional e/ou Contratante ativos.
+- **Sem verificação de antecedentes criminais** — decisão deliberada.
+- Idade mínima 18 anos, com bloqueio automático no cadastro.
+
+### Notas sobre o MVP
+
+- A validação de CNPJ é feita por **checksum local** (register) + evidência manual (Cartão CNPJ + selfie). Consulta automatizada à Receita Federal via BrasilAPI está no backlog P1.
+- A selfie é do representante legal no caso de CNPJ.

@@ -182,19 +182,13 @@ function SelfProfileScreen() {
   const { user, roles } = me;
 
   function getRoleStates(): {
-    professional:
-      | "no-role"
-      | "needs-verification-cpf"
-      | "needs-verification-cnpj"
-      | "in-analysis"
-      | "active";
+    professional: "no-role" | "needs-verification" | "in-analysis" | "active";
     contractor: "no-role" | "active";
   } {
     const prof = roles.find((r) => r.role === "PROFISSIONAL");
     let professional:
       | "no-role"
-      | "needs-verification-cpf"
-      | "needs-verification-cnpj"
+      | "needs-verification"
       | "in-analysis"
       | "active" = "no-role";
     if (!prof) {
@@ -205,9 +199,7 @@ function SelfProfileScreen() {
       const verificationStatus = (me?.professionalProfile as
         { verificationStatus?: string } | undefined)?.verificationStatus;
       if (verificationStatus === "EM_ANALISE") professional = "in-analysis";
-      else if (me?.user.documentType === "CPF")
-        professional = "needs-verification-cpf";
-      else professional = "needs-verification-cnpj";
+      else professional = "needs-verification";
     }
 
     const cont = roles.find((r) => r.role === "CONTRATANTE");
@@ -249,9 +241,8 @@ function SelfProfileScreen() {
   async function handleSubmitVerification() {
     setRoleActionError(null);
 
-    const isCpf = me?.user.documentType === "CPF";
-    if (isCpf && (!docFile || !selfieFile)) {
-      setRoleActionError("Envie o documento com foto e a selfie.");
+    if (!docFile || !selfieFile) {
+      setRoleActionError("Envie o documento e a selfie.");
       return;
     }
 
@@ -269,12 +260,10 @@ function SelfProfileScreen() {
 
     setRoleActionPending(true);
     try {
-      const body = isCpf
-        ? {
-            documentUrl: docFile ? await fileToDataUrl(docFile) : undefined,
-            selfieUrl: selfieFile ? await fileToDataUrl(selfieFile) : undefined,
-          }
-        : {};
+      const body = {
+        documentUrl: await fileToDataUrl(docFile),
+        selfieUrl: await fileToDataUrl(selfieFile),
+      };
       const res = await apiPost("/api/verification/professional", body);
       if (!res.ok) { setRoleActionError(res.error); return; }
       setDocFile(null);
@@ -654,11 +643,12 @@ function SelfProfileScreen() {
                   </>
                 )}
 
-                {professional === "needs-verification-cpf" && (
+                {professional === "needs-verification" && (
                   <>
                     <p className={styles.roleHint}>
-                      Envie um documento com foto (RG ou CNH) e uma selfie para
-                      concluir a verificação.
+                      Para validar sua identidade, envie {me?.user.documentType === "CNPJ"
+                        ? "o Cartão CNPJ (Comprovante de Inscrição)"
+                        : "um documento com foto (RG ou CNH)"} e uma selfie.
                     </p>
                     <label className={styles.fileLabel}>
                       <input
@@ -684,22 +674,6 @@ function SelfProfileScreen() {
                       disabled={roleActionPending || !docFile || !selfieFile}
                     >
                       {roleActionPending ? "Enviando..." : "Enviar verificação"}
-                    </Button>
-                  </>
-                )}
-
-                {professional === "needs-verification-cnpj" && (
-                  <>
-                    <p className={styles.roleHint}>
-                      Seu CNPJ já foi validado no cadastro. Falta só enviar a
-                      verificação para análise.
-                    </p>
-                    <Button
-                      size="sm"
-                      onClick={() => void handleSubmitVerification()}
-                      disabled={roleActionPending}
-                    >
-                      {roleActionPending ? "Enviando..." : "Enviar verificação (CNPJ)"}
                     </Button>
                   </>
                 )}

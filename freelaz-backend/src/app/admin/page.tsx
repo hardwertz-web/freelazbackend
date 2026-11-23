@@ -693,7 +693,7 @@ function IdentidadeTab({ onMessage }: { onMessage: (m: string, e?: boolean) => v
                 ver selfie
               </a>
             )}
-            {!v.documentUrl && !v.selfieUrl && <span style={S.muted}>conta CNPJ: sem anexos (CNPJ validado no cadastro)</span>}
+            Documento: {v.documentUrl ? 'enviado' : 'ausente'} · Selfie: {v.selfieUrl ? 'enviada' : 'ausente'} · {v.user.documentType} {v.user.documentMasked}
           </p>
 
           {rejecting === v.id ? (

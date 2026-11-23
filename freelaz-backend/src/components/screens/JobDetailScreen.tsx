@@ -488,7 +488,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>
-          <h2 className={styles.sectionTitle}>Sobre a empresa</h2>
+          <h2 className={styles.sectionTitle}>Sobre quem publicou</h2>
         </div>
         <Card>
           <div className={styles.companyRow}>
@@ -498,11 +498,11 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
               <span className={styles.companyMeta}>
                 {job.contractor.verified ? (
                   <>
-                    <ShieldCheckIcon size={11} /> Empresa verificada
+                    <ShieldCheckIcon size={11} /> Verificado
                   </>
                 ) : (
                   <>
-                    <UserIcon size={11} /> Empresa na Freelaz
+                    <UserIcon size={11} /> Na Freelaz
                   </>
                 )}
               </span>
