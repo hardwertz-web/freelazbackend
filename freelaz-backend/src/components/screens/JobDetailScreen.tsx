@@ -249,7 +249,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
       setAccepted(true);
       setApplied(true);
       setAcceptOpen(false);
-      setToast("Valor aceito! Aguarde a empresa selecionar.");
+      setToast("Valor aceito! Aguarde quem publicou selecionar.");
       return;
     }
 
@@ -434,7 +434,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
             <ShieldCheckIcon size={14} />
           </span>
           <span className={styles.metricValue}>{job.contractor.verified ? "Sim" : "—"}</span>
-          <span className={styles.metricLabel}>empresa verificada</span>
+          <span className={styles.metricLabel}>perfil verificado</span>
         </div>
         <div className={styles.metric}>
           <span className={styles.metricIcon}>
@@ -464,7 +464,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
           </span>
           <span className={styles.infoLabel}>Local do serviço</span>
           <span className={styles.infoValue}>{locationOf(job)}</span>
-          <span className={styles.infoHint}>Combinado com a empresa</span>
+          <span className={styles.infoHint}>Combinado com quem publicou</span>
         </div>
         <div className={styles.infoCard}>
           <span className={styles.infoIcon}>
@@ -684,7 +684,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
           {isProfessionalActive && (
             <span className={styles.ctaNote}>
               {accepted
-                ? "Valor aceito! Aguarde a empresa selecionar."
+                ? "Valor aceito! Aguarde quem publicou selecionar."
                 : applied
                   ? "Você já enviou uma proposta para esta vaga."
                   : isOpen
@@ -796,7 +796,7 @@ export function JobDetailScreen({ jobId }: { jobId: string }) {
             <p className={styles.modalJob}>{job.title}</p>
             <p className={styles.body}>
               Aceitar {formatBRL(job.valueCents)} por {job.title}? Você receberá o valor integral
-              (a empresa paga as taxas).
+              (quem publicou paga as taxas).
             </p>
 
             {acceptError && (
