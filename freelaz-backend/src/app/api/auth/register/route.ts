@@ -107,6 +107,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // CONTRATANTE é o papel padrão de todo cadastro. Qualquer conta
+  // (CPF ou CNPJ) pode publicar vagas desde o primeiro dia.
+  const effectiveRoles: ("PROFISSIONAL" | "CONTRATANTE")[] =
+    wantedRoles.includes("CONTRATANTE")
+      ? wantedRoles
+      : [...wantedRoles, "CONTRATANTE"];
+
   const document = documentType === "CPF" ? onlyDigits(rawDocument) : normalizeDocument(rawDocument);
 
   try {
@@ -125,7 +132,7 @@ export async function POST(req: NextRequest) {
         passwordHash,
         termsAcceptedAt: now,
         roles: {
-          create: wantedRoles.map((role) => ({
+          create: effectiveRoles.map((role) => ({
             role,
             // Profissional exige verificação para ativar; contratante já sai ativo.
             status: role === "PROFISSIONAL" ? "PENDENTE" : "ATIVO",
@@ -133,8 +140,7 @@ export async function POST(req: NextRequest) {
         },
         professionalProfile:
           wantedRoles.includes("PROFISSIONAL") ? { create: {} } : undefined,
-        contractorProfile:
-          wantedRoles.includes("CONTRATANTE") ? { create: {} } : undefined,
+        contractorProfile: { create: {} },
       },
       include: { roles: true },
     });
