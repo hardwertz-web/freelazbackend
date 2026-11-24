@@ -115,7 +115,12 @@ export async function listPublicProfessionals(
   const limit = Math.min(MAX_LIMIT, positiveInt(query.limit, DEFAULT_LIMIT));
 
   const where: Prisma.UserWhereInput = {
-    roles: { some: { role: "PROFISSIONAL", status: "ATIVO" } },
+    // Modelo simplificado: PROFISSIONAL:PENDENTE já pode trabalhar (ver
+    // CLAUDE.md > "Modelo de papéis (MVP)"). Só o selo "Verificado" é
+    // gated pelo admin — o filtro de visibilidade não é.
+    // Se um dia adicionarmos busca "Só verificados", esse será o ponto
+    // (flag opcional na query, não filtro default).
+    roles: { some: { role: "PROFISSIONAL" } },
     avatarUrl: { not: null },
     // Sem categoria, basta existir perfil; com categoria, o filtro é no array.
     ...(category
@@ -239,8 +244,9 @@ export async function listPublicProfessionals(
  * Perfil público de um profissional.
  *
  * 404 (retorno `null`) quando o id não existe ou quando o usuário não tem o
- * papel PROFISSIONAL ATIVO. Um perfil vazio continua acessível pelo id direto;
- * a listagem é que exige preenchimento mínimo.
+ * papel PROFISSIONAL. PROFISSIONAL:PENDENTE aparece normalmente; o selo
+ * "Verificado" diferencia quem passou pelo KYC. Um perfil vazio continua
+ * acessível pelo id direto; a listagem é que exige preenchimento mínimo.
  */
 export async function getPublicProfessional(
   id: string
@@ -248,7 +254,8 @@ export async function getPublicProfessional(
   const user = await prisma.user.findFirst({
     where: {
       id,
-      roles: { some: { role: "PROFISSIONAL", status: "ATIVO" } },
+      // Modelo simplificado: PENDENTE aparece; só o selo é gated (ver CLAUDE.md).
+      roles: { some: { role: "PROFISSIONAL" } },
     },
     select: {
       id: true,

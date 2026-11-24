@@ -8,12 +8,11 @@ import { AuthShell, authStyles } from "@/components/AuthShell";
 import { Button } from "@/components/Button";
 
 type DocumentType = "CPF" | "CNPJ";
-type RoleValue = "PROFISSIONAL" | "CONTRATANTE";
 
 /**
- * POST /api/auth/register — cadastro único com papéis ativáveis.
- * O papel Profissional nasce PENDENTE (exige verificação); Contratante nasce
- * ATIVO. A Home funciona para os dois.
+ * POST /api/auth/register — cadastro único (CPF ou CNPJ). Nasce com
+ * PROFISSIONAL:PENDENTE + CONTRATANTE:ATIVO; a verificação é opt-in em
+ * /perfil#papeis.
  */
 export default function CadastroPage() {
   const router = useRouter();
@@ -26,7 +25,6 @@ export default function CadastroPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [roles, setRoles] = useState<RoleValue[]>(["PROFISSIONAL"]);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -42,20 +40,9 @@ export default function CadastroPage() {
     };
   }, [router]);
 
-  function toggleRole(role: RoleValue) {
-    setRoles((current) =>
-      current.includes(role) ? current.filter((item) => item !== role) : [...current, role]
-    );
-  }
-
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-
-    if (roles.length === 0) {
-      setError("Escolha ao menos um papel: oferecer serviços, contratar, ou os dois.");
-      return;
-    }
 
     setSubmitting(true);
     const result = await apiPost<{ user: unknown; nextStep: string }>("/api/auth/register", {
@@ -67,17 +54,13 @@ export default function CadastroPage() {
       email: email.trim(),
       phone,
       password,
-      roles,
       acceptedTerms,
     });
 
     if (result.ok) {
-      const next = result.data.nextStep;
-      if (next === "VERIFICACAO_PROFISSIONAL") {
-        router.replace("/perfil#papeis");
-      } else {
-        router.replace("/");
-      }
+      // Cadastro sempre resulta em HOME. O CTA "Enviar verificação"
+      // vive em /perfil#papeis, opt-in.
+      router.replace("/");
       router.refresh();
       return;
     }
@@ -240,50 +223,6 @@ export default function CadastroPage() {
               minLength={8}
               required
             />
-          </div>
-        </div>
-
-        <div className={authStyles.field}>
-          <span className={authStyles.label}>O que você quer fazer?</span>
-          <div className={authStyles.roles}>
-            <label
-              className={[
-                authStyles.roleOption,
-                roles.includes("PROFISSIONAL") && authStyles.roleOptionActive,
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <input
-                type="checkbox"
-                checked={roles.includes("PROFISSIONAL")}
-                onChange={() => toggleRole("PROFISSIONAL")}
-              />
-              <span>
-                Oferecer serviços
-                <br />
-                <span className={authStyles.hint}>perfil profissional</span>
-              </span>
-            </label>
-            <label
-              className={[
-                authStyles.roleOption,
-                roles.includes("CONTRATANTE") && authStyles.roleOptionActive,
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <input
-                type="checkbox"
-                checked={roles.includes("CONTRATANTE")}
-                onChange={() => toggleRole("CONTRATANTE")}
-              />
-              <span>
-                Contratar
-                <br />
-                <span className={authStyles.hint}>publicar vagas</span>
-              </span>
-            </label>
           </div>
         </div>
 

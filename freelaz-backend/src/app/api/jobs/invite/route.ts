@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, hasActiveRole } from "@/lib/auth";
+import { requireUser, hasActiveRole, hasProfessionalRole } from "@/lib/auth";
 import { parseJobFields } from "@/lib/jobInput";
 import { notifyAndDispatch } from "@/services/notificationService";
 import {
@@ -65,9 +65,9 @@ export async function POST(req: NextRequest) {
   if (!target) {
     return NextResponse.json({ error: "Profissional não encontrado" }, { status: 404 });
   }
-  if (!target.roles.some((r) => r.role === "PROFISSIONAL" && r.status === "ATIVO")) {
+  if (!hasProfessionalRole(target)) {
     return NextResponse.json(
-      { error: "Este usuário não tem o papel Profissional ativo" },
+      { error: "Este usuário não tem o papel Profissional" },
       { status: 422 }
     );
   }

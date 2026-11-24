@@ -109,6 +109,18 @@ export function hasActiveRole(
 }
 
 /**
+ * Checa se a conta TEM o papel PROFISSIONAL (PENDENTE ou ATIVO).
+ * Usado em rotas onde PENDENTE pode operar, mas ainda sem selo
+ * "Verificado" público — ver CLAUDE.md, decisão de modelo aberto.
+ * Diferente de hasActiveRole: NÃO exige status === "ATIVO".
+ */
+export function hasProfessionalRole(
+  user: { roles: { role: string; status: string }[] }
+): boolean {
+  return user.roles.some((r) => r.role === "PROFISSIONAL");
+}
+
+/**
  * Conta com o papel ADMIN ativo (painel administrativo — Fase 5). O papel é
  * atribuído manualmente pelo operador, nunca por auto-cadastro.
  */

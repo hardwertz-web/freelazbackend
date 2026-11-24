@@ -15,16 +15,16 @@ import {
 import { publicUser } from "@/lib/publicUser";
 
 /**
- * POST /api/auth/register — cadastro único (CPF ou CNPJ) com papéis
- * ativáveis. Não existe escolha de "tipo de conta" no cadastro: cria-se uma
- * conta só e ativam-se os papéis Profissional e/ou Contratante.
+ * POST /api/auth/register — cadastro único (CPF ou CNPJ), sempre com os
+ * dois papéis: PROFISSIONAL:PENDENTE + CONTRATANTE:ATIVO. CPF/CNPJ é só
+ * identificação; não existe escolha de "tipo de conta" no cadastro.
  *
- * Regras do cadastro (CLAUDE.md > "Cadastro e papéis"):
+ * Regras do cadastro (CLAUDE.md > "Modelo de papéis (MVP)"):
  * - CPF: nome completo + data de nascimento, bloqueio automático se < 18 anos
  * - CNPJ: razão social (+ nome fantasia)
- * - Papel Profissional nasce PENDENTE (exige documento + selfie / validação
- *   de CNPJ para ativar); papel Contratante nasce ATIVO (verificação leve
- *   é a confirmação de e-mail/telefone, que dá o selo, não bloqueia o uso)
+ * - PROFISSIONAL nasce PENDENTE: pode trabalhar, mas só ganha o selo
+ *   público "Verificado" após documento + selfie e aprovação do admin
+ * - CONTRATANTE nasce ATIVO: qualquer conta publica vaga desde o dia 1
  * - Aceite dos Termos (LGPD) obrigatório, registrado com data/hora
  */
 export async function POST(req: NextRequest) {
@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
   const phone = onlyDigits(String(body.phone ?? ""));
   const password = String(body.password ?? "");
   const acceptedTerms = body.acceptedTerms === true;
-  const roles = Array.isArray(body.roles) ? (body.roles as string[]) : [];
 
   if (documentType !== "CPF" && documentType !== "CNPJ") {
     return NextResponse.json({ error: "documentType deve ser CPF ou CNPJ" }, { status: 400 });
@@ -96,23 +95,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const wantedRoles = roles.filter(
-    (r): r is "PROFISSIONAL" | "CONTRATANTE" =>
-      r === "PROFISSIONAL" || r === "CONTRATANTE"
-  );
-  if (wantedRoles.length === 0) {
-    return NextResponse.json(
-      { error: "Escolha ao menos um papel: oferecer serviços, contratar, ou os dois" },
-      { status: 422 }
-    );
-  }
-
-  // CONTRATANTE é o papel padrão de todo cadastro. Qualquer conta
-  // (CPF ou CNPJ) pode publicar vagas desde o primeiro dia.
-  const effectiveRoles: ("PROFISSIONAL" | "CONTRATANTE")[] =
-    wantedRoles.includes("CONTRATANTE")
-      ? wantedRoles
-      : [...wantedRoles, "CONTRATANTE"];
+  // Modelo simplificado: CPF/CNPJ é identificação, não tipo de
+  // perfil. Todo cadastro nasce com os dois papéis ativos — o
+  // PROFISSIONAL em PENDENTE (vira ATIVO após verificação,
+  // ganhando selo público), o CONTRATANTE em ATIVO direto.
+  const effectiveRoles: ("PROFISSIONAL" | "CONTRATANTE")[] = [
+    "PROFISSIONAL",
+    "CONTRATANTE",
+  ];
 
   const document = documentType === "CPF" ? onlyDigits(rawDocument) : normalizeDocument(rawDocument);
 
@@ -138,8 +128,7 @@ export async function POST(req: NextRequest) {
             status: role === "PROFISSIONAL" ? "PENDENTE" : "ATIVO",
           })),
         },
-        professionalProfile:
-          wantedRoles.includes("PROFISSIONAL") ? { create: {} } : undefined,
+        professionalProfile: { create: {} },
         contractorProfile: { create: {} },
       },
       include: { roles: true },
@@ -158,12 +147,9 @@ export async function POST(req: NextRequest) {
       {
         user: publicUser(user),
         roles: user.roles,
-        // Para o front direcionar o onboarding (ex: verificação do papel
-        // Profissional) sem precisar adivinhar o estado.
-        nextStep:
-          wantedRoles.includes("PROFISSIONAL") && wantedRoles.length === 1
-            ? "VERIFICACAO_PROFISSIONAL"
-            : "HOME",
+        // Cadastro sempre resulta em HOME: a verificação do papel
+        // Profissional é opt-in, em /perfil#papeis.
+        nextStep: "HOME",
       },
       { status: 201 }
     );

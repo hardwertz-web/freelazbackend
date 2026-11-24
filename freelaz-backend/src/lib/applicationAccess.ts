@@ -1,6 +1,6 @@
 import type { Application, JobPosting, User, UserRoleAssignment } from "@prisma/client";
 import { prisma } from "./prisma";
-import { requireUser, hasActiveRole } from "./auth";
+import { requireUser, hasActiveRole, hasProfessionalRole } from "./auth";
 
 type AppWithJob = Application & { jobPosting: JobPosting };
 type SessionUser = User & { roles: UserRoleAssignment[] };
@@ -52,7 +52,11 @@ export async function requireApplicationParty(
       },
     };
   }
-  if (!hasActiveRole(auth.user, side === "CONTRACTOR" ? "CONTRATANTE" : "PROFISSIONAL")) {
+  if (
+    side === "CONTRACTOR"
+      ? !hasActiveRole(auth.user, "CONTRATANTE")
+      : !hasProfessionalRole(auth.user)
+  ) {
     return {
       error: {
         status: 403,

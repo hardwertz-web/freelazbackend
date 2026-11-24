@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, hasActiveRole } from "@/lib/auth";
+import { requireUser, hasProfessionalRole } from "@/lib/auth";
 import { hasActiveHiring } from "@/services/hiringService";
 
 /**
  * POST /api/jobs/:id/apply — candidatura a uma vaga PÚBLICA.
  *
  * Regras:
- *  - o profissional precisa ter o papel Profissional ATIVO (papel PENDENTE
- *    não se candidata — ver findings.md > identidade e papéis);
+ *  - o profissional precisa ter o papel Profissional (PENDENTE basta:
+ *    verificação é selo de qualidade, não gate de acesso — ver CLAUDE.md);
  *  - a vaga precisa estar ABERTA, PÚBLICA e ainda no prazo;
  *  - o próprio contratante dono não pode se candidatar à própria vaga;
  *  - uma vaga com contratação em andamento está reservada (409);
@@ -75,9 +75,9 @@ export async function POST(
     agreedValueCents = payload.agreedValueCents as number;
   }
 
-  if (!hasActiveRole(user, "PROFISSIONAL")) {
+  if (!hasProfessionalRole(user)) {
     return NextResponse.json(
-      { error: "Ative o papel Profissional (verificação aprovada) para se candidatar" },
+      { error: "Você precisa do papel Profissional para se candidatar" },
       { status: 403 }
     );
   }

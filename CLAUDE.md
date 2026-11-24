@@ -47,3 +47,32 @@
 
 - A validação de CNPJ é feita por **checksum local** (register) + evidência manual (Cartão CNPJ + selfie). Consulta automatizada à Receita Federal via BrasilAPI está no backlog P1.
 - A selfie é do representante legal no caso de CNPJ.
+
+## Modelo de papéis (MVP)
+
+Cadastro simplificado: qualquer conta (CPF ou CNPJ) nasce com os dois
+papéis ativos — PROFISSIONAL em PENDENTE, CONTRATANTE em ATIVO.
+
+- Qualquer conta pode publicar vaga desde o primeiro dia
+  (CONTRATANTE:ATIVO).
+- Qualquer conta pode se candidatar a vagas e receber "Me contrate"
+  desde o primeiro dia (PROFISSIONAL:PENDENTE basta).
+- O selo público "Verificado" só aparece após verificação (documento
+  + selfie + aprovação do admin). É **sinal de qualidade**, não
+  gate de acesso.
+- CPF/CNPJ é apenas identificação visual do perfil público — não
+  define papel.
+- Perfis PROFISSIONAL:PENDENTE aparecem em /profissionais e em
+  /profissional/[id] normalmente; o selo "Verificado" no card
+  diferencia quem passou pelo KYC. Busca "Só verificados" fica
+  como P3 (flag opcional, não default).
+
+### Trade-off de segurança (aceito)
+
+Profissional PENDENTE pode trabalhar sem KYC aprovado. Mitigações:
+- Escrow retém pagamento até conclusão confirmada.
+- Reliability + ratings + selo "Novo no Freelaz" sinalizam histórico.
+- Admin pode solicitar verificação ad-hoc em disputas.
+- CLAUDE.md já tinha: "Sem verificação de antecedentes criminais —
+  decisão deliberada para não excluir pessoas em situação de
+  informalidade". Mesmo espírito.
