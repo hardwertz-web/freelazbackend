@@ -76,3 +76,18 @@ Profissional PENDENTE pode trabalhar sem KYC aprovado. Mitigações:
 - CLAUDE.md já tinha: "Sem verificação de antecedentes criminais —
   decisão deliberada para não excluir pessoas em situação de
   informalidade". Mesmo espírito.
+
+## Arquivos sensíveis (P0 resolvido)
+
+- `verifications/` (RG/CNH/selfie/Cartão CNPJ) são privados:
+  persistidos como `relativePath`, servidos via `/api/uploads/` com
+  auth (dono ou ADMIN). NUNCA expor URL pública do R2.
+- `avatars/` e `portfolio/` são públicos por design (URL do R2 no
+  `<img src>` é OK).
+- R2 configurado em prod (R2_ACCOUNT_ID, R2_BUCKET,
+  R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_PUBLIC_URL). Em dev
+  (sem R2), `saveDataUrlFile` cai para filesystem local
+  (`UPLOAD_ROOT`); a rota `/api/uploads` usa fallback fs.
+- `getObjectFromR2` serve bytes do R2 via `transformToByteArray()`.
+  Sem streaming — arquivos limitados a ~2MB pelo
+  `saveDataUrlFile.MAX_DATA_URL_LENGTH`.

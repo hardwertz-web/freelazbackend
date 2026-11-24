@@ -20,6 +20,19 @@ const ALLOWED_MIME: Record<string, string> = {
 // será um upload direto quando houver storage definido (Fase 6).
 const MAX_DATA_URL_LENGTH = Math.round(2.5 * 1024 * 1024);
 
+/**
+ * Retorno de saveDataUrlFile.
+ *
+ * - `relativePath`: chave canônica, SEM prefixo. Use este em colunas
+ *   do banco (IdentityVerification.documentUrl/selfieUrl etc.).
+ *   Para servir com auth, monte `/api/uploads/<relativePath>`.
+ * - `url`: conveniência. Em fs = "/api/uploads/<relativePath>";
+ *   em R2 = URL pública (não use para dados sensíveis).
+ *
+ * Regra pós-Bug-B: sempre que o arquivo for privado
+ * (verifications/, private/), persistir relativePath. Para públicos
+ * (avatars/, portfolio/), url é aceitável.
+ */
 export type SavedFile = { url: string; relativePath: string };
 
 /**

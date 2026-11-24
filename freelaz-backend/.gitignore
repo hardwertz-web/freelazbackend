@@ -4,4 +4,7 @@ node_modules/
 .env*.local
 *.log
 uploads/
+# Bug B: a pasta de código da API /api/uploads NÃO é dado de runtime.
+!src/app/api/uploads/
+!src/app/api/uploads/**
 .tools/

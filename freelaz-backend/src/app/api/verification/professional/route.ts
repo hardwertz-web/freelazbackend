@@ -65,8 +65,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Documento: ${doc.error}` }, { status: 422 });
   if ("error" in selfie)
     return NextResponse.json({ error: `Selfie: ${selfie.error}` }, { status: 422 });
-  documentUrl = doc.url;
-  selfieUrl = selfie.url;
+  documentUrl = doc.relativePath;
+  selfieUrl = selfie.relativePath;
 
   const existing = await prisma.identityVerification.findFirst({
     where: { userId: user.id, role: "PROFISSIONAL", status: { not: "NAO_VERIFICADO" } },

@@ -1,4 +1,9 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
 
 let client: S3Client | null = null;
 
@@ -65,6 +70,49 @@ export async function uploadToR2(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return { ok: false, error: `R2 upload falhou: ${message}` };
+  }
+}
+
+export type R2ObjectResult =
+  | { ok: true; body: ReadableStream | Uint8Array; contentType?: string }
+  | { ok: false; error: string };
+
+/**
+ * Lê um objeto do R2. Retorna body como Uint8Array (buffer completo)
+ * + contentType (do metadata do R2). Simples e portável entre Node
+ * runtimes — stream seria mais eficiente para arquivos grandes, mas
+ * nossos uploads são limitados a ~2MB (limite do saveDataUrlFile).
+ */
+export async function getObjectFromR2(
+  key: string
+): Promise<R2ObjectResult> {
+  if (!isR2Configured()) {
+    return { ok: false, error: "R2 não configurado" };
+  }
+  try {
+    const client = getClient();
+    if (!client) {
+      return { ok: false, error: "R2 não configurado" };
+    }
+    const bucket = process.env.R2_BUCKET!;
+    const res = await client.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      })
+    );
+    if (!res.Body) {
+      return { ok: false, error: "Body vazio no R2" };
+    }
+    // Body é Readable | ReadableStream | Blob no SDK v3. Convertemos
+    // para Uint8Array via transformToByteArray().
+    const bytes = await (
+      res.Body as { transformToByteArray: () => Promise<Uint8Array> }
+    ).transformToByteArray();
+    return { ok: true, body: bytes, contentType: res.ContentType };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Erro desconhecido";
+    return { ok: false, error: msg };
   }
 }
 
